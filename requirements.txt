@@ -3,6 +3,6 @@ mutagen==1.48.1
 fastapi==0.141.1
 uvicorn==0.54.0
 Jinja2==3.1.6
-python-multipart==0.0.20
+python-multipart==0.0.32
 reportlab==5.0.1
 pillow==12.1.0
