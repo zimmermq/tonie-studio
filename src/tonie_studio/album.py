@@ -58,6 +58,14 @@ TECHNICAL_TOKENS = frozenset({
 
 YEAR = re.compile(r"^(19|20)\d{2}$")
 
+# Marks a track that is a second take of another one rather than its own piece.
+# Half of the Lichterkinder albums are karaoke versions of their own first half,
+# and nobody wants both on one tonie. Matched on the tag, which spells it out.
+EXTRA_MARKERS = re.compile(
+    r"\b(karaoke|instrumental|playback|mitsing|version ohne gesang)\b",
+    re.IGNORECASE,
+)
+
 # German transliterations a scene file name uses where the tag has the letter.
 TRANSLITERATIONS = {
     "\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00df": "ss", "&": "and",
@@ -87,6 +95,9 @@ class Track:
     title: str
     artist: Optional[str] = None
     duration: Optional[float] = None
+    # A karaoke or instrumental take. Offered unticked rather than hidden: it
+    # is a guess from the title, and sometimes the karaoke half is the point.
+    extra: bool = False
 
 
 @dataclass
@@ -114,13 +125,23 @@ class Album:
 
 @dataclass
 class AlbumSummary:
-    """One row of the album picker, cheap enough to build for a whole archive."""
+    """One row of the album picker, cheap enough to build for a whole archive.
+
+    Carries what the list renders rather than only the folder name, because
+    `Lichterkinder-Tanz- und Partylieder-16BIT-44-KHZ-WEB-FLAC-2021-WALKMAN`
+    is not what anyone wants to read. Only the first track's tags are consulted
+    for that: sixteen albums must not mean five hundred file reads per page.
+    """
 
     id: str
     path: Path
     name: str
     track_count: int
     has_cover: bool
+    title: str = ""
+    artist: Optional[str] = None
+    year: Optional[str] = None
+    cover: Optional[Path] = None
 
 
 def album_id(root: Path, path: Path) -> str:
@@ -139,12 +160,18 @@ def album_id(root: Path, path: Path) -> str:
     return hashlib.sha1(normalised.encode("utf-8")).hexdigest()[:12]
 
 
-def list_albums(root: Path, max_depth: int = MAX_DEPTH) -> List[AlbumSummary]:
+def list_albums(
+    root: Path, max_depth: int = MAX_DEPTH, describe: bool = True,
+) -> List[AlbumSummary]:
     """Find every folder below ``root`` that directly holds audio files.
 
     A folder that only contains other album folders is not itself an album, so
     a release split into discs shows up as its discs rather than as one entry
     that would encode in an undefined order.
+
+    ``describe=False`` skips reading the first track's tags. Looking a folder
+    up by its id needs nothing but the directory names, and over a network
+    share opening one file per album is what makes that lookup slow.
     """
     summaries = []
     for directory in _walk(root, max_depth):
@@ -152,15 +179,34 @@ def list_albums(root: Path, max_depth: int = MAX_DEPTH) -> List[AlbumSummary]:
         audio = [path for path in entries if _is_audio(path)]
         if not audio:
             continue
-        images = [path for path in entries if _is_image(path)]
+        covers = _cover_candidates(entries) if describe else []
+        if describe:
+            first = min(audio, key=lambda path: _natural_key(path.name))
+            title, artist, year = _describe(directory, [_read_tags(first) or TrackTags()])
+        else:
+            title, artist, year = "", None, None
         summaries.append(AlbumSummary(
             id=album_id(root, directory),
             path=directory,
             name=str(directory.relative_to(root)),
             track_count=len(audio),
-            has_cover=bool(images),
+            has_cover=bool(covers) if describe else False,
+            title=title,
+            artist=artist,
+            year=year,
+            cover=covers[0] if covers else None,
         ))
     return sorted(summaries, key=lambda summary: _natural_key(summary.name))
+
+
+def cover_candidates(path: Path) -> List[Path]:
+    """Every image in the folder, most likely to be artwork first.
+
+    Separate from `read_album` because serving a preview needs the picture and
+    nothing else. Going through `read_album` would read the tags of all sixty
+    tracks of an album to draw one thumbnail.
+    """
+    return _cover_candidates(_entries(path))
 
 
 def read_album(path: Path) -> Album:
@@ -179,6 +225,7 @@ def read_album(path: Path) -> Album:
             title=_track_title(file, tags[file]),
             artist=tags[file].artist,
             duration=tags[file].duration,
+            extra=bool(EXTRA_MARKERS.search(_track_title(file, tags[file]))),
         )
         for index, file in enumerate(ordered, start=1)
     ]

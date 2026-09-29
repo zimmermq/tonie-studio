@@ -141,6 +141,31 @@ class TestTrackTitle:
         assert album.tracks[0].title == "Laing-muecken nerven leute"
 
 
+class TestExtraTracks:
+    def test_marks_a_karaoke_version(self, tmp_path, tags):
+        # Half of these albums are karaoke takes of their own first half.
+        directory = _album(tmp_path, "album", ["01-a.flac", "16-b.flac"])
+        tags["01-a.flac"] = TrackTags(title="Alle Kinder haben Tr\u00e4ume")
+        tags["16-b.flac"] = TrackTags(title="Alle Kinder haben Tr\u00e4ume (Karaoke Version)")
+
+        album = read_album(directory)
+
+        assert [track.extra for track in album.tracks] == [False, True]
+
+    def test_marks_an_instrumental_and_a_playback(self, tmp_path, tags):
+        directory = _album(tmp_path, "album", ["01-a.flac", "02-b.flac"])
+        tags["01-a.flac"] = TrackTags(title="Lied (Instrumental)")
+        tags["02-b.flac"] = TrackTags(title="Lied - Playback")
+
+        assert all(track.extra for track in read_album(directory).tracks)
+
+    def test_does_not_mark_a_title_that_merely_contains_the_letters(self, tmp_path, tags):
+        directory = _album(tmp_path, "album", ["01-a.flac"])
+        tags["01-a.flac"] = TrackTags(title="Karaokemaschine kaputt")
+
+        assert read_album(directory).tracks[0].extra is False
+
+
 class TestAlbumMetadata:
     def test_prefers_the_tags_over_the_folder_name(self, tmp_path, tags):
         directory = _album(tmp_path, "Lichterkinder-Gemeinsam-WEB-FLAC-2017-WALKMAN", ["01-a.flac"])
@@ -271,12 +296,46 @@ class TestListAlbums:
 
         assert found == {"one", "two/cd1"}
 
-    def test_counts_the_tracks_without_reading_tags(self, tmp_path, tags):
+    def test_counts_the_tracks_and_finds_the_cover(self, tmp_path, tags):
         _album(tmp_path, "one", ["01-a.flac", "02-b.flac", "cover.jpg"])
 
         summary = list_albums(tmp_path)[0]
 
         assert (summary.track_count, summary.has_cover) == (2, True)
+        assert summary.cover.name == "cover.jpg"
+
+    def test_describes_the_album_for_the_picker(self, tmp_path, tags):
+        # The picker shows a readable title, not the scene folder name, so the
+        # summary has to carry what the list renders.
+        _album(tmp_path, "Lichterkinder-Tanz- und Partylieder-WEB-FLAC-2021-WALKMAN", ["01-a.flac"])
+        tags["01-a.flac"] = TrackTags(
+            album="Tanz- und Partylieder", albumartist="Lichterkinder", date="2021-04-01",
+        )
+
+        summary = list_albums(tmp_path)[0]
+
+        assert (summary.title, summary.artist, summary.year) == (
+            "Tanz- und Partylieder", "Lichterkinder", "2021",
+        )
+
+    def test_reads_only_the_first_track_for_the_listing(self, tmp_path, tags):
+        # Sixteen albums must not mean five hundred tag reads on every page
+        # load, so the listing settles for what the first file says.
+        _album(tmp_path, "one", ["01-a.flac", "02-b.flac", "03-c.flac"])
+        tags["01-a.flac"] = TrackTags(album="Von Track eins", albumartist="Wer auch immer")
+
+        summary = list_albums(tmp_path)[0]
+
+        assert summary.title == "Von Track eins"
+
+    def test_falls_back_to_the_folder_name_when_nothing_is_tagged(self, tmp_path, tags):
+        _album(tmp_path, "Lichterkinder-Schlaflieder-WEB-FLAC-2021-WALKMAN", ["01-a.flac"])
+
+        summary = list_albums(tmp_path)[0]
+
+        assert (summary.title, summary.artist, summary.year) == (
+            "Schlaflieder", "Lichterkinder", "2021",
+        )
 
     def test_sorts_by_name(self, tmp_path, tags):
         _album(tmp_path, "beta", ["01-a.flac"])
@@ -305,6 +364,28 @@ class TestListAlbums:
         monkeypatch.setattr(Path, "iterdir", guarded)
 
         assert [summary.name for summary in list_albums(tmp_path)] == ["good"]
+
+
+class TestCheapListing:
+    def test_finds_the_same_albums_without_reading_tags(self, tmp_path, tags, monkeypatch):
+        # Resolving an id needs directory names only. Over a share, opening one
+        # file per album is what makes every cover request slow.
+        _album(tmp_path, "one", ["01-a.flac"])
+        _album(tmp_path, "two", ["01-a.flac"])
+
+        def refuse(path):
+            raise AssertionError("no tag read may happen here")
+
+        monkeypatch.setattr("tonie_studio.album._read_tags", refuse)
+        summaries = list_albums(tmp_path, describe=False)
+
+        assert [s.name for s in summaries] == ["one", "two"]
+
+    def test_gives_the_same_ids_either_way(self, tmp_path, tags):
+        _album(tmp_path, "one", ["01-a.flac"])
+
+        assert [s.id for s in list_albums(tmp_path, describe=False)] == \
+               [s.id for s in list_albums(tmp_path)]
 
 
 class TestAlbumId:

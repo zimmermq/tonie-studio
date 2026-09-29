@@ -7,9 +7,13 @@ from tonie_studio.encode import EncodeResult
 from tonie_studio.tonie import (
     MODEL_PREFIX,
     TonieError,
+    find_model,
+    find_model_by_audio,
     list_tags,
     next_model_id,
     publish,
+    remove_model,
+    update_model,
 )
 
 
@@ -181,3 +185,91 @@ def _record(log, label, original):
         log.append(label)
         return original(*args, **kwargs)
     return wrapper
+
+
+class TestUpdateModel:
+    def test_changes_the_description(self, teddycloud, encoded, cover):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Alt",
+                           episode="Alt", tracks=["A"], cover=cover)
+
+        update_model(teddycloud, model_id, series="Neu", episode="Neue Folge")
+
+        model = find_model(teddycloud, model_id)
+        assert (model["series"], model["episodes"]) == ("Neu", "Neue Folge")
+
+    def test_keeps_the_audio_identity(self, teddycloud, encoded):
+        # audio_id and hash are what lets teddyCloud recognise the taf.
+        # Renaming a title must not cost that.
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="Alt", episode="Alt", tracks=[])
+
+        update_model(teddycloud, model_id, series="Neu")
+
+        model = find_model(teddycloud, model_id)
+        assert model["audio_id"] == [448533926]
+        assert model["hash"] == ["0573B07756E60D8431E19C2C1194572E5F428B37"]
+
+    def test_replaces_the_cover(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        update_model(teddycloud, model_id, cover=b"neues-bild")
+
+        assert teddycloud.images[f"{model_id}.jpg"] == b"neues-bild"
+        assert find_model(teddycloud, model_id)["pic"] == f"/custom_img/{model_id}.jpg"
+
+    def test_leaves_untouched_what_was_not_named(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=["Eins", "Zwei"])
+
+        update_model(teddycloud, model_id, series="Neu")
+
+        assert find_model(teddycloud, model_id)["tracks"] == ["Eins", "Zwei"]
+
+    def test_refuses_a_model_that_is_not_there(self, teddycloud):
+        with pytest.raises(TonieError):
+            update_model(teddycloud, "TS-9999", series="x")
+
+
+class TestRemoveModel:
+    def test_deletes_it_and_unlinks_the_tag(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        remove_model(teddycloud, model_id, ruid="7ab4ed0e500304e0")
+
+        assert teddycloud.custom_tonies() == []
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"] == ""
+
+    def test_leaves_the_audio_on_the_tag(self, teddycloud, encoded):
+        # Only the cover and the names go; the tonie still plays.
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        remove_model(teddycloud, model_id, ruid="7ab4ed0e500304e0")
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == encoded.source
+
+
+class TestFindModelByAudio:
+    def test_finds_the_model_holding_the_same_recording(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        found = find_model_by_audio(teddycloud, encoded.audio_id, encoded.sha1)
+
+        assert found["model"] == model_id
+
+    def test_matches_whatever_case_the_hash_is_written_in(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H", tracks=[])
+
+        assert find_model_by_audio(teddycloud, encoded.audio_id, encoded.sha1.lower())
+
+    def test_needs_both_halves_to_agree(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H", tracks=[])
+
+        assert find_model_by_audio(teddycloud, 999, encoded.sha1) is None
+        assert find_model_by_audio(teddycloud, encoded.audio_id, "0" * 40) is None
+
+    def test_says_nothing_when_the_encode_carried_no_identity(self, teddycloud):
+        assert find_model_by_audio(teddycloud, None, None) is None

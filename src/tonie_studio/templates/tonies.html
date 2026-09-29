@@ -3,22 +3,71 @@
 
 {% block body %}
 <h1>Tonies</h1>
-<p class="sub">{{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt.</p>
+<p class="sub">
+  {{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt.
+  <span id="boxnote" class="muted"></span>
+</p>
 
+<div class="list">
 {% for tag in tags %}
-<div class="card row">
-  {% if tag.picture %}
-  <img class="cover" style="width:56px;height:56px" src="{{ teddycloud_url }}{{ tag.picture }}" alt="">
-  {% endif %}
-  <div class="grow truncate">
-    {% if tag.assigned %}<strong>{{ tag.label }}</strong>{% else %}<strong>frei</strong>{% endif %}
-    <div class="muted truncate">{{ tag.uid }}{% if tag.source %} - {{ tag.source }}{% endif %}</div>
-    {% if tag.model %}<div class="muted">Modell {{ tag.model }}</div>{% endif %}
+  <div class="album" id="tag-{{ tag.ruid }}">
+    {% if tag.model %}
+    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% else %}
+    <span class="noart" aria-hidden="true"></span>
+    {% endif %}
+    <a class="grow truncate" href="/tonies/{{ tag.ruid }}"
+       style="color: inherit; text-decoration: none">
+      <strong class="truncate">
+        {% if tag.assigned %}{{ tag.label }}{% else %}frei{% endif %}
+        <span class="onbox" hidden>auf der Box</span>
+      </strong>
+      <span class="muted truncate">
+        {{ tag.uid }}{% if tag.model %} &middot; {{ tag.model }} &middot; bearbeiten{% endif %}
+      </span>
+    </a>
   </div>
-</div>
 {% else %}
-<div class="card muted">teddyCloud kennt noch keinen Tag. Halte einen an die Box.</div>
+  <div class="album muted">teddyCloud kennt noch keinen Tag. Halte einen an die Box.</div>
 {% endfor %}
+</div>
 
-<p><a class="button" href="/">Zurueck zur Uebersicht</a></p>
+<p><a class="button" href="/">Zurueck zur Uebersicht</a>
+   <a class="button" href="/sheet" style="margin-left:8px">Blatt drucken</a></p>
+
+<script>
+  // The marker follows the box live: teddyCloud pushes the events, this only
+  // asks for the result. Polling every few seconds is plenty for something a
+  // person changes by hand.
+  const note = document.getElementById('boxnote');
+
+  async function refresh() {
+    let box;
+    try {
+      const response = await fetch('/api/box');
+      if (!response.ok) return schedule();
+      box = await response.json();
+    } catch (error) {
+      return schedule();
+    }
+
+    for (const marker of document.querySelectorAll('.onbox')) marker.hidden = true;
+    const row = box.ruid ? document.getElementById(`tag-${box.ruid}`) : null;
+
+    if (box.on_box && row) {
+      row.querySelector('.onbox').hidden = false;
+      note.textContent = box.playing ? '- spielt gerade' : '- ein Tonie liegt auf';
+    } else if (!box.connected) {
+      note.textContent = '- keine Verbindung zu teddyCloud';
+    } else if (box.stale) {
+      note.textContent = '- Box war lange nicht zu hoeren';
+    } else {
+      note.textContent = '- nichts auf der Box';
+    }
+    schedule();
+  }
+
+  function schedule() { setTimeout(refresh, 4000); }
+  refresh();
+</script>
 {% endblock %}

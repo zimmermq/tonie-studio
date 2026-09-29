@@ -28,6 +28,10 @@ class Settings:
     data_dir: Path
     overlay: Optional[str] = None
 
+    # How long a spooled upload is kept. Long enough to encode it again after
+    # a mistake, short enough that a few FLAC albums do not sit there forever.
+    upload_keep_days: int = 7
+
     @property
     def upload_dir(self) -> Path:
         return self.data_dir / "uploads"

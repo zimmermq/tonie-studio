@@ -9,6 +9,7 @@ import pytest
 from fake_teddycloud import FakeTeddyCloud
 from tonie_studio.encode import (
     STAGING_ROOT,
+    taf_exists,
     EncodeError,
     encode_files,
     library_path,
@@ -203,3 +204,103 @@ class TestLibraryPath:
     def test_refuses_an_empty_episode(self):
         with pytest.raises(EncodeError):
             library_path("Lichterkinder", "   ")
+
+
+class TestReplacing:
+    def test_reports_whether_a_taf_is_in_the_way(self, teddycloud):
+        teddycloud.files["/a.taf"] = b"older"
+
+        assert taf_exists(teddycloud, "/a.taf") is True
+        assert taf_exists(teddycloud, "/b.taf") is False
+
+    def test_replaces_the_old_taf_when_asked(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.files["/a.taf"] != b"older"
+
+    def test_still_refuses_without_being_asked(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+
+        with pytest.raises(EncodeError):
+            encode_files(teddycloud, sources, "/a.taf")
+
+        assert teddycloud.files["/a.taf"] == b"older"
+
+
+class TestEncodeProgress:
+    def test_reports_the_playing_time_rather_than_a_file_count(self, teddycloud, sources):
+        seen = []
+
+        encode_files(teddycloud, sources, "/a.taf",
+                     progress=lambda *args: seen.append(args), total_seconds=600)
+
+        assert seen[-1] == ("encode", 600, 600)
+
+    def test_turns_a_growing_taf_into_a_position(self, teddycloud):
+        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
+        import threading
+
+        teddycloud.files["/a.taf"] = b"x" * int(ENCODE_BYTES_PER_SECOND * 120)
+        seen = []
+        stop = threading.Event()
+
+        import tonie_studio.encode as encode_module
+        original = encode_module.GROWTH_POLL
+        encode_module.GROWTH_POLL = 0.01
+        try:
+            thread = threading.Thread(
+                target=_watch_growth,
+                args=(teddycloud, "/a.taf", 600.0, lambda *a: seen.append(a), stop))
+            thread.start()
+            _eventually(lambda: seen)
+            stop.set()
+            thread.join(2)
+        finally:
+            encode_module.GROWTH_POLL = original
+
+        assert seen[0] == ("encode", 120, 600)
+
+    def test_never_claims_to_be_finished(self, teddycloud):
+        # The encode says when it is done. A bar sitting at 100 percent while
+        # ffmpeg still runs is worse than one that stops a second short.
+        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
+        import threading
+
+        teddycloud.files["/a.taf"] = b"x" * int(ENCODE_BYTES_PER_SECOND * 9999)
+        seen = []
+        stop = threading.Event()
+
+        import tonie_studio.encode as encode_module
+        encode_module.GROWTH_POLL = 0.01
+        try:
+            thread = threading.Thread(
+                target=_watch_growth,
+                args=(teddycloud, "/a.taf", 600.0, lambda *a: seen.append(a), stop))
+            thread.start()
+            _eventually(lambda: seen)
+            stop.set()
+            thread.join(2)
+        finally:
+            encode_module.GROWTH_POLL = 3.0
+
+        assert seen[0] == ("encode", 599, 600)
+
+    def test_says_nothing_without_a_playing_time(self, teddycloud, sources):
+        seen = []
+
+        encode_files(teddycloud, sources, "/a.taf", progress=lambda *args: seen.append(args))
+
+        assert [step for step, _, _ in seen] == ["upload", "upload", "upload", "encode"]
+
+
+def _eventually(condition, timeout=3.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition never became true")

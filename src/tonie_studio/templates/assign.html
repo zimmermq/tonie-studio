@@ -5,17 +5,30 @@
 <h1>Auf welchen Tonie?</h1>
 <p class="sub">{{ result.encode.target }} - {{ result.encode.tracks }} Tracks</p>
 
-<div class="warn">
+<div class="warn" id="hint">
   Ein neuer NFC-Sticker taucht hier erst auf, nachdem die Toniebox ihn einmal gelesen hat.
-  Fehlt deiner in der Liste: kurz an die Box halten, dann diese Seite neu laden.
+  Fehlt deiner in der Liste: <strong>kurz an die Box halten</strong> - die Seite merkt es selbst.
 </div>
+
+{% if duplicate %}
+<div class="warn">
+  <strong>Dieses Audio gibt es schon:</strong>
+  {{ duplicate.series }}{% if duplicate.episodes %} - {{ duplicate.episodes }}{% endif %}
+  ({{ duplicate.model }}).<br>
+  Ein zweites Modell mit derselben Audio-Kennung streitet sich mit dem ersten darum, welchen
+  Namen teddyCloud einem Tag von selbst zuordnet. Wenn du denselben Inhalt auf einen zweiten
+  Tonie legen willst, ist das in Ordnung - dann bekommt er eben zwei Modelle.
+</div>
+{% endif %}
 
 <form method="post" action="/job/{{ job_id }}/assign">
   <div class="card">
     {% for tag in tags %}
     <label class="row" style="padding: 8px 0; border-bottom: 1px solid var(--line)">
-      <input type="radio" name="ruid" value="{{ tag.ruid }}" {% if loop.first %}checked{% endif %} required>
+      <input type="radio" name="ruid" value="{{ tag.ruid }}" required
+             {% if (preselect and tag.ruid == preselect) or (not preselect and loop.first) %}checked{% endif %}>
       <div class="grow truncate">
+        {% if preselect and tag.ruid == preselect %}<span class="onbox">gerade aufgelegt</span> {% endif %}
         {% if tag.assigned %}
           {{ tag.label }}
           <div class="muted">belegt - {{ tag.source }} - wird ueberschrieben</div>
@@ -58,4 +71,34 @@
   <p><button class="primary" type="submit">Tonie bespielen</button>
      <a href="/" style="margin-left:12px">Spaeter</a></p>
 </form>
+
+<script>
+  // A blank sticker reaches teddyCloud as a tag it does not know, which is
+  // exactly what the box reports when one is held against it. Waiting for that
+  // beats telling people to reload until it appears.
+  const known = new Set([...document.querySelectorAll('input[name=ruid]')].map(i => i.value));
+  const hint = document.getElementById('hint');
+
+  async function watch() {
+    let box;
+    try {
+      const response = await fetch('/api/box');
+      if (!response.ok) return setTimeout(watch, 4000);
+      box = await response.json();
+    } catch (error) {
+      return setTimeout(watch, 4000);
+    }
+
+    const fresh = box.unknown_ruid;
+    if (fresh && !known.has(fresh)) {
+      // teddyCloud files the tag the moment it reads it, so the list is one
+      // reload away from having it.
+      hint.textContent = 'Neuer Tag erkannt, Liste wird geladen ...';
+      window.location = `${window.location.pathname}?new=${encodeURIComponent(fresh)}`;
+      return;
+    }
+    setTimeout(watch, 3000);
+  }
+  watch();
+</script>
 {% endblock %}

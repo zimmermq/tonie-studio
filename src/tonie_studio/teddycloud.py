@@ -263,6 +263,12 @@ class TeddyCloudClient:
         except requests.RequestException as error:
             raise TeddyCloudError(f"teddyCloud at {self.base_url} is unreachable: {error}") from error
 
+        # teddyCloud serves UTF-8 throughout but declares no charset, and
+        # requests then falls back to the HTTP default of latin-1. Every umlaut
+        # in a file name, a series or an episode would arrive as mojibake, and
+        # a path built from it would no longer match the file on disk.
+        response.encoding = "utf-8"
+
         if not 200 <= response.status_code < 300:
             raise TeddyCloudError(
                 f"teddyCloud answered {response.status_code} for {path}: {response.text[:200]}"

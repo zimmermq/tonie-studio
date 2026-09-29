@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -45,6 +46,16 @@ UNSAFE = re.compile(r"[/\\\x00-\x1f]")
 # What a progress callback is handed: the step, how many of it are done, and of
 # how many.
 Progress = Callable[[str, int, int], None]
+
+# teddyCloud encodes Opus at `encode.bitrate`, which defaults to 96 kbit/s.
+# Measured across four tafs already in the library the real rate came out at
+# 92.9 to 97.4 kbit/s, so this is close enough to turn a growing file into a
+# position. It is an estimate and nothing depends on it being right.
+ENCODE_BYTES_PER_SECOND = 96_000 / 8
+
+# How often to look at the growing taf. teddyCloud reports nothing at all while
+# it encodes, so this is the only sign of life there is.
+GROWTH_POLL = 3.0
 
 
 class EncodeError(RuntimeError):
@@ -76,23 +87,45 @@ def library_path(series: str, episode: str) -> str:
     return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
 
 
+def taf_exists(client: TeddyCloudClient, target: str) -> bool:
+    """Whether a taf already sits at ``target``.
+
+    Asked before a job starts, so an occupied name is a question on the form
+    rather than a failure minutes later on the progress page.
+    """
+    return _find_entry(client, target) is not None
+
+
 def encode_files(
     client: TeddyCloudClient,
     sources: Sequence[Path],
     target: str,
     progress: Optional[Progress] = None,
+    replace: bool = False,
+    total_seconds: Optional[float] = None,
 ) -> EncodeResult:
     """Upload the sources, encode them into ``target``, and clear the staging area.
 
     The sources are encoded in the order given, one chapter each. Anything that
     can be refused is refused before the first byte is uploaded.
+
+    ``total_seconds`` is the playing time of the sources. Given it, the encode
+    reports a position by watching the taf grow; without it the bar simply
+    waits.
+
+    ``replace`` deletes an existing taf at the target first. Any tag pointing at
+    it plays nothing until the new one is written, so this is only ever done
+    because someone asked for it.
     """
     sources = list(sources)
     _check(sources, target)
 
     _ensure_parents(client, target)
     if _find_entry(client, target):
-        raise EncodeError(f"a taf already exists at {target}; rename or delete it first")
+        if not replace:
+            raise EncodeError(f"a taf already exists at {target}; rename or delete it first")
+        log.info("replacing the taf at %s", target)
+        client.delete(target, special="library")
 
     job = uuid.uuid4().hex[:12]
     staging = f"{STAGING_ROOT}/{job}"
@@ -108,8 +141,22 @@ def encode_files(
             staged.append(f"{staging}/{name}")
             _report(progress, "upload", index, len(sources))
 
-        client.encode(target, staged, special="library")
-        _report(progress, "encode", len(sources), len(sources))
+        # teddyCloud blocks for the whole encode and says nothing. Watching
+        # the target grow is the only way to show that something is happening;
+        # for a sixty track album that is minutes of otherwise dead screen.
+        stop = threading.Event()
+        if progress and total_seconds:
+            threading.Thread(
+                target=_watch_growth,
+                args=(client, target, float(total_seconds), progress, stop),
+                name="encode-progress", daemon=True,
+            ).start()
+        try:
+            client.encode(target, staged, special="library")
+        finally:
+            stop.set()
+        _report(progress, "encode", int(total_seconds or len(sources)),
+                int(total_seconds or len(sources)))
     finally:
         _remove_tree(client, staging)
 
@@ -248,6 +295,28 @@ def _same_name(left: Optional[str], right: str) -> bool:
     if left is None:
         return False
     return unicodedata.normalize("NFC", left) == unicodedata.normalize("NFC", right)
+
+
+def _watch_growth(
+    client: TeddyCloudClient,
+    target: str,
+    total_seconds: float,
+    progress: Progress,
+    stop: threading.Event,
+) -> None:
+    """Turn the growing taf into a position, until the encode finishes.
+
+    Never reports completion: the encode says when it is done. Stopping one
+    second short is honest, a bar that sits at 100 percent while ffmpeg is
+    still running is not.
+    """
+    while not stop.wait(GROWTH_POLL):
+        entry = _find_entry(client, target)
+        if entry is None:
+            continue
+        written = entry.get("size") or 0
+        done = min(written / ENCODE_BYTES_PER_SECOND, total_seconds - 1)
+        _report(progress, "encode", int(max(done, 0)), int(total_seconds))
 
 
 def _report(progress: Optional[Progress], step: str, done: int, total: int) -> None:

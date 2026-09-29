@@ -17,23 +17,31 @@ import logging
 import mimetypes
 import shutil
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Callable, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from .album import AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, list_albums, read_album
-from .encode import EncodeError, encode_files, library_path, remove_orphaned_staging
+from .album import (AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, cover_candidates,
+                     list_albums, read_album)
+from .boxstate import BoxWatcher
+from .encode import (EncodeError, encode_files, library_path, remove_orphaned_staging,
+                     taf_exists)
 from .jobs import JobRunner, JobState
 from .settings import Settings
-from .sheet import PER_PAGE, Sticker, build_sheet
+from .sheet import FILL, FIT, PER_PAGE, Sticker, build_sheet
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, list_tags, publish
+from .thumbnails import DEFAULT_SIZE, crop, thumbnail
+from .tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model,
+                    find_model_by_audio, list_tags, publish, remove_model, update_model)
+from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
 
@@ -46,20 +54,34 @@ UPLOAD = "u"
 # Where teddyCloud serves the covers of custom models.
 CUSTOM_IMG_PREFIX = "/custom_img/"
 
+# How long a scan of the archive stays good enough to reuse. One page load is
+# one listing plus a preview request per album, and on a network share each of
+# those walks costs more than rendering the page does. Short enough that an
+# album copied onto the share shows up on the next reload; an upload made here
+# clears it outright.
+CATALOGUE_TTL = 10.0
+
 
 def create_app(
     settings: Settings,
     client_factory: Optional[Callable[[], TeddyCloudClient]] = None,
     runner: Optional[JobRunner] = None,
+    watcher: Optional[BoxWatcher] = None,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES))
     jobs = runner or JobRunner()
+    box = watcher if watcher is not None else BoxWatcher(settings.teddycloud_url, settings.overlay)
 
     def client() -> TeddyCloudClient:
         if client_factory:
             return client_factory()
         return TeddyCloudClient(settings.teddycloud_url, overlay=settings.overlay)
+
+    def housekeeping() -> None:
+        """What an earlier run left lying about, in teddyCloud and on the volume."""
+        remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
+        clear_abandoned_staging()
 
     def clear_abandoned_staging() -> None:
         """Drop what an interrupted run left in teddyCloud's library.
@@ -81,10 +103,14 @@ def create_app(
         # Off the startup path on purpose. An unreachable teddyCloud answers
         # only after DNS timeouts and retries, and blocking here would hold the
         # readiness probe down for a service outage this app can survive.
-        cleanup = threading.Thread(target=clear_abandoned_staging,
-                                   name="staging-cleanup", daemon=True)
+        cleanup = threading.Thread(target=housekeeping,
+                                   name="housekeeping", daemon=True)
         cleanup.start()
-        yield
+        box.start()
+        try:
+            yield
+        finally:
+            box.stop()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
     app.state.settings = settings
@@ -108,9 +134,13 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
+        albums = _catalogue(settings)
         return templates.TemplateResponse(request, "index.html", {
-            "albums": _catalogue(settings),
+            "albums": albums,
+            "archive": [row for row in albums if row[2] == "archive"],
+            "uploads": [row for row in albums if row[2] == "upload"],
             "jobs": jobs.all()[:10],
+            "thumb_size": DEFAULT_SIZE,
         })
 
     @app.post("/upload")
@@ -129,32 +159,57 @@ def create_app(
             with (folder / Path(file.filename).name).open("wb") as target:
                 shutil.copyfileobj(file.file, target)
 
+        # The new folder has to show up at once, not in ten seconds.
+        _forget_catalogue()
         return RedirectResponse(f"/album/{UPLOAD}{album_id(settings.upload_dir, folder)}", 303)
 
-    @app.get("/album/{identifier}", response_class=HTMLResponse)
-    def album_page(request: Request, identifier: str):
-        album = read_album(_resolve(settings, identifier))
+    def _album_page(request: Request, identifier: str, album: Album, conflict: str = ""):
         return templates.TemplateResponse(request, "album.html", {
             "id": identifier,
             "album": album,
             "suggested_target": _suggest_target(album),
+            "conflict": conflict,
         })
 
+    @app.get("/album/{identifier}", response_class=HTMLResponse)
+    def album_page(request: Request, identifier: str):
+        return _album_page(request, identifier, read_album(_resolve(settings, identifier)))
+
     @app.get("/album/{identifier}/cover")
-    def cover(identifier: str, index: int = 0):
-        album = read_album(_resolve(settings, identifier))
-        if index >= len(album.cover_candidates):
+    def cover(identifier: str, index: int = 0, size: int = 0):
+        """The album's cover, full size or as a square preview.
+
+        The picker asks for a size; sixteen full covers would be two megabytes
+        of JPEG to draw pictures the size of a stamp.
+        """
+        candidates = cover_candidates(_resolve(settings, identifier))
+        if index >= len(candidates):
             raise HTTPException(404, "No cover image here.")
-        return FileResponse(album.cover_candidates[index])
+
+        path = candidates[index]
+        if not size:
+            return FileResponse(path)
+
+        preview = thumbnail(path, size)
+        if preview is None:
+            raise HTTPException(404, "That cover cannot be read.")
+        return Response(preview, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, max-age=3600"})
 
     @app.post("/album/{identifier}/encode")
     def start_encode(
+        request: Request,
         identifier: str,
         series: str = Form(""),
         episode: str = Form(...),
         order: str = Form(""),
         selected: List[int] = Form(default=[]),
         titles: List[str] = Form(default=[]),
+        replace: str = Form(""),
+        cover_index: int = Form(0),
+        cover_zoom: float = Form(1.0),
+        cover_x: float = Form(0.0),
+        cover_y: float = Form(0.0),
     ):
         album = read_album(_resolve(settings, identifier))
         chosen = _chosen_tracks(album, order, selected, titles)
@@ -166,18 +221,35 @@ def create_app(
         except EncodeError as error:
             raise HTTPException(400, str(error)) from error
 
+        # Asked here rather than inside the job: an occupied name is a question
+        # to answer on the form, not a failure minutes later on a progress page.
+        overwrite = replace == target
+        if not overwrite and taf_exists(client(), target):
+            return _album_page(request, identifier, album, conflict=target)
+
         paths = [track.path for track, _name in chosen]
         names = [name for _track, name in chosen]
         connection = client()
 
-        cover = str(album.cover) if album.cover else None
+        # The cover is decided here, on the page that shows the album, and
+        # carried to the model step as the picture it will actually be: a
+        # square already cropped the way the round sticker will cut it.
+        chosen_cover = (album.cover_candidates[cover_index]
+                        if 0 <= cover_index < len(album.cover_candidates) else None)
+        cover = str(chosen_cover) if chosen_cover else None
+
+        # The playing time turns the encode from a dead bar into a position;
+        # teddyCloud itself reports nothing while ffmpeg runs.
+        playing_time = sum(track.duration or 0 for track, _name in chosen) or None
 
         def work(progress):
-            result = encode_files(connection, paths, target, progress=progress)
+            result = encode_files(connection, paths, target, progress=progress,
+                                  replace=overwrite, total_seconds=playing_time)
             # Carried along for the tag and model steps, which need the names a
             # person approved rather than the ones that were guessed.
             return {"encode": result, "series": series, "episode": episode,
-                    "tracks": names, "cover": cover}
+                    "tracks": names, "cover": cover,
+                    "crop": {"zoom": cover_zoom, "x": cover_x, "y": cover_y}}
 
         return RedirectResponse(f"/job/{jobs.submit('encode', target, work)}", 303)
 
@@ -189,13 +261,26 @@ def create_app(
         return templates.TemplateResponse(request, "job.html", {"job": job})
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
-    def assign_page(request: Request, job_id: str):
+    def assign_page(request: Request, job_id: str, new: str = ""):
         result = _finished_result(jobs, job_id)
+        connection = client()
+        tags = list_tags(connection)
+        encoded = result["encode"]
+        # Two models holding the same audio_id and hash describe the same
+        # recording, and they would fight each other for teddyCloud's automatic
+        # matching. Worth saying before a second one is made.
+        duplicate = find_model_by_audio(connection, encoded.audio_id, encoded.sha1)
+        # `new` comes back from the page after the box read a tag teddyCloud
+        # did not know; it is only honoured once that tag is really in the
+        # index, so a stale link cannot preselect something that is not there.
+        preselect = new if any(tag.ruid == new for tag in tags) else ""
         return templates.TemplateResponse(request, "assign.html", {
             "job_id": job_id,
             "result": result,
-            "tags": list_tags(client()),
+            "tags": tags,
             "categories": CATEGORIES,
+            "preselect": preselect,
+            "duplicate": duplicate,
         })
 
     @app.post("/job/{job_id}/assign")
@@ -207,7 +292,6 @@ def create_app(
         category: str = Form(DEFAULT_CATEGORY),
     ):
         result = _finished_result(jobs, job_id)
-        cover = result.get("cover")
         try:
             publish(
                 client(),
@@ -216,7 +300,7 @@ def create_app(
                 series=series,
                 episode=episode,
                 tracks=result["tracks"],
-                cover=Path(cover) if cover else None,
+                cover=_cropped_cover(result),
                 category=category,
             )
         except TonieError as error:
@@ -227,7 +311,76 @@ def create_app(
     def tonies(request: Request):
         return templates.TemplateResponse(request, "tonies.html", {
             "tags": list_tags(client()),
-            "teddycloud_url": settings.teddycloud_url,
+            "box": box.state,
+        })
+
+    @app.get("/tonies/{ruid}", response_class=HTMLResponse)
+    def tonie_page(request: Request, ruid: str):
+        connection = client()
+        tag = next((candidate for candidate in list_tags(connection)
+                    if candidate.ruid == ruid), None)
+        if tag is None:
+            raise HTTPException(404, "teddyCloud does not know that tag.")
+        return templates.TemplateResponse(request, "tonie.html", {
+            "tag": tag,
+            "model": find_model(connection, tag.model) if tag.model else None,
+            "categories": CATEGORIES,
+        })
+
+    @app.post("/tonies/{ruid}")
+    async def edit_tonie(
+        request: Request,
+        ruid: str,
+        series: str = Form(""),
+        episode: str = Form(""),
+        category: str = Form(DEFAULT_CATEGORY),
+        cover: Optional[UploadFile] = File(None),
+    ):
+        connection = client()
+        tag = next((candidate for candidate in list_tags(connection)
+                    if candidate.ruid == ruid), None)
+        if tag is None or not tag.model:
+            raise HTTPException(404, "That tag has no model to edit.")
+
+        picture = None
+        suffix = "jpg"
+        if cover is not None and _is_image_name(cover.filename):
+            picture = cover.file.read()
+            suffix = Path(cover.filename).suffix.lstrip(".") or "jpg"
+
+        try:
+            update_model(connection, tag.model, series=series, episode=episode,
+                         category=category, cover=picture, cover_name=suffix)
+        except TonieError as error:
+            raise HTTPException(400, str(error)) from error
+        return RedirectResponse("/tonies", 303)
+
+    @app.post("/tonies/{ruid}/delete")
+    def delete_tonie(ruid: str):
+        """Drop the model. The tag keeps its audio and goes on playing."""
+        connection = client()
+        tag = next((candidate for candidate in list_tags(connection)
+                    if candidate.ruid == ruid), None)
+        if tag is None or not tag.model:
+            raise HTTPException(404, "That tag has no model to remove.")
+        remove_model(connection, tag.model, ruid=ruid)
+        return RedirectResponse("/tonies", 303)
+
+    @app.get("/api/box")
+    def box_state():
+        """What is on the box, for the page to poll."""
+        state = box.state
+        return JSONResponse({
+            "ruid": state.ruid if state.known else None,
+            "on_box": state.on_box and state.known,
+            "playing": state.playing and state.known,
+            "since": state.since.isoformat() if state.since and state.known else None,
+            "stale": state.stale,
+            "connected": state.connected,
+            # A tag teddyCloud does not know: a fresh sticker, just held
+            # against the box. The assignment page waits for this.
+            "unknown_ruid": state.unknown_ruid,
+            "unknown_since": state.unknown_since.isoformat() if state.unknown_since else None,
         })
 
     @app.get("/cover/custom/{name}")
@@ -246,19 +399,37 @@ def create_app(
             raise HTTPException(502, str(error)) from error
         return Response(data, media_type=mimetypes.guess_type(name)[0] or "image/jpeg")
 
+    @app.get("/album/{identifier}/crop")
+    def crop_preview(identifier: str, index: int = 0, zoom: float = 1.0,
+                     x: float = 0.0, y: float = 0.0, size: int = 256):
+        """The cover as the round sticker will cut it."""
+        candidates = cover_candidates(_resolve(settings, identifier))
+        if index >= len(candidates):
+            raise HTTPException(404, "No cover image here.")
+        rendered = crop(candidates[index], zoom, x, y, max(32, min(size, 800)))
+        if rendered is None:
+            raise HTTPException(404, "That cover cannot be read.")
+        return Response(rendered, media_type="image/jpeg")
+
     @app.get("/sheet", response_class=HTMLResponse)
     def sheet_page(request: Request):
         return templates.TemplateResponse(request, "sheet.html", {
             "models": _printable_models(client()),
             "per_page": PER_PAGE,
+            "fill": FILL,
+            "fit": FIT,
         })
 
     @app.post("/sheet")
     def sheet(
         models: List[str] = Form(default=[]),
         counts: List[int] = Form(default=[]),
+        modes: List[str] = Form(default=[]),
         files: List[UploadFile] = Form(default=[]),
+        upload_mode: str = Form(FILL),
     ):
+        # models, counts and modes are three parallel lists in row order, the
+        # same shape the album page uses for its tracks.
         connection = client()
         stickers = []
 
@@ -269,12 +440,15 @@ def create_app(
             picture = _model_picture(connection, model)
             if picture is None:
                 continue
-            stickers.append(Sticker(image=picture, count=count, label=model))
+            mode = modes[position] if position < len(modes) else FILL
+            stickers.append(Sticker(image=picture, count=count, label=model,
+                                    mode=FIT if mode == FIT else FILL))
 
         for upload_file in files:
             if _is_image_name(upload_file.filename):
                 stickers.append(Sticker(image=upload_file.file.read(),
-                                        label=upload_file.filename or "upload"))
+                                        label=upload_file.filename or "upload",
+                                        mode=FIT if upload_mode == FIT else FILL))
 
         if not stickers:
             raise HTTPException(400, "Nothing selected to print.")
@@ -345,6 +519,24 @@ def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:
     return None
 
 
+def _cropped_cover(result: Dict) -> Optional[bytes]:
+    """The album cover, cut the way the album page showed it.
+
+    Cropping here rather than at print time means what teddyCloud displays and
+    what comes out of the printer are the same picture.
+    """
+    cover = result.get("cover")
+    if not cover:
+        return None
+    crop_settings = result.get("crop") or {}
+    return crop(
+        Path(cover),
+        zoom=crop_settings.get("zoom", 1.0),
+        offset_x=crop_settings.get("x", 0.0),
+        offset_y=crop_settings.get("y", 0.0),
+    )
+
+
 def _finished_result(jobs: JobRunner, job_id: str) -> Dict:
     """The result of a finished encode, or a refusal explaining which it is not."""
     job = jobs.get(job_id)
@@ -355,23 +547,62 @@ def _finished_result(jobs: JobRunner, job_id: str) -> Dict:
     return job.result
 
 
-def _catalogue(settings: Settings) -> List[Tuple[str, AlbumSummary, str]]:
-    """Every album on offer, as (id, summary, where it came from)."""
+# Keyed by the directories scanned, not only by `describe`: two apps in one
+# process - which is every test run - must not hand each other their archives.
+_catalogue_cache: Dict[Tuple, Tuple[float, List[Tuple[str, AlbumSummary, str]]]] = {}
+_catalogue_lock = Lock()
+
+
+def _forget_catalogue() -> None:
+    with _catalogue_lock:
+        _catalogue_cache.clear()
+
+
+def _catalogue(
+    settings: Settings, describe: bool = True,
+) -> List[Tuple[str, AlbumSummary, str]]:
+    """Cached front for _scan_albums; see CATALOGUE_TTL."""
+    key = (str(settings.archive_dir), str(settings.upload_dir), describe)
+    now = time.monotonic()
+    with _catalogue_lock:
+        cached = _catalogue_cache.get(key)
+        if cached and now - cached[0] < CATALOGUE_TTL:
+            return cached[1]
+
+    scanned = _scan_albums(settings, describe)
+    with _catalogue_lock:
+        _catalogue_cache[key] = (now, scanned)
+    return scanned
+
+
+def _scan_albums(
+    settings: Settings, describe: bool = True,
+) -> List[Tuple[str, AlbumSummary, str]]:
+    """Every album on offer, as (id, summary, where it came from).
+
+    Uploads come first: what was just added is what someone is looking for.
+    """
     entries = []
     for prefix, root, origin in (
-        (ARCHIVE, settings.archive_dir, "archive"),
         (UPLOAD, settings.upload_dir, "upload"),
+        (ARCHIVE, settings.archive_dir, "archive"),
     ):
         if not root.is_dir():
             continue
-        for summary in list_albums(root):
+        for summary in list_albums(root, describe=describe):
             entries.append((f"{prefix}{summary.id}", summary, origin))
     return entries
 
 
 def _resolve(settings: Settings, identifier: str) -> Path:
-    """Find the folder an album id names, or refuse."""
-    for candidate_id, summary, _origin in _catalogue(settings):
+    """Find the folder an album id names, or refuse.
+
+    Deliberately without the descriptions: the picker draws one preview per
+    album, and each of those requests lands here. Reading every album's tags
+    again for each of them turned a page load into seconds of network file
+    opens.
+    """
+    for candidate_id, summary, _origin in _catalogue(settings, describe=False):
         if candidate_id == identifier:
             return summary.path
     raise HTTPException(404, "That album is not there any more.")

@@ -8,7 +8,7 @@
 <div class="card">
   <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
   <p class="muted" id="detail" style="margin-bottom:0">
-    {% if job.step %}{{ job.step }} {{ job.done_count }}/{{ job.total }}{% else %}wird vorbereitet{% endif %}
+    <span id="detailtext">{% if job.step %}{{ job.step }} {{ job.done_count }}/{{ job.total }}{% else %}wird vorbereitet{% endif %}</span>
   </p>
 </div>
 
@@ -29,6 +29,20 @@
   const outcome = document.getElementById('outcome');
   const message = document.getElementById('message');
 
+  // The encode counts in seconds of audio, the uploads in files. Showing
+  // "encode 312/4917" would be true and useless.
+  function describe(data) {
+    if (!data.step) return 'wird vorbereitet';
+    if (data.step === 'upload') return `Track ${data.done} von ${data.total} hochgeladen`;
+    if (data.step === 'encode') {
+      const mins = value => Math.round(value / 60);
+      return data.total > 90
+        ? `encodiert, etwa ${mins(data.done)} von ${mins(data.total)} Minuten`
+        : 'wird encodiert';
+    }
+    return `${data.step} ${data.done}/${data.total}`;
+  }
+
   async function poll() {
     let data;
     try {
@@ -42,8 +56,7 @@
 
     state.textContent = data.state;
     fill.style.width = (data.percent ?? 0) + '%';
-    detail.textContent = data.step
-      ? `${data.step} ${data.done}/${data.total}` : 'wird vorbereitet';
+    detail.textContent = describe(data);
 
     if (data.state === 'done' || data.state === 'failed') {
       outcome.hidden = false;

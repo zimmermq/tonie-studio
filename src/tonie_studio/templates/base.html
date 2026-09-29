@@ -59,6 +59,67 @@
   .state-done { color: var(--ok); }
   .state-failed { color: var(--bad); }
   img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; }
+
+  /* The album picker: one dense row per album, cover first. Sixteen cards with
+     16px of padding each meant scrolling three screens to see the archive. */
+  .searchbar { display: flex; gap: 12px; align-items: center; margin: 20px 0 10px; }
+  .searchbar input {
+    font: inherit; flex: 1; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  }
+  .list {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden;
+  }
+  a.album {
+    display: flex; gap: 12px; align-items: center; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); color: inherit; text-decoration: none;
+  }
+  a.album:last-child { border-bottom: 0; }
+  a.album:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  a.album img, a.album .noart {
+    width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none;
+  }
+  a.album .noart, .album .noart { background: var(--line); }
+  .list .album { display: flex; gap: 12px; align-items: center; padding: 8px 12px;
+                 border-bottom: 1px solid var(--line); }
+  .list .album:last-child { border-bottom: 0; }
+  .list .album img, .list .album .noart {
+    width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none;
+  }
+  .list .album strong, .list .album .muted { display: block; font-weight: 600; }
+  .list .album .muted { font-weight: 400; }
+  /* The sticker preview mirrors what the PDF does: a 46 mm circle, the cover
+     either filling it or inset on a blurred copy of itself. */
+  .preview {
+    position: relative; width: 46px; height: 46px; border-radius: 50%;
+    overflow: hidden; flex: none; background: var(--line);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .preview .bg, .preview .fg {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+  }
+  .preview .bg { display: none; }
+  .preview.is-fit .bg { display: block; filter: blur(4px); transform: scale(1.3); }
+  .preview.is-fit .fg { inset: 15%; }
+
+  img.pick {
+    width: 40px; height: 40px; object-fit: cover; border-radius: 6px;
+    cursor: pointer; opacity: .45; border: 2px solid transparent;
+  }
+  img.pick.chosen { opacity: 1; border-color: var(--accent); }
+  input[type=range] { accent-color: var(--accent); }
+
+  .onbox {
+    font-weight: 600; font-size: 12px; margin-left: 8px; padding: 1px 7px;
+    border-radius: 99px; background: var(--accent); color: var(--card);
+    vertical-align: 1px;
+  }
+  a.album strong, a.album .muted { display: block; font-weight: 600; }
+  a.album .muted { font-weight: 400; }
+
+  /* A file input cannot be styled, so the label is the button. */
+  label.button { display: inline-block; }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #17150f; --card: #211e18; --ink: #ece7dd; --muted: #a09889;

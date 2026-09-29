@@ -14,10 +14,45 @@
 <div class="warn">{{ warning }}</div>
 {% endfor %}
 
+{% if conflict %}
+<div class="warn">
+  <strong>Dort liegt schon ein Taf:</strong> <code>{{ conflict }}</code><br>
+  Waehle einen anderen Namen, oder ersetze es. Beim Ersetzen spielt ein Tonie, der darauf
+  zeigt, so lange nichts, bis das neue Taf fertig ist.
+</div>
+{% endif %}
+
 <form method="post" action="/album/{{ id }}/encode" id="form">
   <div class="card row" style="align-items: flex-start">
     {% if album.cover_candidates %}
-    <img class="cover" src="/album/{{ id }}/cover" alt="Cover">
+    <div style="flex: none">
+      <!-- The sticker is round and the cover square, so something is always
+           cut. The preview shows exactly what, and the sliders decide it. -->
+      <span class="preview" id="cover" style="width: 120px; height: 120px">
+        <span class="fg" id="coverimg"></span>
+      </span>
+      <input type="hidden" name="cover_index" id="cover_index" value="0">
+      <label class="field" style="margin: 8px 0 0">
+        <span>Ausschnitt</span>
+        <input type="range" name="cover_zoom" id="zoom" min="1" max="2.5" step="0.05" value="1"
+               style="width: 120px">
+      </label>
+      <div class="row" style="gap: 6px">
+        <input type="range" name="cover_x" id="cx" min="-1" max="1" step="0.05" value="0"
+               style="width: 56px" aria-label="waagerecht">
+        <input type="range" name="cover_y" id="cy" min="-1" max="1" step="0.05" value="0"
+               style="width: 56px" aria-label="senkrecht">
+      </div>
+      {% if album.cover_candidates | length > 1 %}
+      <div class="row" style="gap: 6px; margin-top: 8px; flex-wrap: wrap">
+        {% for candidate in album.cover_candidates %}
+        <img class="pick {% if loop.first %}chosen{% endif %}" data-index="{{ loop.index0 }}"
+             src="/album/{{ id }}/cover?index={{ loop.index0 }}&size=64"
+             alt="{{ candidate.name }}" title="{{ candidate.name }}">
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
     {% endif %}
     <div class="grow">
       <label class="field">
@@ -33,11 +68,20 @@
 
   <h2>Tracks</h2>
   <div class="card">
+    <p class="row" style="gap: 8px; flex-wrap: wrap; margin-top: 0">
+      <button type="button" class="small" data-pick="all">alle</button>
+      <button type="button" class="small" data-pick="none">keine</button>
+      {% if album.tracks | selectattr('extra') | list %}
+      <button type="button" class="small" data-pick="main">ohne Karaoke</button>
+      {% endif %}
+      <span class="muted grow" id="chosen"></span>
+    </p>
     <input type="hidden" name="order" id="order" value="{{ album.tracks | map(attribute='number') | join(',') }}">
     <ol class="tracks" id="tracks">
       {% for track in album.tracks %}
-      <li data-number="{{ track.number }}">
-        <input type="checkbox" name="selected" value="{{ track.number }}" checked>
+      <li data-number="{{ track.number }}" data-extra="{{ 'yes' if track.extra else 'no' }}">
+        <input type="checkbox" name="selected" value="{{ track.number }}"
+               {% if not track.extra %}checked{% endif %}>
         <span class="muted" style="width: 2em; text-align: right">{{ loop.index }}</span>
         <input type="text" name="titles" value="{{ track.title }}" class="grow">
         <button type="button" class="small" data-move="up">&uarr;</button>
@@ -48,10 +92,46 @@
   </div>
 
   <p><button class="primary" type="submit">Taf erzeugen</button>
+     {% if conflict %}
+     <button type="submit" name="replace" value="{{ conflict }}">Vorhandenes ersetzen</button>
+     {% endif %}
      <a href="/" style="margin-left:12px">Abbrechen</a></p>
 </form>
 
 <script>
+  // The preview mirrors what the server will render: the cover scaled inside
+  // the circle and shifted, with the same arithmetic on both sides so what is
+  // seen here is what ends up on the sticker.
+  const coverimg = document.getElementById('coverimg');
+  if (coverimg) {
+    const zoom = document.getElementById('zoom');
+    const cx = document.getElementById('cx');
+    const cy = document.getElementById('cy');
+    const index = document.getElementById('cover_index');
+
+    function paint() {
+      const z = +zoom.value;
+      coverimg.style.backgroundImage =
+        `url("/album/{{ id }}/cover?index=${index.value}&size=512")`;
+      coverimg.style.backgroundSize = `${z * 100}% ${z * 100}%`;
+      // A background position of 0% shows the left edge, 100% the right one,
+      // which is the same window the server crops: offset -1 is the left edge.
+      coverimg.style.backgroundPosition =
+        `${(1 + (+cx.value)) * 50}% ${(1 + (+cy.value)) * 50}%`;
+    }
+
+    [zoom, cx, cy].forEach(slider => slider.addEventListener('input', paint));
+    document.querySelectorAll('img.pick').forEach(pick => {
+      pick.addEventListener('click', () => {
+        document.querySelectorAll('img.pick').forEach(p => p.classList.remove('chosen'));
+        pick.classList.add('chosen');
+        index.value = pick.dataset.index;
+        paint();
+      });
+    });
+    paint();
+  }
+
   // Reordering happens in the DOM; the hidden field is rewritten from it on
   // submit. Without scripting the field keeps the album's own order, so the
   // form still works.
@@ -68,6 +148,30 @@
       ? list.insertBefore(item, sibling) : list.insertBefore(sibling, item);
     renumber();
   });
+
+  // Karaoke takes arrive unticked: half of these albums are a second pass of
+  // their own first half, and nobody wants both on one tonie.
+  const boxes = () => [...list.querySelectorAll('input[type=checkbox]')];
+  const chosen = document.getElementById('chosen');
+
+  function recount() {
+    const n = boxes().filter(box => box.checked).length;
+    chosen.textContent = `${n} von ${boxes().length} ausgewaehlt`;
+  }
+
+  document.querySelectorAll('button[data-pick]').forEach(button => {
+    button.addEventListener('click', () => {
+      for (const item of list.children) {
+        const box = item.querySelector('input[type=checkbox]');
+        box.checked = button.dataset.pick === 'all'
+          || (button.dataset.pick === 'main' && item.dataset.extra === 'no');
+      }
+      recount();
+    });
+  });
+
+  list.addEventListener('change', recount);
+  recount();
 
   function renumber() {
     [...list.children].forEach((item, index) => {

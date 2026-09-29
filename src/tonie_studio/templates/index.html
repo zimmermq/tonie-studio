@@ -1,8 +1,26 @@
 {% extends "base.html" %}
 
+{% macro album_row(id, album) -%}
+<a class="album" href="/album/{{ id }}"
+   data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}">
+  {% if album.has_cover %}
+  <img src="/album/{{ id }}/cover?size={{ thumb_size }}" alt="" loading="lazy">
+  {% else %}
+  <span class="noart" aria-hidden="true"></span>
+  {% endif %}
+  <span class="grow truncate">
+    <strong class="truncate">{{ album.title or album.name }}</strong>
+    <span class="muted truncate">
+      {{- album.artist or "Verschiedene" }}{% if album.year %} &middot; {{ album.year }}{% endif %}
+      &middot; {{ album.track_count }} Tracks
+      {%- if not album.has_cover %} &middot; kein Cover{% endif -%}
+    </span>
+  </span>
+</a>
+{%- endmacro %}
+
 {% block body %}
 <h1>Album auswaehlen</h1>
-<p class="sub">{{ albums|length }} Alben gefunden.</p>
 
 {% if jobs %}
 <h2>Laeuft gerade</h2>
@@ -18,32 +36,17 @@
 {% endfor %}
 {% endif %}
 
-<h2>Aus dem Archiv</h2>
-{% for id, album, origin in albums %}
-  {% if origin == 'archive' %}
-  <div class="card row">
-    <div class="grow truncate">
-      <a href="/album/{{ id }}">{{ album.name }}</a>
-      <div class="muted">{{ album.track_count }} Tracks{% if not album.has_cover %} - kein Cover{% endif %}</div>
-    </div>
-  </div>
-  {% endif %}
-{% else %}
-<div class="card muted">Nichts im Archiv gefunden.</div>
-{% endfor %}
-
-{% set uploads = albums | selectattr('2', 'equalto', 'upload') | list %}
-{% if uploads %}
-<h2>Hochgeladen</h2>
-{% for id, album, origin in uploads %}
-<div class="card row">
-  <div class="grow truncate">
-    <a href="/album/{{ id }}">{{ album.name }}</a>
-    <div class="muted">{{ album.track_count }} Tracks{% if not album.has_cover %} - kein Cover{% endif %}</div>
-  </div>
+<div class="searchbar">
+  <input type="search" id="search" placeholder="Album, Interpret oder Jahr suchen"
+         autocomplete="off" aria-label="Alben durchsuchen">
+  <span class="muted" id="count">{{ albums | length }} Alben</span>
 </div>
-{% endfor %}
-{% endif %}
+
+<div class="list" id="albums">
+  {% for id, album, origin in uploads %}{{ album_row(id, album) }}{% endfor %}
+  {% for id, album, origin in archive %}{{ album_row(id, album) }}{% endfor %}
+</div>
+<p class="muted" id="nohits" hidden>Kein Album passt dazu.</p>
 
 <h2>Hochladen</h2>
 <div class="card">
@@ -51,17 +54,62 @@
     Fuer Alben, die nicht auf dem Server liegen. Bilder duerfen mit dabei sein, das erste
     davon wird als Cover genommen.
   </p>
-  <form method="post" action="/upload" enctype="multipart/form-data" class="row"
-        style="gap: 10px; flex-wrap: wrap">
-    <!-- webkitdirectory picks a whole album folder in one go; a 60 track
-         release is otherwise 60 clicks in the file dialog. -->
-    <input type="file" name="files" webkitdirectory directory multiple required>
-    <button class="primary" type="submit">Ordner hochladen</button>
-  </form>
-  <form method="post" action="/upload" enctype="multipart/form-data" class="row"
-        style="gap: 10px; flex-wrap: wrap; margin-top: 12px">
-    <input type="file" name="files" multiple required>
-    <button type="submit">Einzelne Dateien</button>
+  <form method="post" action="/upload" enctype="multipart/form-data" id="upload">
+    <div class="row" style="flex-wrap: wrap; gap: 10px">
+      <!-- A file input cannot be styled, so it is hidden behind a label that
+           can be. webkitdirectory picks a whole album folder at once; a 60
+           track release is otherwise 60 clicks in the dialog. -->
+      <label class="button">Ordner waehlen
+        <input type="file" name="files" webkitdirectory directory multiple hidden>
+      </label>
+      <label class="button">Einzelne Dateien
+        <input type="file" name="files" multiple hidden>
+      </label>
+      <span class="muted grow truncate" id="picked">nichts ausgewaehlt</span>
+      <button class="primary" type="submit" id="send" disabled>Hochladen</button>
+    </div>
   </form>
 </div>
+
+<script>
+  // Filtering happens over the rendered rows. At sixteen albums a round trip
+  // per keystroke would be slower than the browser is; if the archive ever
+  // grows to hundreds, this becomes a server-side filter.
+  const search = document.getElementById('search');
+  const rows = [...document.querySelectorAll('#albums .album')];
+  const count = document.getElementById('count');
+  const nohits = document.getElementById('nohits');
+
+  search.addEventListener('input', () => {
+    const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const row of rows) {
+      const hit = terms.every(term => row.dataset.search.includes(term));
+      row.hidden = !hit;
+      if (hit) shown++;
+    }
+    count.textContent = shown === rows.length
+      ? `${rows.length} Alben` : `${shown} von ${rows.length}`;
+    nohits.hidden = shown > 0;
+  });
+
+  // Without a word on what was picked, choosing a folder of 60 files looks
+  // like nothing happened at all.
+  const form = document.getElementById('upload');
+  const picked = document.getElementById('picked');
+  const send = document.getElementById('send');
+
+  form.addEventListener('change', event => {
+    const input = event.target;
+    if (input.type !== 'file') return;
+    for (const other of form.querySelectorAll('input[type=file]')) {
+      if (other !== input) other.value = '';
+    }
+    const files = [...input.files];
+    if (!files.length) return;
+    const bytes = files.reduce((sum, file) => sum + file.size, 0);
+    picked.textContent = `${files.length} Dateien, ${(bytes / 1048576).toFixed(0)} MB`;
+    send.disabled = false;
+  });
+</script>
 {% endblock %}

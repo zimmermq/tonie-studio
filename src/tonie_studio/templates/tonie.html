@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ tag.label }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ tag.label }}</h1>
+<p class="sub">{{ tag.uid }}{% if tag.source %} &middot; {{ tag.source }}{% endif %}</p>
+
+{% if not model %}
+<div class="warn">
+  Dieser Tag hat kein eigenes Modell - es gibt also nichts zu bearbeiten. Bespiele ihn ueber
+  ein Album, dann bekommt er Cover und Tracknamen.
+</div>
+<p><a class="button" href="/tonies">Zurueck</a></p>
+{% else %}
+
+<form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data">
+  <div class="card row" style="align-items: flex-start">
+    {% if tag.picture %}
+    <img class="cover" src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="Cover">
+    {% endif %}
+    <div class="grow">
+      <label class="field">
+        <span>Serie</span>
+        <input type="text" name="series" value="{{ model.series }}">
+      </label>
+      <label class="field">
+        <span>Folge</span>
+        <input type="text" name="episode" value="{{ model.episodes }}">
+      </label>
+      <label class="field">
+        <span>Kategorie</span>
+        <select name="category" style="font: inherit; padding: 7px 10px">
+          {% for entry in categories %}
+          <option value="{{ entry }}" {% if entry == model.category %}selected{% endif %}>{{ entry }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field" style="margin-bottom: 0">
+        <span>Cover ersetzen</span>
+        <label class="button">Bild waehlen<input type="file" name="cover" accept="image/*" hidden></label>
+      </label>
+    </div>
+  </div>
+
+  {% if model.tracks %}
+  <h2>Tracks</h2>
+  <div class="card muted">
+    {% for track in model.tracks %}{{ loop.index }}. {{ track }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <p><button class="primary" type="submit">Speichern</button>
+     <a href="/tonies" style="margin-left:12px">Abbrechen</a></p>
+</form>
+
+<h2>Modell entfernen</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    Loescht Cover, Serie, Folge und Tracknamen. <strong>Der Tonie spielt weiter</strong> - das
+    Audio haengt am Tag, nicht am Modell.
+  </p>
+  <form method="post" action="/tonies/{{ tag.ruid }}/delete">
+    <button type="submit">{{ model.model }} loeschen</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

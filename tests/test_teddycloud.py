@@ -293,6 +293,34 @@ class TestOverlay:
         assert request_mock.call_args.kwargs["params"] == {}
 
 
+class TestEncoding:
+    def test_reads_umlauts_as_utf8_whatever_the_header_says(self, client):
+        # teddyCloud answers without a charset, and requests then falls back to
+        # the HTTP default of latin-1, which turns every umlaut in a file name
+        # or a series into mojibake. The library is full of them.
+        import requests
+
+        response = requests.Response()
+        response.status_code = 200
+        response.headers["Content-Type"] = "text/plain"
+        response._content = '{"files":[{"name":"Bobo Siebenschl\u00e4fer.taf"}]}'.encode("utf-8")
+
+        with patch.object(client.session, "request", return_value=response):
+            entries = client.list_dir("/", special="library")
+
+        assert entries[0]["name"] == "Bobo Siebenschl\u00e4fer.taf"
+
+    def test_keeps_binary_answers_untouched(self, client):
+        import requests
+
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b"\xff\xd8\xff"
+
+        with patch.object(client.session, "request", return_value=response):
+            assert client.fetch("/custom_img/a.jpg") == b"\xff\xd8\xff"
+
+
 class TestRequest:
     def test_turns_a_transport_failure_into_a_teddycloud_error(self, client):
         import requests
