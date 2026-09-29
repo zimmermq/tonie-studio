@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}tonie-studio{% endblock %}</title>
+<style>
+  :root {
+    --bg: #faf8f5; --card: #fff; --ink: #2a2724; --muted: #7d7669;
+    --line: #e4ded4; --accent: #c2410c; --ok: #15803d; --bad: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 12px 20px; display: flex; gap: 16px; align-items: baseline;
+  }
+  header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 10px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  a { color: var(--accent); }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button, .button {
+    font: inherit; padding: 8px 16px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.small { padding: 2px 8px; font-size: 13px; line-height: 1.4; }
+  input[type=text] {
+    font: inherit; padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: 7px; width: 100%; background: #fff; color: var(--ink);
+  }
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  ol.tracks { list-style: none; margin: 0; padding: 0; }
+  ol.tracks li {
+    display: flex; gap: 10px; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid var(--line);
+  }
+  ol.tracks li:last-child { border-bottom: 0; }
+  .warn {
+    background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px;
+  }
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .state-done { color: var(--ok); }
+  .state-failed { color: var(--bad); }
+  img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17150f; --card: #211e18; --ink: #ece7dd; --muted: #a09889;
+      --line: #35302a; --accent: #fb923c;
+    }
+    button.primary { color: #17150f; }
+    input[type=text] { background: #17150f; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">tonie-studio</a>
+  <a href="/">Alben</a>
+  <a href="/tonies">Tonies</a>
+  <a href="/sheet">Blatt</a>
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ album.title }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ album.title }}</h1>
+<p class="sub">
+  {{ album.artist or "Verschiedene Interpreten" }}{% if album.year %} - {{ album.year }}{% endif %}
+  - {{ album.tracks|length }} Tracks
+  {%- if album.duration %} - {{ (album.duration / 60) | round | int }} Minuten{% endif %}
+  - Reihenfolge nach {{ album.ordering }}
+</p>
+
+{% for warning in album.warnings %}
+<div class="warn">{{ warning }}</div>
+{% endfor %}
+
+<form method="post" action="/album/{{ id }}/encode" id="form">
+  <div class="card row" style="align-items: flex-start">
+    {% if album.cover_candidates %}
+    <img class="cover" src="/album/{{ id }}/cover" alt="Cover">
+    {% endif %}
+    <div class="grow">
+      <label class="field">
+        <span>Serie (Ordner in der Library)</span>
+        <input type="text" name="series" value="{{ suggested_target.series }}">
+      </label>
+      <label class="field" style="margin-bottom:0">
+        <span>Folge (Name der Taf-Datei)</span>
+        <input type="text" name="episode" value="{{ suggested_target.episode }}" required>
+      </label>
+    </div>
+  </div>
+
+  <h2>Tracks</h2>
+  <div class="card">
+    <input type="hidden" name="order" id="order" value="{{ album.tracks | map(attribute='number') | join(',') }}">
+    <ol class="tracks" id="tracks">
+      {% for track in album.tracks %}
+      <li data-number="{{ track.number }}">
+        <input type="checkbox" name="selected" value="{{ track.number }}" checked>
+        <span class="muted" style="width: 2em; text-align: right">{{ loop.index }}</span>
+        <input type="text" name="titles" value="{{ track.title }}" class="grow">
+        <button type="button" class="small" data-move="up">&uarr;</button>
+        <button type="button" class="small" data-move="down">&darr;</button>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <p><button class="primary" type="submit">Taf erzeugen</button>
+     <a href="/" style="margin-left:12px">Abbrechen</a></p>
+</form>
+
+<script>
+  // Reordering happens in the DOM; the hidden field is rewritten from it on
+  // submit. Without scripting the field keeps the album's own order, so the
+  // form still works.
+  const list = document.getElementById('tracks');
+
+  list.addEventListener('click', event => {
+    const button = event.target.closest('button[data-move]');
+    if (!button) return;
+    const item = button.closest('li');
+    const sibling = button.dataset.move === 'up'
+      ? item.previousElementSibling : item.nextElementSibling;
+    if (!sibling) return;
+    button.dataset.move === 'up'
+      ? list.insertBefore(item, sibling) : list.insertBefore(sibling, item);
+    renumber();
+  });
+
+  function renumber() {
+    [...list.children].forEach((item, index) => {
+      item.querySelector('span').textContent = index + 1;
+    });
+  }
+
+  // The titles are submitted in the order the rows sit in, which is the order
+  // this field records, so the nth title belongs to the nth number.
+  document.getElementById('form').addEventListener('submit', () => {
+    document.getElementById('order').value =
+      [...list.children].map(item => item.dataset.number).join(',');
+  });
+</script>
+{% endblock %}

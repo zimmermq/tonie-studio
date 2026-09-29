@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Blatt drucken - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Traveltonies-Blatt</h1>
+<p class="sub">
+  A4, runde Aufkleber mit 46 mm, {{ per_page }} pro Blatt. Das Bild wird 1 mm ueber die Schnittlinie
+  hinaus gedruckt, damit ein Schnitt daneben nicht auf weissem Papier landet.
+</p>
+
+<form method="post" action="/sheet" enctype="multipart/form-data">
+  <div class="card">
+    {% for model in models %}
+    <div class="row" style="padding: 8px 0; border-bottom: 1px solid var(--line)">
+      <img class="cover" style="width:46px;height:46px;border-radius:50%"
+           src="/cover/custom/{{ model.image }}" alt="">
+      <div class="grow truncate">
+        <strong>{{ model.series }}</strong>
+        <div class="muted truncate">{{ model.episodes }} - {{ model.model }}</div>
+      </div>
+      <input type="hidden" name="models" value="{{ model.model }}">
+      <input type="number" name="counts" value="0" min="0" max="100"
+             style="width: 5em; font: inherit; padding: 6px 8px" aria-label="Anzahl">
+    </div>
+    {% else %}
+    <p class="muted" style="margin:0">
+      Noch kein Modell mit eigenem Cover. Bespiele erst einen Tonie, dann steht er hier.
+    </p>
+    {% endfor %}
+  </div>
+
+  <h2>Zusaetzliche Bilder</h2>
+  <div class="card">
+    <p class="muted">Bilder, die zu keinem Modell gehoeren, kommen je einmal aufs Blatt.</p>
+    <p><input type="file" name="files" accept="image/*" multiple></p>
+  </div>
+
+  <p><button class="primary" type="submit">PDF erzeugen</button>
+     <a href="/tonies" style="margin-left:12px">Zu den Tonies</a></p>
+</form>
+{% endblock %}

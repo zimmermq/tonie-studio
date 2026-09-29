@@ -1,0 +1,259 @@
+"""Turns a list of audio files into one taf in the teddyCloud library.
+
+teddyCloud encodes from its own disk, not from the request: ``fileEncode`` is
+handed paths and reads them itself. So the audio has to be there first, and the
+route it takes is an upload into a staging directory, an encode, and a delete.
+
+The staging names are ``001.flac``, ``002.mp3`` and so on rather than the
+original ones. A name would otherwise travel from a NAS through a multipart
+header, a urlencoded form and a second filesystem, and the archive is full of
+names that do not survive that intact: composed and decomposed umlauts, commas,
+brackets, exclamation marks. The extension is kept because ffmpeg selects its
+decoder by it, and the number keeps the order visible while a job is running.
+
+A failed encode still cleans up. Half a FLAC album is several hundred megabytes,
+and an abandoned job would otherwise sit in the library until someone noticed.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import unicodedata
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Optional, Sequence
+
+from tonie_studio.teddycloud import TeddyCloudClient, TeddyCloudError
+
+log = logging.getLogger(__name__)
+
+# Where uploads wait for the encoder. One folder, visible in teddyCloud's own
+# file browser, so leftovers are findable by a person and not only by this app.
+STAGING_ROOT = "/_tonie-studio-staging"
+
+TAF_SUFFIX = ".taf"
+
+# Long enough for the album titles in the archive, short enough to stay well
+# inside the 255 byte limit a file name has once it is UTF-8 encoded.
+MAX_NAME = 120
+
+# Characters that would split a path or hide a file.
+UNSAFE = re.compile(r"[/\\\x00-\x1f]")
+
+# What a progress callback is handed: the step, how many of it are done, and of
+# how many.
+Progress = Callable[[str, int, int], None]
+
+
+class EncodeError(RuntimeError):
+    """Raised when a request cannot be encoded as asked."""
+
+
+@dataclass
+class EncodeResult:
+    """What the caller needs to point a tag and a model at the new taf."""
+
+    target: str
+    source: str
+    tracks: int
+    audio_id: Optional[int] = None
+    sha1: Optional[str] = None
+
+
+def library_path(series: str, episode: str) -> str:
+    """Build the library path a taf goes to, from the names a person typed.
+
+    Umlauts stay: the library already holds them and teddyCloud serves them
+    back unchanged. Only what would split a path or hide a file is replaced.
+    """
+    name = _safe_name(episode)
+    if not name:
+        raise EncodeError("the taf needs a name")
+
+    folder = _safe_name(series)
+    return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
+
+
+def encode_files(
+    client: TeddyCloudClient,
+    sources: Sequence[Path],
+    target: str,
+    progress: Optional[Progress] = None,
+) -> EncodeResult:
+    """Upload the sources, encode them into ``target``, and clear the staging area.
+
+    The sources are encoded in the order given, one chapter each. Anything that
+    can be refused is refused before the first byte is uploaded.
+    """
+    sources = list(sources)
+    _check(sources, target)
+
+    _ensure_parents(client, target)
+    if _find_entry(client, target):
+        raise EncodeError(f"a taf already exists at {target}; rename or delete it first")
+
+    job = uuid.uuid4().hex[:12]
+    staging = f"{STAGING_ROOT}/{job}"
+    _ensure_dir(client, STAGING_ROOT)
+    client.create_dir(staging, special="library")
+
+    try:
+        staged = []
+        for index, source in enumerate(sources, start=1):
+            name = f"{index:03d}{source.suffix.lower()}"
+            with source.open("rb") as stream:
+                client.upload(stream, name, path=staging, special="library")
+            staged.append(f"{staging}/{name}")
+            _report(progress, "upload", index, len(sources))
+
+        client.encode(target, staged, special="library")
+        _report(progress, "encode", len(sources), len(sources))
+    finally:
+        _remove_tree(client, staging)
+
+    header = (_find_entry(client, target) or {}).get("tafHeader") or {}
+    return EncodeResult(
+        target=target,
+        source=f"lib://{target.lstrip('/')}",
+        tracks=len(sources),
+        audio_id=header.get("audioId"),
+        sha1=header.get("sha1Hash"),
+    )
+
+
+def remove_orphaned_staging(client: TeddyCloudClient) -> int:
+    """Delete every staging folder left over, and report how many there were.
+
+    Jobs do not outlive the process, so at startup every folder under the
+    staging root belongs to a run that was interrupted.
+    """
+    try:
+        entries = client.list_dir(STAGING_ROOT, special="library")
+    except TeddyCloudError:
+        return 0
+
+    removed = 0
+    for entry in entries:
+        name = entry.get("name")
+        if _is_parent_link(name):
+            continue
+        path = f"{STAGING_ROOT}/{name}"
+        if entry.get("isDir"):
+            _remove_tree(client, path)
+            removed += 1
+        else:
+            _delete(client, path)
+
+    if removed:
+        log.info("removed %d abandoned staging folder(s)", removed)
+    return removed
+
+
+# --- plumbing -------------------------------------------------------------
+
+
+def _check(sources: Sequence[Path], target: str) -> None:
+    if not sources:
+        raise EncodeError("select at least one track")
+    if not target.endswith(TAF_SUFFIX):
+        raise EncodeError(f"the target has to be a {TAF_SUFFIX} file, not {target}")
+
+    missing = [str(source) for source in sources if not source.is_file()]
+    if missing:
+        raise EncodeError(f"cannot read: {', '.join(missing)}")
+
+
+def _safe_name(text: str) -> str:
+    name = UNSAFE.sub("-", text or "")
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    return name[:MAX_NAME].strip()
+
+
+def _ensure_parents(client: TeddyCloudClient, target: str) -> None:
+    """Create every directory above the target that is not there yet."""
+    parts = target.strip("/").split("/")[:-1]
+    path = ""
+    for part in parts:
+        path = f"{path}/{part}"
+        _ensure_dir(client, path)
+
+
+def _ensure_dir(client: TeddyCloudClient, path: str) -> None:
+    parent = path.rsplit("/", 1)[0] or "/"
+    name = path.rsplit("/", 1)[1]
+    for entry in client.list_dir(parent, special="library"):
+        if entry.get("isDir") and _same_name(entry.get("name"), name):
+            return
+    client.create_dir(path, special="library")
+
+
+def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:
+    """The listing entry for one path, or None when it is not there."""
+    parent = path.rsplit("/", 1)[0] or "/"
+    name = path.rsplit("/", 1)[1]
+    try:
+        entries = client.list_dir(parent, special="library")
+    except TeddyCloudError:
+        return None
+
+    for entry in entries:
+        if not entry.get("isDir") and _same_name(entry.get("name"), name):
+            return entry
+    return None
+
+
+def _remove_tree(client: TeddyCloudClient, path: str) -> None:
+    """Delete a directory and everything in it, never failing the caller.
+
+    This runs in a finally block after an encode that may itself have failed.
+    Reporting a cleanup problem instead of the real error would hide the thing
+    worth knowing, so it is logged and swallowed.
+    """
+    try:
+        entries = client.list_dir(path, special="library")
+    except TeddyCloudError as error:
+        log.warning("cannot list %s for cleanup: %s", path, error)
+        return
+
+    for entry in entries:
+        name = entry.get("name")
+        if _is_parent_link(name):
+            continue
+        child = f"{path}/{name}"
+        if entry.get("isDir"):
+            _remove_tree(client, child)
+        else:
+            _delete(client, child)
+
+    _delete(client, path)
+
+
+def _delete(client: TeddyCloudClient, path: str) -> None:
+    try:
+        client.delete(path, special="library")
+    except TeddyCloudError as error:
+        log.warning("cannot delete %s: %s", path, error)
+
+
+def _is_parent_link(name: Optional[str]) -> bool:
+    """teddyCloud lists "." and ".." as ordinary entries; following them would
+    walk out of the directory being cleaned and into the library."""
+    return name in (None, ".", "..")
+
+
+def _same_name(left: Optional[str], right: str) -> bool:
+    """Compare names across the two spellings an umlaut has on a share."""
+    if left is None:
+        return False
+    return unicodedata.normalize("NFC", left) == unicodedata.normalize("NFC", right)
+
+
+def _report(progress: Optional[Progress], step: str, done: int, total: int) -> None:
+    if progress is None:
+        return
+    try:
+        progress(step, done, total)
+    except Exception:  # a broken progress display must not kill the encode
+        log.exception("progress callback failed")

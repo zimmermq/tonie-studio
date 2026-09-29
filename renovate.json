@@ -1,0 +1,68 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "after 11am and before 10pm"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "ignoreTests": false,
+  "rangeStrategy": "pin",
+  "semanticCommits": "enabled",
+  "pin": {
+    "group": {
+      "commitMessageTopic": "{{{groupName}}}"
+    }
+  },
+  "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "groupName": "pytest",
+      "matchPackageNames": [
+        "/pytest/"
+      ]
+    },
+    {
+      "groupName": "fastapi",
+      "matchPackageNames": [
+        "/fastapi/",
+        "/uvicorn/",
+        "/starlette/"
+      ]
+    },
+    {
+      "groupName": "github-actions",
+      "matchManagers": [
+        "github-actions"
+      ]
+    },
+    {
+      "groupName": "docker actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "/docker/"
+      ]
+    },
+    {
+      "groupName": "aws actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "/aws-actions/"
+      ]
+    }
+  ]
+}

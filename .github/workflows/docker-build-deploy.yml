@@ -1,0 +1,143 @@
+name: Build and Deploy Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [published]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.14.7'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest httpx
+
+      - name: Run tests
+        run: |
+          PYTHONPATH=src python -m pytest tests/ -v --tb=short
+          python scripts/check_chars.py
+          echo "All tests passed"
+
+  # Validate the image builds on every push to main (no push to registry).
+  build-validation:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.0
+
+      - name: Build Docker image for validation
+        run: |
+          docker build -t tonie-studio:validation .
+          echo "Build validation successful"
+
+  # On a published release, build + push to ECR and open a PR bumping the image
+  # tag in homelab-iac.
+  build-and-deploy:
+    needs: test
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.0
+
+      - name: Get release version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2.1.7
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: tonie-studio
+          IMAGE_TAG: ${{ steps.version.outputs.version }}
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg TS_VERSION=$IMAGE_TAG \
+            --build-arg TS_COMMIT=$GITHUB_SHA \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Pushed image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Update homelab-iac repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMELAB_PAT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          git clone https://x-access-token:$GITHUB_TOKEN@github.com/JonasHess/homelab-iac.git
+          cd homelab-iac
+
+          BRANCH_NAME="update-tonie-studio-$VERSION"
+          git checkout -b $BRANCH_NAME
+
+          git config user.name "tonie-studio-bot"
+          git config user.email "noreply@github.com"
+
+          # Pure-generic app: the image tag is inline in generic.deployment.image
+          # (registry/tonie-studio:<tag>), so bump just the tag suffix.
+          sed -i "s#\(image:[[:space:]]*.*tonie-studio\):.*#\1:$VERSION#" apps/tonie-studio/values.yaml
+
+          # If the chart already pins this tag (e.g. the very first release), there
+          # is nothing to change - succeed without opening an empty PR.
+          if git diff --quiet apps/tonie-studio/values.yaml; then
+            echo "homelab-iac already pins tonie-studio:$VERSION - no PR needed."
+            exit 0
+          fi
+
+          git add apps/tonie-studio/values.yaml
+
+          git commit -m "chore: Update tonie-studio to $VERSION
+
+          Automated update from tonie-studio release
+          - Image: $ECR_REGISTRY/tonie-studio:$VERSION"
+
+          git push origin $BRANCH_NAME
+
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/JonasHess/homelab-iac/pulls \
+            -d "{
+              \"title\": \"Update tonie-studio to $VERSION\",
+              \"head\": \"$BRANCH_NAME\",
+              \"base\": \"main\",
+              \"body\": \"Automated update of the tonie-studio container image to $VERSION.\\n\\n- Updated apps/tonie-studio/values.yaml image tag\\n- Image: $ECR_REGISTRY/tonie-studio:$VERSION\"
+            }"

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Tonies - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Tonies</h1>
+<p class="sub">{{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt.</p>
+
+{% for tag in tags %}
+<div class="card row">
+  {% if tag.picture %}
+  <img class="cover" style="width:56px;height:56px" src="{{ teddycloud_url }}{{ tag.picture }}" alt="">
+  {% endif %}
+  <div class="grow truncate">
+    {% if tag.assigned %}<strong>{{ tag.label }}</strong>{% else %}<strong>frei</strong>{% endif %}
+    <div class="muted truncate">{{ tag.uid }}{% if tag.source %} - {{ tag.source }}{% endif %}</div>
+    {% if tag.model %}<div class="muted">Modell {{ tag.model }}</div>{% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card muted">teddyCloud kennt noch keinen Tag. Halte einen an die Box.</div>
+{% endfor %}
+
+<p><a class="button" href="/">Zurueck zur Uebersicht</a></p>
+{% endblock %}

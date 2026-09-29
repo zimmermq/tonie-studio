@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Tonie bespielen - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Auf welchen Tonie?</h1>
+<p class="sub">{{ result.encode.target }} - {{ result.encode.tracks }} Tracks</p>
+
+<div class="warn">
+  Ein neuer NFC-Sticker taucht hier erst auf, nachdem die Toniebox ihn einmal gelesen hat.
+  Fehlt deiner in der Liste: kurz an die Box halten, dann diese Seite neu laden.
+</div>
+
+<form method="post" action="/job/{{ job_id }}/assign">
+  <div class="card">
+    {% for tag in tags %}
+    <label class="row" style="padding: 8px 0; border-bottom: 1px solid var(--line)">
+      <input type="radio" name="ruid" value="{{ tag.ruid }}" {% if loop.first %}checked{% endif %} required>
+      <div class="grow truncate">
+        {% if tag.assigned %}
+          {{ tag.label }}
+          <div class="muted">belegt - {{ tag.source }} - wird ueberschrieben</div>
+        {% else %}
+          <strong>frei</strong>
+          <div class="muted">{{ tag.uid }}</div>
+        {% endif %}
+      </div>
+    </label>
+    {% else %}
+    <p class="muted">teddyCloud kennt noch keinen Tag.</p>
+    {% endfor %}
+  </div>
+
+  <h2>Was auf dem Tonie steht</h2>
+  <div class="card">
+    <label class="field">
+      <span>Serie</span>
+      <input type="text" name="series" value="{{ result.series }}">
+    </label>
+    <label class="field">
+      <span>Folge</span>
+      <input type="text" name="episode" value="{{ result.episode }}" required>
+    </label>
+    <label class="field" style="margin-bottom:0">
+      <span>Kategorie</span>
+      <select name="category" style="font: inherit; padding: 7px 10px">
+        {% for category in categories %}
+        <option value="{{ category }}">{{ category }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <h2>Tracks im Modell</h2>
+  <div class="card muted">
+    {% for track in result.tracks %}{{ loop.index }}. {{ track }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+  </div>
+
+  <p><button class="primary" type="submit">Tonie bespielen</button>
+     <a href="/" style="margin-left:12px">Spaeter</a></p>
+</form>
+{% endblock %}

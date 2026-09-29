@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block body %}
+<h1>Album auswaehlen</h1>
+<p class="sub">{{ albums|length }} Alben gefunden.</p>
+
+{% if jobs %}
+<h2>Laeuft gerade</h2>
+{% for job in jobs %}
+<div class="card row">
+  <div class="grow truncate">
+    <a href="/job/{{ job.id }}">{{ job.label }}</a>
+    <div class="muted">{{ job.state.value }}{% if job.step %} - {{ job.step }} {{ job.done_count }}/{{ job.total }}{% endif %}</div>
+  </div>
+  {% if job.state.value == 'failed' %}<span class="state-failed">fehlgeschlagen</span>
+  {% elif job.state.value == 'done' %}<span class="state-done">fertig</span>{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>Aus dem Archiv</h2>
+{% for id, album, origin in albums %}
+  {% if origin == 'archive' %}
+  <div class="card row">
+    <div class="grow truncate">
+      <a href="/album/{{ id }}">{{ album.name }}</a>
+      <div class="muted">{{ album.track_count }} Tracks{% if not album.has_cover %} - kein Cover{% endif %}</div>
+    </div>
+  </div>
+  {% endif %}
+{% else %}
+<div class="card muted">Nichts im Archiv gefunden.</div>
+{% endfor %}
+
+{% set uploads = albums | selectattr('2', 'equalto', 'upload') | list %}
+{% if uploads %}
+<h2>Hochgeladen</h2>
+{% for id, album, origin in uploads %}
+<div class="card row">
+  <div class="grow truncate">
+    <a href="/album/{{ id }}">{{ album.name }}</a>
+    <div class="muted">{{ album.track_count }} Tracks{% if not album.has_cover %} - kein Cover{% endif %}</div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>Hochladen</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    Fuer Alben, die nicht auf dem Server liegen. Bilder duerfen mit dabei sein, das erste
+    davon wird als Cover genommen.
+  </p>
+  <form method="post" action="/upload" enctype="multipart/form-data" class="row"
+        style="gap: 10px; flex-wrap: wrap">
+    <!-- webkitdirectory picks a whole album folder in one go; a 60 track
+         release is otherwise 60 clicks in the file dialog. -->
+    <input type="file" name="files" webkitdirectory directory multiple required>
+    <button class="primary" type="submit">Ordner hochladen</button>
+  </form>
+  <form method="post" action="/upload" enctype="multipart/form-data" class="row"
+        style="gap: 10px; flex-wrap: wrap; margin-top: 12px">
+    <input type="file" name="files" multiple required>
+    <button type="submit">Einzelne Dateien</button>
+  </form>
+</div>
+{% endblock %}

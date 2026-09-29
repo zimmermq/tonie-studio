@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ job.label }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ job.label }}</h1>
+<p class="sub" id="state">{{ job.state.value }}</p>
+
+<div class="card">
+  <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
+  <p class="muted" id="detail" style="margin-bottom:0">
+    {% if job.step %}{{ job.step }} {{ job.done_count }}/{{ job.total }}{% else %}wird vorbereitet{% endif %}
+  </p>
+</div>
+
+<div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>
+  <p id="message" class="{% if job.state.value == 'failed' %}state-failed{% else %}state-done{% endif %}">
+    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}Taf fertig.{% endif -%}
+  </p>
+  <a class="button" id="next" href="/job/{{ job.id }}/assign"
+     {% if job.state.value != 'done' %}hidden{% endif %}>Auf einen Tonie legen</a>
+  <a class="button" href="/">Zurueck zur Uebersicht</a>
+</div>
+
+<script>
+  const id = {{ job.id | tojson }};
+  const fill = document.getElementById('fill');
+  const state = document.getElementById('state');
+  const detail = document.getElementById('detail');
+  const outcome = document.getElementById('outcome');
+  const message = document.getElementById('message');
+
+  async function poll() {
+    let data;
+    try {
+      const response = await fetch(`/api/job/${id}`);
+      if (!response.ok) return;
+      data = await response.json();
+    } catch (error) {
+      // A dropped poll says nothing about the job, which runs on the server.
+      return setTimeout(poll, 3000);
+    }
+
+    state.textContent = data.state;
+    fill.style.width = (data.percent ?? 0) + '%';
+    detail.textContent = data.step
+      ? `${data.step} ${data.done}/${data.total}` : 'wird vorbereitet';
+
+    if (data.state === 'done' || data.state === 'failed') {
+      outcome.hidden = false;
+      document.getElementById('next').hidden = data.state !== 'done';
+      message.textContent = data.error || 'Taf fertig.';
+      message.className = data.state === 'failed' ? 'state-failed' : 'state-done';
+      return;
+    }
+    setTimeout(poll, 1000);
+  }
+
+  if ({{ (job.state.value not in ('done', 'failed')) | tojson }}) poll();
+</script>
+{% endblock %}
