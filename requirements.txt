@@ -5,4 +5,4 @@ uvicorn==0.54.0
 Jinja2==3.1.6
 python-multipart==0.0.32
 reportlab==5.0.1
-pillow==12.1.0
+pillow==12.3.0
