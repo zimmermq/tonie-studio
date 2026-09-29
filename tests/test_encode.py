@@ -9,6 +9,8 @@ import pytest
 from fake_teddycloud import FakeTeddyCloud
 from tonie_studio.encode import (
     STAGING_ROOT,
+    delete_taf,
+    list_tafs,
     taf_exists,
     EncodeError,
     encode_files,
@@ -304,3 +306,67 @@ def _eventually(condition, timeout=3.0):
             return
         time.sleep(0.01)
     raise AssertionError("condition never became true")
+
+
+class TestStagingRootAbsent:
+    def test_asks_the_parent_instead_of_the_missing_folder(self, teddycloud):
+        # teddyCloud answers a listing of a directory that is not there by
+        # closing the connection, not with a 404. Asking for it fills the log
+        # with warnings about a server that is fine.
+        asked = []
+        original = teddycloud.list_dir
+        teddycloud.list_dir = lambda path="/", special=None: (
+            asked.append(path) or original(path, special))
+
+        assert remove_orphaned_staging(teddycloud) == 0
+
+        assert STAGING_ROOT not in asked
+        assert "/" in asked
+
+    def test_still_clears_it_when_it_is_there(self, teddycloud):
+        teddycloud.create_dir(STAGING_ROOT)
+        teddycloud.create_dir(f"{STAGING_ROOT}/abandoned")
+
+        assert remove_orphaned_staging(teddycloud) == 1
+
+
+class TestLibraryListing:
+    def test_finds_tafs_in_every_series_folder(self, teddycloud, sources):
+        encode_files(teddycloud, sources, "/Lichterkinder/Eins.taf")
+        encode_files(teddycloud, sources, "/Zwei.taf")
+
+        found = [taf["path"] for taf in list_tafs(teddycloud)]
+
+        assert found == ["/Lichterkinder/Eins.taf", "/Zwei.taf"]
+
+    def test_reports_what_a_taf_is(self, teddycloud, sources):
+        encode_files(teddycloud, sources, "/Eins.taf")
+
+        taf = list_tafs(teddycloud)[0]
+
+        assert taf["source"] == "lib://Eins.taf"
+        assert taf["name"] == "Eins"
+        assert taf["chapters"] == 3
+        assert taf["size"] > 0
+
+    def test_leaves_the_staging_area_out_of_it(self, teddycloud, sources):
+        teddycloud.create_dir(STAGING_ROOT)
+        teddycloud.files[f"{STAGING_ROOT}/leftover.taf"] = b"x"
+        encode_files(teddycloud, sources, "/Echt.taf")
+
+        assert [taf["name"] for taf in list_tafs(teddycloud)] == ["Echt"]
+
+    def test_deletes_one(self, teddycloud, sources):
+        encode_files(teddycloud, sources, "/Weg.taf")
+
+        delete_taf(teddycloud, "/Weg.taf")
+
+        assert list_tafs(teddycloud) == []
+
+    def test_refuses_to_delete_something_that_is_not_a_taf(self, teddycloud):
+        teddycloud.files["/wichtig.json"] = b"{}"
+
+        with pytest.raises(EncodeError):
+            delete_taf(teddycloud, "/wichtig.json")
+
+        assert "/wichtig.json" in teddycloud.files

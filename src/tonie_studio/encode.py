@@ -87,6 +87,53 @@ def library_path(series: str, episode: str) -> str:
     return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
 
 
+def list_tafs(client: TeddyCloudClient, path: str = "/") -> List[dict]:
+    """Every taf in the library, with its path, size and audio identity.
+
+    Walks the tree because the library is organised by series, and a flat list
+    is what a person cleaning up wants to look at.
+    """
+    found: List[dict] = []
+    try:
+        entries = client.list_dir(path, special="library")
+    except TeddyCloudError as error:
+        log.warning("cannot list %s: %s", path, error)
+        return found
+
+    for entry in entries:
+        name = entry.get("name")
+        if _is_parent_link(name) or name == STAGING_ROOT.lstrip("/"):
+            continue
+        full = f"{path.rstrip('/')}/{name}"
+        if entry.get("isDir"):
+            found.extend(list_tafs(client, full))
+        elif name.lower().endswith(TAF_SUFFIX):
+            header = entry.get("tafHeader") or {}
+            found.append({
+                "path": full,
+                "source": f"lib://{full.lstrip('/')}",
+                "name": name[:-len(TAF_SUFFIX)],
+                "size": entry.get("size") or 0,
+                "audio_id": header.get("audioId"),
+                "chapters": len(header.get("trackSeconds") or []),
+                "valid": bool(header.get("valid")),
+            })
+    return sorted(found, key=lambda taf: taf["path"].lower())
+
+
+def delete_taf(client: TeddyCloudClient, path: str) -> None:
+    """Remove one taf from the library.
+
+    Whether a tag still points at it is the caller's question to ask; this only
+    does what it is told, because sometimes replacing the audio under a tag is
+    exactly the intent.
+    """
+    if not path.endswith(TAF_SUFFIX):
+        raise EncodeError(f"that is not a {TAF_SUFFIX} file: {path}")
+    client.delete(path, special="library")
+    log.info("deleted %s", path)
+
+
 def taf_exists(client: TeddyCloudClient, target: str) -> bool:
     """Whether a taf already sits at ``target``.
 
@@ -176,6 +223,13 @@ def remove_orphaned_staging(client: TeddyCloudClient) -> int:
     Jobs do not outlive the process, so at startup every folder under the
     staging root belongs to a run that was interrupted.
     """
+    # Asking teddyCloud to list a directory that does not exist does not get a
+    # 404: it closes the connection, the client retries twice, and the log
+    # fills with warnings about a server that is perfectly fine. The staging
+    # root is usually absent, so look for it in its parent instead.
+    if not _has_entry(client, "/", STAGING_ROOT.lstrip("/"), directory=True):
+        return 0
+
     try:
         entries = client.list_dir(STAGING_ROOT, special="library")
     except TeddyCloudError:
@@ -234,6 +288,18 @@ def _ensure_dir(client: TeddyCloudClient, path: str) -> None:
         if entry.get("isDir") and _same_name(entry.get("name"), name):
             return
     client.create_dir(path, special="library")
+
+
+def _has_entry(
+    client: TeddyCloudClient, parent: str, name: str, directory: bool = False,
+) -> bool:
+    """Whether ``parent`` holds an entry of that name, without listing it."""
+    try:
+        entries = client.list_dir(parent, special="library")
+    except TeddyCloudError:
+        return False
+    return any(bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)
+               for entry in entries)
 
 
 def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:

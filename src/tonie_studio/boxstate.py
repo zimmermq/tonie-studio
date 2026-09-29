@@ -42,6 +42,11 @@ RTNL_TAG_REMOVED = frozenset({16067, 8630})
 # last reading stops being evidence of anything.
 STALE_AFTER = timedelta(minutes=30)
 
+# How long a tag teddyCloud does not know counts as "just held against the
+# box". Without a limit it is remembered until the process restarts, and a
+# sticker touched hours ago still looks like something happening now.
+UNKNOWN_FOR = timedelta(minutes=5)
+
 # The stream sends a keep-alive every 15 seconds; well over that means the
 # connection is gone even if the socket has not noticed.
 READ_TIMEOUT = 90
@@ -71,6 +76,15 @@ class BoxState:
         if self.last_event is None:
             return False
         return datetime.now(timezone.utc) - self.last_event > STALE_AFTER
+
+    @property
+    def fresh_unknown(self) -> Optional[str]:
+        """A tag teddyCloud does not know, if it was seen just now."""
+        if self.unknown_ruid is None or self.unknown_since is None:
+            return None
+        if datetime.now(timezone.utc) - self.unknown_since > UNKNOWN_FOR:
+            return None
+        return self.unknown_ruid
 
     @property
     def known(self) -> bool:

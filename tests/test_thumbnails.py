@@ -152,6 +152,40 @@ class TestCrop:
 
         assert _blue_share(left) > _blue_share(right)
 
+    def test_zooming_out_keeps_the_corners_the_circle_would_cut(self, tmp_path):
+        # The lettering on a cover sits at the edges, which the circle eats.
+        # Zoomed out, a mark in the very corner has to survive.
+        from PIL import Image
+
+        from tonie_studio.thumbnails import crop
+
+        image = Image.new("RGB", (300, 300), (255, 0, 0))
+        image.paste(Image.new("RGB", (40, 40), (0, 0, 255)), (0, 0))
+        path = tmp_path / "corner.jpg"
+        image.save(path, format="JPEG")
+
+        assert _blue_share(crop(path, zoom=0.6, size=64)) > \
+               _blue_share(crop(path, zoom=1.0, size=64))
+
+    def test_zooming_out_fills_the_gap_instead_of_leaving_an_edge(self, tmp_path):
+        # A flat border reads as a rendering mistake, so the space around the
+        # shrunken cover carries the cover's own colours.
+        from PIL import Image
+
+        from tonie_studio.thumbnails import crop
+
+        data = crop(_cover(tmp_path / "cover.jpg", colour=(200, 60, 40)), zoom=0.6, size=64)
+        picture = Image.open(io.BytesIO(data))
+
+        assert picture.getpixel((2, 2))[0] > 100  # the corner is cover, not paper
+
+    def test_refuses_to_zoom_out_past_what_is_sensible(self, tmp_path):
+        from tonie_studio.thumbnails import MIN_ZOOM, crop
+
+        # Smaller than this the cover is a stamp on a blurred disc.
+        assert crop(_cover(tmp_path / "cover.jpg"), zoom=0.01, size=32) == \
+               crop(_cover(tmp_path / "cover.jpg"), zoom=MIN_ZOOM, size=32)
+
     def test_refuses_to_zoom_past_what_is_sensible(self, tmp_path):
         from tonie_studio.thumbnails import crop
 

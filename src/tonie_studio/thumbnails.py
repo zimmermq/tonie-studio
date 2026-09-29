@@ -19,7 +19,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional, Tuple
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFilter, UnidentifiedImageError
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +30,10 @@ MAX_SIZE = 512
 
 # What a 46 mm sticker needs at 300 dpi, with the bleed the sheet prints.
 COVER_SIZE = 567
+
+# How far out the cover may be zoomed. Below this the cover is a stamp in the
+# middle of a blurred disc, which is no longer a picture of the album.
+MIN_ZOOM = 0.5
 
 # Roughly four archives' worth. Each entry is a few kilobytes.
 CACHE_ENTRIES = 200
@@ -82,13 +86,17 @@ def crop(
     """Render a cover as the square that goes under the round sticker.
 
     A sticker is a circle and a cover is a square, so filling the circle always
-    cuts something - usually the lettering along the top edge. Zooming out puts
-    it back at the cost of a ring, and shifting decides what the circle keeps.
-    ``zoom`` is 1.0 for the whole square, ``offset_x``/``offset_y`` are
+    cuts something - usually the lettering along the top edge. Shifting decides
+    what the circle keeps, and zooming out below 1.0 keeps all of it by
+    shrinking the cover inside the square, with the gap filled by a blurred,
+    enlarged copy of itself rather than a hard edge.
+
+    ``zoom`` is 1.0 for the whole square; ``offset_x``/``offset_y`` are
     fractions of the visible window, clamped so the crop cannot leave the
-    picture.
+    picture, and have nothing to move below 1.0 because the whole cover is
+    already inside.
     """
-    zoom = max(1.0, min(float(zoom), 3.0))
+    zoom = max(MIN_ZOOM, min(float(zoom), 3.0))
     try:
         with Image.open(path) as image:
             image.load()
@@ -98,7 +106,9 @@ def crop(
         return None
 
     edge = min(picture.size)
-    window = edge / zoom
+    # Below 1.0 the whole square is kept and the shrinking happens afterwards,
+    # so only zooming in narrows the window.
+    window = edge / max(zoom, 1.0)
     slack = (edge - window) / 2
     centre_x = (picture.size[0] - edge) / 2 + slack + _clamp(offset_x) * slack
     centre_y = (picture.size[1] - edge) / 2 + slack + _clamp(offset_y) * slack
@@ -108,9 +118,27 @@ def crop(
         round(centre_x + window), round(centre_y + window),
     )).resize((size, size), Image.LANCZOS)
 
+    if zoom < 1.0:
+        picture = _inset(picture, zoom)
+
     buffer = io.BytesIO()
     picture.save(buffer, format="JPEG", quality=90)
     return buffer.getvalue()
+
+
+def _inset(square: Image.Image, zoom: float) -> Image.Image:
+    """Shrink the cover inside its square, over a blurred copy of itself.
+
+    A cover placed whole inside the circle leaves a ring, and a flat colour
+    there reads as a mistake. The blurred copy carries the cover's own colours
+    to the edge, so the ring looks intended and the print bleeds cleanly.
+    """
+    size = square.size[0]
+    background = square.filter(ImageFilter.GaussianBlur(max(1, size // 25)))
+    inset = max(1, round(size * zoom))
+    foreground = square.resize((inset, inset), Image.LANCZOS)
+    background.paste(foreground, ((size - inset) // 2, (size - inset) // 2))
+    return background
 
 
 def _clamp(value: float) -> float:

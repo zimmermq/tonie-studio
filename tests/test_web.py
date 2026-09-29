@@ -889,3 +889,169 @@ class TestDuplicateAudio:
         _job, page = _encode_and_assign_page(client, runner)
 
         assert "Dieses Audio gibt es schon" not in page.text
+
+
+class TestPrintFromTonie:
+    def test_offers_a_sticker_link_per_recorded_tonie(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        assert "/sheet?model=TS-0001" in client.get("/tonies").text
+
+    def test_the_sheet_arrives_with_that_motif_asked_for(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/sheet?model=TS-0001").text
+
+        assert 'value="1"' in page.split('name="counts"')[1][:80]
+
+    def test_without_a_model_nothing_is_preselected(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert 'value="0"' in page.split('name="counts"')[1][:80]
+
+
+class TestLibraryPage:
+    def test_lists_the_tafs_with_their_size(self, client, runner, teddycloud):
+        _encode_and_assign_page(client, runner)
+
+        page = client.get("/library").text
+
+        assert "Halloween" in page and "MB" in page
+
+    def test_names_the_tonie_that_would_fall_silent(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/library").text
+
+        assert "wird gespielt von" in page
+        assert "Lichterkinder - Halloween" in page
+
+    def test_deletes_one(self, client, runner, teddycloud):
+        _encode_and_assign_page(client, runner)
+
+        response = client.post("/library/delete",
+                               data={"path": "/Lichterkinder/Halloween.taf"},
+                               follow_redirects=False)
+
+        assert response.status_code == 303
+        assert "/Lichterkinder/Halloween.taf" not in teddycloud.files
+
+    def test_refuses_a_path_that_is_not_a_taf(self, client, teddycloud):
+        teddycloud.files["/wichtig.json"] = b"{}"
+
+        response = client.post("/library/delete", data={"path": "/wichtig.json"},
+                               follow_redirects=False)
+
+        assert response.status_code == 400
+        assert "/wichtig.json" in teddycloud.files
+
+
+class TestHeaderMarker:
+    def test_every_page_carries_the_slot(self, client):
+        for path in ("/", "/tonies", "/sheet", "/library"):
+            assert 'id="boxnow"' in client.get(path).text
+
+    def test_the_state_carries_a_readable_name(self, client, box, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        box.handle("TagValid", "E00403500EEDB47A")
+
+        state = client.get("/api/box").json()
+
+        assert state["label"] == "Lichterkinder - Halloween"
+
+
+class TestRadioTonie:
+    def test_offers_every_tag_and_some_stations(self, client):
+        page = client.get("/radio").text
+
+        assert 'name="ruid"' in page
+        assert "7ab4ed0e500304e0" in page and "deb4ed0e500304e0" in page
+        assert "<datalist" in page
+
+    def test_says_what_is_different_at_the_box(self, client):
+        # Six hours and then silence, and nothing at all without internet.
+        page = client.get("/radio").text
+
+        assert "sechs Stunden" in page
+        assert "ohne Internet" in page
+
+    def test_points_a_tag_at_a_stream(self, client, teddycloud):
+        response = client.post("/radio", data={
+            "ruid": "7ab4ed0e500304e0", "url": "http://radio.example/kinder.mp3",
+            "series": "Kinderradio", "episode": "", "category": "music",
+        }, follow_redirects=False)
+
+        assert response.status_code == 303
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        assert entry["source"] == "http://radio.example/kinder.mp3"
+        assert entry["live"] is True
+
+    def test_refuses_something_that_is_not_a_url(self, client, teddycloud):
+        response = client.post("/radio", data={
+            "ruid": "7ab4ed0e500304e0", "url": "kinderradio",
+            "series": "K", "episode": "", "category": "music",
+        }, follow_redirects=False)
+
+        assert response.status_code == 400
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == ""
+
+    def test_lists_the_radio_tonies_that_exist(self, client, teddycloud):
+        client.post("/radio", data={
+            "ruid": "7ab4ed0e500304e0", "url": "http://radio.example/kinder.mp3",
+            "series": "Kinderradio", "episode": "", "category": "music",
+        }, follow_redirects=False)
+
+        page = client.get("/radio").text
+
+        assert "Vorhandene Radio-Tonies" in page
+        assert "radio.example" in page
+
+
+class TestRadioListing:
+    def test_a_library_path_is_not_a_stream(self, client, runner, teddycloud):
+        # lib:// contains "://" too, so a naive check lists every ordinary
+        # tonie as a radio station.
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/radio").text
+
+        assert "Vorhandene Radio-Tonies" not in page
+
+
+class TestGermanSurface:
+    def test_names_the_ordering_in_german(self, client):
+        # "Reihenfolge nach filename number" is an internal identifier leaking
+        # into a German sentence.
+        page = client.get(f"/album/{_album_id(client)}").text
+
+        assert "Reihenfolge nach Dateinummer" in page
+        assert "filename number" not in page
+
+    def test_writes_umlauts_rather_than_transliterating_them(self, client):
+        for path in ("/", "/tonies", "/library", "/radio", "/sheet"):
+            page = client.get(path).text
+            for wrong in ("loeschen", "auswaehlen", "zurueck", "fuer ", "Zusaetzliche"):
+                assert wrong not in page, f"{wrong!r} steht noch in {path}"
+
+
+class TestAssignDoesNotLoop:
+    def test_an_old_unknown_tag_is_not_reported_as_fresh(self, client, box):
+        # The page reloads when a tag teddyCloud does not know turns up. If the
+        # watcher remembers one forever, that reload never stops and the page
+        # jumps back to the top every few seconds.
+        from datetime import datetime, timedelta, timezone
+
+        box.handle("TagInvalid", "E00403500EEDFFFF")
+        box._state.unknown_since = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        assert client.get("/api/box").json()["unknown_ruid"] is None
+
+    def test_the_page_remembers_what_it_already_reloaded_for(self, client, runner):
+        job, _page = _encode_and_assign_page(client, runner)
+
+        page = client.get(f"/job/{job.id}/assign?new=ffffed0e500304e0").text
+
+        assert "alreadyTried" in page
+        assert "kennt ihn nicht" in page

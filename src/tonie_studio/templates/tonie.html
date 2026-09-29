@@ -7,10 +7,10 @@
 
 {% if not model %}
 <div class="warn">
-  Dieser Tag hat kein eigenes Modell - es gibt also nichts zu bearbeiten. Bespiele ihn ueber
+  Dieser Tag hat kein eigenes Modell - es gibt also nichts zu bearbeiten. Bespiele ihn über
   ein Album, dann bekommt er Cover und Tracknamen.
 </div>
-<p><a class="button" href="/tonies">Zurueck</a></p>
+<p><a class="button" href="/tonies">Zurück</a></p>
 {% else %}
 
 <form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data">
@@ -37,7 +37,7 @@
       </label>
       <label class="field" style="margin-bottom: 0">
         <span>Cover ersetzen</span>
-        <label class="button">Bild waehlen<input type="file" name="cover" accept="image/*" hidden></label>
+        <label class="button">Bild wählen<input type="file" name="cover" accept="image/*" hidden></label>
       </label>
     </div>
   </div>
@@ -56,11 +56,11 @@
 <h2>Modell entfernen</h2>
 <div class="card">
   <p class="muted" style="margin-top:0">
-    Loescht Cover, Serie, Folge und Tracknamen. <strong>Der Tonie spielt weiter</strong> - das
-    Audio haengt am Tag, nicht am Modell.
+    Löscht Cover, Serie, Folge und Tracknamen. <strong>Der Tonie spielt weiter</strong> - das
+    Audio hängt am Tag, nicht am Modell.
   </p>
   <form method="post" action="/tonies/{{ tag.ruid }}/delete">
-    <button type="submit">{{ model.model }} loeschen</button>
+    <button type="submit">{{ model.model }} löschen</button>
   </form>
 </div>
 {% endif %}

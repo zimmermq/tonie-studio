@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Radio-Tonie - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Radio-Tonie</h1>
+<p class="sub">
+  Ein Tag muss nicht auf ein Taf zeigen - er kann auch auf einen Stream zeigen. Dann spielt die
+  Figur Radio, solange sie auf der Box steht, und es muss nichts encodiert werden.
+</p>
+
+<div class="warn">
+  <strong>Zwei Dinge, die an der Box anders sind.</strong>
+  Die Box legt pro Stream eine leere Datei an, standardmäßig 240 MB - das reicht für rund
+  <strong>sechs Stunden</strong>, danach hört sie auf und der Tonie muss einmal herunter und
+  wieder drauf. Und ohne Internet spielt ein Radio-Tonie gar nichts, während ein normaler
+  weiterläuft.
+</div>
+
+{% if streams %}
+<h2>Vorhandene Radio-Tonies</h2>
+<div class="list">
+  {% for tag in streams %}
+  <div class="album">
+    {% if tag.model %}
+    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% else %}<span class="noart" aria-hidden="true"></span>{% endif %}
+    <span class="grow truncate">
+      <strong class="truncate">{{ tag.label }}</strong>
+      <span class="muted truncate">{{ tag.source }}</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2>Einrichten</h2>
+<form method="post" action="/radio" enctype="multipart/form-data">
+  <div class="card">
+    <label class="field">
+      <span>Welcher Tag</span>
+      <select name="ruid" required style="font: inherit; padding: 7px 10px; width: 100%">
+        {% for tag in tags %}
+        <option value="{{ tag.ruid }}">
+          {% if tag.assigned %}{{ tag.label }} ({{ tag.uid }}) - wird überschrieben
+          {%- else %}frei - {{ tag.uid }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="field">
+      <span>Stream-Adresse</span>
+      <input type="url" name="url" required placeholder="https://..."
+             list="stations" value="">
+      <datalist id="stations">
+        {% for name, url in stations %}<option value="{{ url }}" label="{{ name }}">{% endfor %}
+      </datalist>
+    </label>
+    <p class="muted" style="margin-top: -6px; font-size: 13px">
+      Vorschläge beim Klick ins Feld. Ungeprüft - ob ein Sender läuft, zeigt erst die Box.
+    </p>
+
+    <label class="field">
+      <span>Name</span>
+      <input type="text" name="series" required placeholder="Kinderradio">
+    </label>
+    <label class="field">
+      <span>Zusatz (optional)</span>
+      <input type="text" name="episode" placeholder="rund um die Uhr">
+    </label>
+    <label class="field">
+      <span>Kategorie</span>
+      <select name="category" style="font: inherit; padding: 7px 10px">
+        {% for entry in categories %}<option value="{{ entry }}">{{ entry }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field" style="margin-bottom: 0">
+      <span>Cover</span>
+      <label class="button">Bild wählen<input type="file" name="cover" accept="image/*" hidden></label>
+    </label>
+  </div>
+
+  <p><button class="primary" type="submit">Radio-Tonie einrichten</button>
+     <a href="/tonies" style="margin-left:12px">Abbrechen</a></p>
+</form>
+{% endblock %}

@@ -31,7 +31,7 @@
         {% if preselect and tag.ruid == preselect %}<span class="onbox">gerade aufgelegt</span> {% endif %}
         {% if tag.assigned %}
           {{ tag.label }}
-          <div class="muted">belegt - {{ tag.source }} - wird ueberschrieben</div>
+          <div class="muted">belegt - {{ tag.source }} - wird überschrieben</div>
         {% else %}
           <strong>frei</strong>
           <div class="muted">{{ tag.uid }}</div>
@@ -69,7 +69,7 @@
   </div>
 
   <p><button class="primary" type="submit">Tonie bespielen</button>
-     <a href="/" style="margin-left:12px">Spaeter</a></p>
+     <a href="/" style="margin-left:12px">Später</a></p>
 </form>
 
 <script>
@@ -77,6 +77,9 @@
   // exactly what the box reports when one is held against it. Waiting for that
   // beats telling people to reload until it appears.
   const known = new Set([...document.querySelectorAll('input[name=ruid]')].map(i => i.value));
+  // What this page already reloaded for once. Without it, a tag teddyCloud
+  // never files keeps triggering a reload for as long as the page is open.
+  const alreadyTried = new URLSearchParams(window.location.search).get('new');
   const hint = document.getElementById('hint');
 
   async function watch() {
@@ -91,11 +94,18 @@
 
     const fresh = box.unknown_ruid;
     if (fresh && !known.has(fresh)) {
-      // teddyCloud files the tag the moment it reads it, so the list is one
-      // reload away from having it.
-      hint.textContent = 'Neuer Tag erkannt, Liste wird geladen ...';
-      window.location = `${window.location.pathname}?new=${encodeURIComponent(fresh)}`;
-      return;
+      if (fresh === alreadyTried) {
+        // Reloading again would not help: the list has been fetched since and
+        // still does not hold it. Reloading anyway is an endless loop that
+        // throws the page back to the top every few seconds.
+        hint.innerHTML = 'Ein Tag wurde an der Box gelesen, aber teddyCloud kennt ihn nicht: '
+          + `<code>${fresh}</code>. Halte ihn noch einmal an die Box, oder waehle unten `
+          + 'einen anderen.';
+      } else {
+        hint.textContent = 'Neuer Tag erkannt, Liste wird geladen ...';
+        window.location = `${window.location.pathname}?new=${encodeURIComponent(fresh)}`;
+        return;
+      }
     }
     setTimeout(watch, 3000);
   }

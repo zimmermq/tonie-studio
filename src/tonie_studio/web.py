@@ -18,6 +18,7 @@ import mimetypes
 import shutil
 import threading
 import time
+import unicodedata
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,15 +33,16 @@ from starlette.background import BackgroundTask
 from .album import (AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, cover_candidates,
                      list_albums, read_album)
 from .boxstate import BoxWatcher
-from .encode import (EncodeError, encode_files, library_path, remove_orphaned_staging,
-                     taf_exists)
+from .encode import (EncodeError, delete_taf, encode_files, library_path, list_tafs,
+                     remove_orphaned_staging, taf_exists)
 from .jobs import JobRunner, JobState
 from .settings import Settings
 from .sheet import FILL, FIT, PER_PAGE, Sticker, build_sheet
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .thumbnails import DEFAULT_SIZE, crop, thumbnail
 from .tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model,
-                    find_model_by_audio, list_tags, publish, remove_model, update_model)
+                    find_model_by_audio, list_tags, publish, publish_stream, remove_model,
+                    update_model)
 from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
@@ -51,8 +53,34 @@ TEMPLATES = Path(__file__).parent / "templates"
 ARCHIVE = "a"
 UPLOAD = "u"
 
+# What a job state is called in the interface; the values stay English because
+# they are the API's own.
+JOB_STATES = {
+    "queued": "wartet",
+    "running": "läuft",
+    "done": "fertig",
+    "failed": "fehlgeschlagen",
+}
+
+# What `album.ordering` is called in the interface. The values themselves stay
+# in English because they are identifiers the tests pin.
+ORDERING_NAMES = {
+    "filename number": "Dateinummer",
+    "track tag": "Track-Tag",
+    "playlist": "Playlist",
+    "name": "Dateiname",
+}
+
 # Where teddyCloud serves the covers of custom models.
 CUSTOM_IMG_PREFIX = "/custom_img/"
+
+# Offered as a starting point, not as an endorsement: a stream URL is hard to
+# find and easy to get wrong, and a wrong one fails silently at the box.
+RADIO_SUGGESTIONS = [
+    ("KiRaKa (WDR)", "https://wdrhoerenlive-lh.akamaihd.net/i/wdrhoerenlive_kiraka@2334/master.m3u8"),
+    ("Radio TEDDY", "https://stream.radioteddy.de/radioteddy/mp3-192/radioteddy"),
+    ("Kinderradio Bayern 2 Klaro", "https://dispatcher.rndfnk.com/br/br2/live/mp3/mid"),
+]
 
 # How long a scan of the archive stays good enough to reuse. One page load is
 # one listing plus a preview request per album, and on a network share each of
@@ -169,6 +197,7 @@ def create_app(
             "album": album,
             "suggested_target": _suggest_target(album),
             "conflict": conflict,
+            "orderings": ORDERING_NAMES,
         })
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
@@ -258,7 +287,8 @@ def create_app(
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "No such job.")
-        return templates.TemplateResponse(request, "job.html", {"job": job})
+        return templates.TemplateResponse(request, "job.html",
+                                          {"job": job, "states": JOB_STATES})
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
     def assign_page(request: Request, job_id: str, new: str = ""):
@@ -368,9 +398,22 @@ def create_app(
 
     @app.get("/api/box")
     def box_state():
-        """What is on the box, for the page to poll."""
+        """What is on the box, for the page to poll.
+
+        Carries the tonie's name as well as its ruid: the header says what is
+        playing, and looking that up per page would mean every page knowing how
+        to read the tag index.
+        """
         state = box.state
+        label = ""
+        if state.known and state.on_box:
+            try:
+                label = next((tag.label for tag in list_tags(client())
+                              if tag.ruid == state.ruid), "")
+            except TeddyCloudError:
+                label = ""
         return JSONResponse({
+            "label": label,
             "ruid": state.ruid if state.known else None,
             "on_box": state.on_box and state.known,
             "playing": state.playing and state.known,
@@ -379,7 +422,7 @@ def create_app(
             "connected": state.connected,
             # A tag teddyCloud does not know: a fresh sticker, just held
             # against the box. The assignment page waits for this.
-            "unknown_ruid": state.unknown_ruid,
+            "unknown_ruid": state.fresh_unknown,
             "unknown_since": state.unknown_since.isoformat() if state.unknown_since else None,
         })
 
@@ -411,13 +454,77 @@ def create_app(
             raise HTTPException(404, "That cover cannot be read.")
         return Response(rendered, media_type="image/jpeg")
 
+    @app.get("/radio", response_class=HTMLResponse)
+    def radio_page(request: Request):
+        connection = client()
+        tags = list_tags(connection)
+        return templates.TemplateResponse(request, "radio.html", {
+            "tags": tags,
+            # Not "://" in source: a library path is lib:// and would match.
+            "streams": [tag for tag in tags
+                        if tag.source.lower().startswith(("http://", "https://"))],
+            "categories": CATEGORIES,
+            "stations": RADIO_SUGGESTIONS,
+        })
+
+    @app.post("/radio")
+    async def make_radio(
+        ruid: str = Form(...),
+        url: str = Form(...),
+        series: str = Form(""),
+        episode: str = Form(""),
+        category: str = Form(DEFAULT_CATEGORY),
+        cover: Optional[UploadFile] = File(None),
+    ):
+        picture = None
+        suffix = "jpg"
+        if cover is not None and _is_image_name(cover.filename):
+            picture = cover.file.read()
+            suffix = Path(cover.filename).suffix.lstrip(".") or "jpg"
+        try:
+            publish_stream(client(), ruid, url, series=series, episode=episode,
+                           cover=picture, cover_name=suffix, category=category)
+        except TonieError as error:
+            raise HTTPException(400, str(error)) from error
+        return RedirectResponse("/tonies", 303)
+
+    @app.get("/library", response_class=HTMLResponse)
+    def library_page(request: Request):
+        connection = client()
+        tafs = list_tafs(connection)
+        # Which tag plays which taf, so deleting one can say what it breaks.
+        users: Dict[str, List] = {}
+        for tag in list_tags(connection):
+            if tag.source:
+                users.setdefault(unicodedata.normalize("NFC", tag.source), []).append(tag)
+        for taf in tafs:
+            taf["used_by"] = users.get(unicodedata.normalize("NFC", taf["source"]), [])
+        return templates.TemplateResponse(request, "library.html", {
+            "tafs": tafs,
+            "total": sum(taf["size"] for taf in tafs),
+        })
+
+    @app.post("/library/delete")
+    def library_delete(path: str = Form(...)):
+        try:
+            delete_taf(client(), path)
+        except (EncodeError, TeddyCloudError) as error:
+            raise HTTPException(400, str(error)) from error
+        return RedirectResponse("/library", 303)
+
     @app.get("/sheet", response_class=HTMLResponse)
-    def sheet_page(request: Request):
+    def sheet_page(request: Request, model: str = ""):
+        """The sheet, optionally with one motif already asked for.
+
+        Coming from a tonie that was just recorded, hunting for it again in
+        this list is the step that was missing.
+        """
         return templates.TemplateResponse(request, "sheet.html", {
             "models": _printable_models(client()),
             "per_page": PER_PAGE,
             "fill": FILL,
             "fit": FIT,
+            "preset": model,
         })
 
     @app.post("/sheet")

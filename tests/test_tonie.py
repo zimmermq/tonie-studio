@@ -12,6 +12,7 @@ from tonie_studio.tonie import (
     list_tags,
     next_model_id,
     publish,
+    publish_stream,
     remove_model,
     update_model,
 )
@@ -26,7 +27,10 @@ def teddycloud():
 
 
 @pytest.fixture
-def encoded():
+def encoded(teddycloud):
+    """An encode that really left a taf behind, as one always does."""
+    teddycloud.create_dir("/Lichterkinder")
+    teddycloud.files["/Lichterkinder/Halloween.taf"] = b"taf"
     return EncodeResult(
         target="/Lichterkinder/Halloween.taf",
         source="lib://Lichterkinder/Halloween.taf",
@@ -273,3 +277,73 @@ class TestFindModelByAudio:
 
     def test_says_nothing_when_the_encode_carried_no_identity(self, teddycloud):
         assert find_model_by_audio(teddycloud, None, None) is None
+
+
+class TestPublishStream:
+    def test_points_the_tag_at_the_url(self, teddycloud):
+        publish_stream(teddycloud, "7ab4ed0e500304e0",
+                       "http://radio.example/kinder.mp3", series="Kinderradio")
+
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        assert entry["source"] == "http://radio.example/kinder.mp3"
+
+    def test_marks_it_live_and_keeps_the_cloud_out(self, teddycloud):
+        # teddyCloud sets both itself for a source containing "://", but a tag
+        # that is right when written beats one that is right after being read.
+        publish_stream(teddycloud, "7ab4ed0e500304e0",
+                       "http://radio.example/kinder.mp3", series="Kinderradio")
+
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        assert entry["live"] is True and entry["nocloud"] is True
+
+    def test_writes_a_model_without_an_audio_identity(self, teddycloud):
+        # There is no taf, so there is nothing to recognise automatically.
+        model_id = publish_stream(teddycloud, "7ab4ed0e500304e0",
+                                  "http://radio.example/kinder.mp3",
+                                  series="Kinderradio", episode="rund um die Uhr")
+
+        model = find_model(teddycloud, model_id)
+        assert (model["series"], model["episodes"]) == ("Kinderradio", "rund um die Uhr")
+        assert "audio_id" not in model and "hash" not in model
+
+    def test_takes_a_cover(self, teddycloud):
+        model_id = publish_stream(teddycloud, "7ab4ed0e500304e0",
+                                  "https://radio.example/kinder", series="K",
+                                  cover=b"bild")
+
+        assert teddycloud.images[f"{model_id}.jpg"] == b"bild"
+
+    def test_refuses_something_that_is_not_a_url(self, teddycloud):
+        with pytest.raises(TonieError):
+            publish_stream(teddycloud, "7ab4ed0e500304e0", "kinderradio", series="K")
+
+    def test_refuses_a_scheme_the_box_cannot_fetch(self, teddycloud):
+        with pytest.raises(TonieError):
+            publish_stream(teddycloud, "7ab4ed0e500304e0",
+                           "rtsp://radio.example/kinder", series="K")
+
+    def test_refuses_a_tag_the_box_has_never_seen(self, teddycloud):
+        with pytest.raises(TonieError):
+            publish_stream(teddycloud, "ffffffffffffffff",
+                           "http://radio.example/kinder", series="K")
+
+
+class TestPublishChecksTheAudioIsThere:
+    def test_refuses_a_tag_that_would_play_nothing(self, teddycloud):
+        # teddyCloud stores whatever path it is handed and says nothing when
+        # the file is not there. It happened once, from a source string read
+        # with the wrong encoding and written straight back, and it left two
+        # tonies silent.
+        missing = EncodeResult(target="/Weg.taf", source="lib://Weg.taf", tracks=1)
+
+        with pytest.raises(TonieError) as excinfo:
+            publish(teddycloud, "7ab4ed0e500304e0", missing,
+                    series="L", episode="H", tracks=[])
+
+        assert "would play nothing" in str(excinfo.value)
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == ""
+
+    def test_accepts_one_that_is_there(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H", tracks=[])
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == encoded.source

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Inline so there is no second request and no 404 in everyone's console. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23c2410c'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23fff'/%3E%3C/svg%3E">
 <title>{% block title %}tonie-studio{% endblock %}</title>
 <style>
   :root {
@@ -19,7 +21,9 @@
     padding: 12px 20px; display: flex; gap: 16px; align-items: baseline;
   }
   header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; }
-  main { max-width: 900px; margin: 0 auto; padding: 20px; }
+  /* Wide enough that an album title is not cut on a normal window, narrow
+     enough that a line of prose stays readable. */
+  main { max-width: 1200px; margin: 0 auto; padding: 20px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 28px 0 10px; }
   p.sub { color: var(--muted); margin: 0 0 20px; }
@@ -35,13 +39,16 @@
   button, .button {
     font: inherit; padding: 8px 16px; border-radius: 7px; cursor: pointer;
     border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    /* A link styled as a button must not keep a link's underline. */
+    text-decoration: none; display: inline-block;
   }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.small { padding: 2px 8px; font-size: 13px; line-height: 1.4; }
-  input[type=text] {
+  input[type=text], input[type=url], input[type=search], input[type=number] {
     font: inherit; padding: 7px 10px; border: 1px solid var(--line);
-    border-radius: 7px; width: 100%; background: #fff; color: var(--ink);
+    border-radius: 7px; background: #fff; color: var(--ink);
   }
+  input[type=text], input[type=url] { width: 100%; }
   label.field { display: block; margin-bottom: 12px; }
   label.field span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
   ol.tracks { list-style: none; margin: 0; padding: 0; }
@@ -92,16 +99,27 @@
   /* The sticker preview mirrors what the PDF does: a 46 mm circle, the cover
      either filling it or inset on a blurred copy of itself. */
   .preview {
+    /* inline-block, not the default inline: a span that is laid out inline
+       ignores width and height, and the whole preview collapses to nothing. */
+    display: inline-block;
     position: relative; width: 46px; height: 46px; border-radius: 50%;
     overflow: hidden; flex: none; background: var(--line);
     box-shadow: 0 0 0 1px var(--line);
   }
+  .preview.grabbable { cursor: grab; touch-action: none; }
+  .preview.grabbable:active { cursor: grabbing; }
   .preview .bg, .preview .fg {
     position: absolute; inset: 0; background-size: cover; background-position: center;
+    /* The crop preview sets an explicit size below 100 percent, which would
+       tile the cover across the circle without this. */
+    background-repeat: no-repeat;
   }
   .preview .bg { display: none; }
   .preview.is-fit .bg { display: block; filter: blur(4px); transform: scale(1.3); }
   .preview.is-fit .fg { inset: 15%; }
+  /* Zoomed out, the cover no longer reaches the rim. The blurred copy behind
+     carries its colours into the gap, the same way the printed sticker does. */
+  .preview.grabbable .bg { display: block; filter: blur(8px); transform: scale(1.25); }
 
   img.pick {
     width: 40px; height: 40px; object-fit: cover; border-radius: 6px;
@@ -109,6 +127,42 @@
   }
   img.pick.chosen { opacity: 1; border-color: var(--accent); }
   input[type=range] { accent-color: var(--accent); }
+
+  .boxnow { text-align: right; font-size: 14px; }
+  .boxnow[hidden] { display: none; }
+  .boxnow b { font-weight: 600; color: var(--ink); }
+  .boxnow.off { color: var(--bad); }
+
+  /* Hovering a row shows the cover large. Fixed, not absolute: the list clips
+     its own contents to keep the rounded corners. */
+  #peek {
+    position: fixed; z-index: 50; pointer-events: none; display: none;
+    border-radius: 12px; overflow: hidden; background: var(--card);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .35); border: 1px solid var(--line);
+  }
+  #peek img { display: block; width: 260px; height: 260px; object-fit: cover; }
+  @media (hover: none) { #peek { display: none !important; } }
+
+  .sheethead { padding: 0 12px 6px; font-size: 13px; align-items: center; }
+  /* Always laid out, only sometimes visible: appearing would shove the
+     circles sideways every time a row is ticked. */
+  .times {
+    display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+    flex: none; width: 6.5em; font-size: 14px;
+  }
+  .times.empty { visibility: hidden; }
+  .times .count { min-width: 1.4em; text-align: right; font-weight: 600; }
+  .modes { display: flex; gap: 10px; justify-content: center; flex: none; }
+  .mode {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    cursor: pointer; padding: 4px; border-radius: 10px; border: 2px solid transparent;
+    font-size: 12px; text-align: center;
+  }
+  .mode .preview { opacity: .55; transition: opacity .15s; }
+  .mode.chosen { border-color: var(--accent); }
+  .mode.chosen .preview { opacity: 1; }
+  .mode.chosen .muted { color: var(--ink); font-weight: 600; }
+  .preview.big { width: 64px; height: 64px; }
 
   .onbox {
     font-weight: 600; font-size: 12px; margin-left: 8px; padding: 1px 7px;
@@ -120,13 +174,34 @@
 
   /* A file input cannot be styled, so the label is the button. */
   label.button { display: inline-block; }
+  /* On a phone a two column card leaves both columns too narrow to use. */
+  @media (max-width: 640px) {
+    .stackable { flex-direction: column; align-items: stretch !important; }
+    .stackable > div { width: auto !important; }
+    header { flex-wrap: wrap; gap: 10px; row-gap: 4px; }
+    header a.brand { width: 100%; }
+    .boxnow { text-align: left; }
+
+    /* A fixed column beside a flexible one squeezes the flexible one to
+       nothing on a narrow screen: the sticker rows lost their names entirely
+       and left only the covers to tell them apart. Wrap instead. */
+    .sticker { flex-wrap: wrap; }
+    /* Not 100 percent: that would push the name below its own checkbox. */
+    .sticker > .grow { flex: 1 1 calc(100% - 2.5em); }
+    .sticker .modes { width: auto !important; margin-left: auto; }
+    .sheethead { display: none; }
+    .list .album { flex-wrap: wrap; }
+  }
+
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #17150f; --card: #211e18; --ink: #ece7dd; --muted: #a09889;
       --line: #35302a; --accent: #fb923c;
     }
     button.primary { color: #17150f; }
-    input[type=text] { background: #17150f; }
+    input[type=text], input[type=url], input[type=search], input[type=number] {
+      background: #17150f;
+    }
   }
 </style>
 </head>
@@ -135,10 +210,111 @@
   <a class="brand" href="/">tonie-studio</a>
   <a href="/">Alben</a>
   <a href="/tonies">Tonies</a>
+  <a href="/library">Library</a>
+  <a href="/radio">Radio</a>
   <a href="/sheet">Blatt</a>
+  <span class="boxnow muted grow truncate" id="boxnow" hidden></span>
 </header>
 <main>
 {% block body %}{% endblock %}
 </main>
+<div id="peek"><img alt=""></div>
+<script>
+  // A 44 pixel thumbnail is enough to find a row and too small to judge a
+  // cover by, which is exactly what one does before printing it.
+  (() => {
+    const peek = document.getElementById('peek');
+    const image = peek.querySelector('img');
+    if (!window.matchMedia('(hover: hover)').matches) return;
+
+    function bigger(src) {
+      // The album covers take a size; the model covers are served whole.
+      return src.includes('size=') ? src.replace(/size=\d+/, 'size=520') : src;
+    }
+
+    // Two shapes of row carry a cover: a thumbnail with a src, and the sheet's
+    // circles, which are drawn from the row's own cover and have no image
+    // element of their own.
+    function coverOf(target) {
+      const thumb = target.closest('.list .album img');
+      if (thumb) return { anchor: thumb, src: thumb.src };
+      // The circle only, not the whole row: ticking a row is done with the
+      // pointer on it, and a picture jumping out at every tick is noise.
+      const circle = target.closest('.list .album[data-src] .preview');
+      return circle ? { anchor: circle, src: circle.closest('[data-src]').dataset.src } : null;
+    }
+
+    document.addEventListener('mouseover', event => {
+      const cover = coverOf(event.target);
+      if (!cover) return;
+      image.src = bigger(cover.src);
+      peek.style.display = 'block';
+      place(cover.anchor);
+    });
+
+    document.addEventListener('mouseout', event => {
+      if (coverOf(event.target)) peek.style.display = 'none';
+    });
+
+    function place(anchor) {
+      // Beside the column, never on top of it: a preview that covers the list
+      // hides the very row one is pointing at. It takes whichever margin is
+      // wider and shrinks to fit it rather than moving over the column.
+      const box = anchor.getBoundingClientRect();
+      const column = document.querySelector('main').getBoundingClientRect();
+      const gapRight = window.innerWidth - column.right - 24;
+      const gapLeft = column.left - 24;
+      const gap = Math.max(gapRight, gapLeft);
+      const size = Math.min(300, gap);
+      if (size < 120) {  // a preview this small says nothing a thumbnail does not
+        peek.style.display = 'none';
+        return;
+      }
+      image.style.width = image.style.height = `${size}px`;
+      peek.style.left = `${gapRight >= gapLeft ? column.right + 16 : column.left - size - 16}px`;
+      peek.style.top = `${Math.max(12, Math.min(box.top + box.height / 2 - size / 2,
+                                                window.innerHeight - size - 12))}px`;
+      peek.style.display = 'block';
+    }
+
+    window.addEventListener('scroll', () => { peek.style.display = 'none'; }, true);
+  })();
+
+  // What is on the box belongs on every page, not only on the tonie list: it
+  // is the one piece of state that changes without anyone touching this app.
+  (() => {
+    const slot = document.getElementById('boxnow');
+    if (!slot) return;
+    let known = {};
+
+    async function tick() {
+      try {
+        const response = await fetch('/api/box');
+        if (response.ok) known = await response.json();
+      } catch (error) {
+        // A dropped poll says nothing about the box.
+      }
+      render();
+      setTimeout(tick, 5000);
+    }
+
+    function render() {
+      slot.classList.toggle('off', known.connected === false);
+      if (known.connected === false) {
+        slot.hidden = false;
+        slot.textContent = 'teddyCloud antwortet nicht';
+        return;
+      }
+      if (known.on_box && known.label) {
+        slot.hidden = false;
+        slot.innerHTML = (known.playing ? 'spielt: <b></b>' : 'auf der Box: <b></b>');
+        slot.querySelector('b').textContent = known.label;
+        return;
+      }
+      slot.hidden = true;
+    }
+    tick();
+  })();
+</script>
 </body>
 </html>

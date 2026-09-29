@@ -7,7 +7,7 @@
   {{ album.artist or "Verschiedene Interpreten" }}{% if album.year %} - {{ album.year }}{% endif %}
   - {{ album.tracks|length }} Tracks
   {%- if album.duration %} - {{ (album.duration / 60) | round | int }} Minuten{% endif %}
-  - Reihenfolge nach {{ album.ordering }}
+  - Reihenfolge nach {{ orderings.get(album.ordering, album.ordering) }}
 </p>
 
 {% for warning in album.warnings %}
@@ -17,32 +17,32 @@
 {% if conflict %}
 <div class="warn">
   <strong>Dort liegt schon ein Taf:</strong> <code>{{ conflict }}</code><br>
-  Waehle einen anderen Namen, oder ersetze es. Beim Ersetzen spielt ein Tonie, der darauf
+  Wähle einen anderen Namen, oder ersetze es. Beim Ersetzen spielt ein Tonie, der darauf
   zeigt, so lange nichts, bis das neue Taf fertig ist.
 </div>
 {% endif %}
 
 <form method="post" action="/album/{{ id }}/encode" id="form">
-  <div class="card row" style="align-items: flex-start">
+  <div class="card row stackable" style="align-items: flex-start">
     {% if album.cover_candidates %}
-    <div style="flex: none">
+    <div style="flex: none; width: 140px">
       <!-- The sticker is round and the cover square, so something is always
-           cut. The preview shows exactly what, and the sliders decide it. -->
-      <span class="preview" id="cover" style="width: 120px; height: 120px">
+           cut. Dragging the picture is how everyone expects to decide what. -->
+      <span class="preview grabbable" id="cover" style="width: 140px; height: 140px">
+        <span class="bg" id="coverbg"></span>
         <span class="fg" id="coverimg"></span>
       </span>
-      <input type="hidden" name="cover_index" id="cover_index" value="0">
-      <label class="field" style="margin: 8px 0 0">
-        <span>Ausschnitt</span>
-        <input type="range" name="cover_zoom" id="zoom" min="1" max="2.5" step="0.05" value="1"
-               style="width: 120px">
-      </label>
-      <div class="row" style="gap: 6px">
-        <input type="range" name="cover_x" id="cx" min="-1" max="1" step="0.05" value="0"
-               style="width: 56px" aria-label="waagerecht">
-        <input type="range" name="cover_y" id="cy" min="-1" max="1" step="0.05" value="0"
-               style="width: 56px" aria-label="senkrecht">
+      <p class="muted" style="font-size: 13px; margin: 6px 0 4px">
+        Ziehen zum Verschieben, Regler oder zwei Finger zum Zoomen.
+      </p>
+      <div class="row" style="gap: 8px">
+        <input type="range" name="cover_zoom" id="zoom" min="0.5" max="2.5" step="0.02" value="1"
+               style="flex: 1" aria-label="Zoom">
+        <button type="button" class="small" id="coverreset">zurück</button>
       </div>
+      <input type="hidden" name="cover_index" id="cover_index" value="0">
+      <input type="hidden" name="cover_x" id="cx" value="0">
+      <input type="hidden" name="cover_y" id="cy" value="0">
       {% if album.cover_candidates | length > 1 %}
       <div class="row" style="gap: 6px; margin-top: 8px; flex-wrap: wrap">
         {% for candidate in album.cover_candidates %}
@@ -100,30 +100,82 @@
 
 <script>
   // The preview mirrors what the server will render: the cover scaled inside
-  // the circle and shifted, with the same arithmetic on both sides so what is
-  // seen here is what ends up on the sticker.
+  // the circle and shifted, with the same arithmetic on both sides. A CSS
+  // background position of 0 percent is the window the server cuts at
+  // offset -1, so what is seen here is what ends up on the sticker.
   const coverimg = document.getElementById('coverimg');
   if (coverimg) {
+    const circle = document.getElementById('cover');
+    const coverbg = document.getElementById('coverbg');
     const zoom = document.getElementById('zoom');
     const cx = document.getElementById('cx');
     const cy = document.getElementById('cy');
     const index = document.getElementById('cover_index');
+    const clamp = value => Math.max(-1, Math.min(1, value));
 
     function paint() {
       const z = +zoom.value;
-      coverimg.style.backgroundImage =
-        `url("/album/{{ id }}/cover?index=${index.value}&size=512")`;
+      const url = `url("/album/{{ id }}/cover?index=${index.value}&size=512")`;
+      coverimg.style.backgroundImage = url;
+      coverbg.style.backgroundImage = url;
       coverimg.style.backgroundSize = `${z * 100}% ${z * 100}%`;
-      // A background position of 0% shows the left edge, 100% the right one,
-      // which is the same window the server crops: offset -1 is the left edge.
       coverimg.style.backgroundPosition =
-        `${(1 + (+cx.value)) * 50}% ${(1 + (+cy.value)) * 50}%`;
+        `${(1 + +cx.value) * 50}% ${(1 + +cy.value) * 50}%`;
     }
 
-    [zoom, cx, cy].forEach(slider => slider.addEventListener('input', paint));
+    // Dragging moves the picture under the circle. At zoom 1 there is nothing
+    // to move, so the whole gesture is a no-op rather than a jitter.
+    let dragging = null;
+    circle.addEventListener('pointerdown', event => {
+      if (+zoom.value <= 1) return;
+      dragging = { x: event.clientX, y: event.clientY, cx: +cx.value, cy: +cy.value };
+      circle.setPointerCapture(event.pointerId);
+    });
+    circle.addEventListener('pointermove', event => {
+      if (!dragging) return;
+      const z = +zoom.value;
+      // Across the whole circle the offset runs from -1 to 1, and the reachable
+      // range shrinks as the zoom grows.
+      const span = circle.clientWidth * (z - 1) / z / 2;
+      cx.value = clamp(dragging.cx - (event.clientX - dragging.x) / span).toFixed(3);
+      cy.value = clamp(dragging.cy - (event.clientY - dragging.y) / span).toFixed(3);
+      paint();
+    });
+    for (const done of ['pointerup', 'pointercancel']) {
+      circle.addEventListener(done, () => { dragging = null; });
+    }
+
+    // No wheel handler on purpose. Zooming on the wheel means swallowing it,
+    // and the circle sits near the top of a page taller than any window: a
+    // pointer resting over it would leave the page unable to scroll at all.
+    // The slider zooms on a desktop, two fingers on a touch screen.
+
+    // Pinch: two pointers on the circle, the distance between them is the zoom.
+    const touches = new Map();
+    let pinch = null;
+    circle.addEventListener('pointerdown', event => touches.set(event.pointerId, event));
+    circle.addEventListener('pointermove', event => {
+      if (!touches.has(event.pointerId)) return;
+      touches.set(event.pointerId, event);
+      if (touches.size !== 2) return;
+      dragging = null;
+      const [a, b] = [...touches.values()];
+      const gap = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (pinch === null) { pinch = { gap, zoom: +zoom.value }; return; }
+      zoom.value = Math.max(1, Math.min(2.5, pinch.zoom * gap / pinch.gap));
+      paint();
+    });
+    for (const done of ['pointerup', 'pointercancel', 'pointerleave']) {
+      circle.addEventListener(done, event => { touches.delete(event.pointerId); pinch = null; });
+    }
+
+    zoom.addEventListener('input', paint);
+    document.getElementById('coverreset').addEventListener('click', () => {
+      zoom.value = 1; cx.value = 0; cy.value = 0; paint();
+    });
     document.querySelectorAll('img.pick').forEach(pick => {
       pick.addEventListener('click', () => {
-        document.querySelectorAll('img.pick').forEach(p => p.classList.remove('chosen'));
+        document.querySelectorAll('img.pick').forEach(other => other.classList.remove('chosen'));
         pick.classList.add('chosen');
         index.value = pick.dataset.index;
         paint();
@@ -156,7 +208,7 @@
 
   function recount() {
     const n = boxes().filter(box => box.checked).length;
-    chosen.textContent = `${n} von ${boxes().length} ausgewaehlt`;
+    chosen.textContent = `${n} von ${boxes().length} ausgewählt`;
   }
 
   document.querySelectorAll('button[data-pick]').forEach(button => {

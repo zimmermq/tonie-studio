@@ -30,6 +30,11 @@ MAX_PARALLEL = 1
 # How many finished jobs to keep before dropping the oldest.
 KEEP_FINISHED = 50
 
+# How much of the progress bar the uploads get. Encoding takes far longer than
+# pushing the files across, but a bar that barely moves for a minute looks
+# stuck, so the uploads get more than their share of the time.
+UPLOAD_SHARE = 25
+
 
 class JobState(str, Enum):
     QUEUED = "queued"
@@ -58,12 +63,24 @@ class Job:
 
     @property
     def percent(self) -> Optional[int]:
-        """Completion as a whole number, or None while nothing is measurable."""
+        """Completion as a whole number, or None while nothing is measurable.
+
+        An encode has two phases that each count from zero to their own total,
+        so a bar fed either one directly fills up during the uploads and then
+        sits at 100 while ffmpeg is still working. The phases get a share of
+        the bar each instead, and it only ever moves forward.
+        """
         if self.state is JobState.DONE:
             return 100
         if not self.total:
             return None
-        return min(100, int(self.done_count * 100 / self.total))
+
+        share = self.done_count / self.total
+        if self.step == "upload":
+            return min(UPLOAD_SHARE, int(share * UPLOAD_SHARE))
+        if self.step == "encode":
+            return min(99, UPLOAD_SHARE + int(share * (100 - UPLOAD_SHARE)))
+        return min(100, int(share * 100))
 
 
 class JobRunner:

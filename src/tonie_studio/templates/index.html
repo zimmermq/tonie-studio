@@ -20,10 +20,10 @@
 {%- endmacro %}
 
 {% block body %}
-<h1>Album auswaehlen</h1>
+<h1>Album auswählen</h1>
 
 {% if jobs %}
-<h2>Laeuft gerade</h2>
+<h2>Läuft gerade</h2>
 {% for job in jobs %}
 <div class="card row">
   <div class="grow truncate">
@@ -51,7 +51,7 @@
 <h2>Hochladen</h2>
 <div class="card">
   <p class="muted" style="margin-top:0">
-    Fuer Alben, die nicht auf dem Server liegen. Bilder duerfen mit dabei sein, das erste
+    Für Alben, die nicht auf dem Server liegen. Bilder dürfen mit dabei sein, das erste
     davon wird als Cover genommen.
   </p>
   <form method="post" action="/upload" enctype="multipart/form-data" id="upload">
@@ -59,13 +59,13 @@
       <!-- A file input cannot be styled, so it is hidden behind a label that
            can be. webkitdirectory picks a whole album folder at once; a 60
            track release is otherwise 60 clicks in the dialog. -->
-      <label class="button">Ordner waehlen
+      <label class="button">Ordner wählen
         <input type="file" name="files" webkitdirectory directory multiple hidden>
       </label>
       <label class="button">Einzelne Dateien
         <input type="file" name="files" multiple hidden>
       </label>
-      <span class="muted grow truncate" id="picked">nichts ausgewaehlt</span>
+      <span class="muted grow truncate" id="picked">nichts ausgewählt</span>
       <button class="primary" type="submit" id="send" disabled>Hochladen</button>
     </div>
   </form>

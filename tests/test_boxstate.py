@@ -156,3 +156,24 @@ class TestStaleness:
     def test_nothing_seen_yet_is_neither_on_nor_stale(self, watcher):
         assert watcher.state.ruid is None
         assert watcher.state.stale is False
+
+
+class TestUnknownTagAges:
+    def test_a_sticker_just_held_against_the_box_counts(self, watcher):
+        watcher.handle("TagInvalid", "E00403500EEDFFFF")
+
+        assert watcher.state.fresh_unknown == "ffffed0e500304e0"
+
+    def test_one_from_hours_ago_does_not(self, watcher):
+        # Remembered forever, it keeps looking like something happening now -
+        # and the assignment page reloads itself over and over because of it.
+        from datetime import datetime, timedelta, timezone
+
+        watcher.handle("TagInvalid", "E00403500EEDFFFF")
+        watcher._state.unknown_since = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        assert watcher.state.fresh_unknown is None
+        assert watcher.state.unknown_ruid == "ffffed0e500304e0"
+
+    def test_nothing_seen_is_nothing_reported(self, watcher):
+        assert watcher.state.fresh_unknown is None

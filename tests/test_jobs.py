@@ -107,3 +107,61 @@ class TestListing:
 
     def test_answers_none_for_an_unknown_id(self, runner):
         assert runner.get("nope") is None
+
+
+class TestProgressBar:
+    def test_the_uploads_do_not_fill_the_whole_bar(self, runner):
+        # Both phases count from zero to their own total. Fed straight to a
+        # bar, the uploads fill it and the encode then sits at 100 while ffmpeg
+        # is still running.
+        from tonie_studio.jobs import UPLOAD_SHARE
+
+        job = _wait(runner, runner.submit("encode", "a", lambda p: p("upload", 5, 5)))
+
+        assert job.percent == 100  # finished jobs are always 100
+        assert UPLOAD_SHARE < 100
+
+    def test_a_running_upload_stays_in_its_share(self, runner):
+        import threading
+
+        from tonie_studio.jobs import UPLOAD_SHARE
+
+        release = threading.Event()
+
+        def work(progress):
+            progress("upload", 5, 5)
+            release.wait(5)
+
+        job_id = runner.submit("encode", "a", work)
+        _eventually(lambda: runner.get(job_id).step == "upload")
+
+        assert runner.get(job_id).percent == UPLOAD_SHARE
+        release.set()
+        _wait(runner, job_id)
+
+    def test_a_running_encode_never_reaches_a_hundred(self, runner):
+        import threading
+
+        release = threading.Event()
+
+        def work(progress):
+            progress("encode", 600, 600)
+            release.wait(5)
+
+        job_id = runner.submit("encode", "a", work)
+        _eventually(lambda: runner.get(job_id).step == "encode")
+
+        assert runner.get(job_id).percent == 99
+        release.set()
+        _wait(runner, job_id)
+
+
+def _eventually(condition, timeout=3.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition never became true")

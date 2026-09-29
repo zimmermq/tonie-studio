@@ -4,33 +4,60 @@
 {% block body %}
 <h1>Traveltonies-Blatt</h1>
 <p class="sub">
-  A4, runde Aufkleber mit 46 mm, {{ per_page }} pro Blatt. Das Bild wird 1 mm ueber die
-  Schnittlinie hinaus gedruckt, damit ein Schnitt daneben nicht auf weissem Papier landet.
+  A4, runde Aufkleber mit 46 mm, {{ per_page }} pro Blatt. Das Bild wird 1 mm über die
+  Schnittlinie hinaus gedruckt, damit ein Schnitt daneben nicht auf weißem Papier landet.
 </p>
 
-<div class="warn">
-  <strong>Randlos oder ganzes Cover?</strong> Ein quadratisches Cover passt nicht in einen Kreis.
-  <em>Randlos</em> fuellt den Kreis und schneidet die Raender weg - bei vielen Covern kostet das
-  den Schriftzug. <em>Ganzes Cover</em> verkleinert es, bis alles drin ist, und fuellt den Ring
-  mit einer unscharfen Kopie. Die Vorschau zeigt beides sofort.
-</div>
-
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
+  {% if models %}
+  <div class="row sheethead">
+    <label class="row" style="gap: 8px; cursor: pointer">
+      <input type="checkbox" id="allon"><span class="muted">alle</span>
+    </label>
+    <span class="grow"></span>
+    <span class="muted" style="width: 176px; text-align: center">Darstellung</span>
+  </div>
+  {% endif %}
+
   <div class="list">
     {% for model in models %}
     <div class="album sticker" data-src="/cover/custom/{{ model.image }}">
-      <span class="preview" aria-hidden="true"><span class="bg"></span><span class="fg"></span></span>
+      <input type="checkbox" class="want" {% if preset == model.model %}checked{% endif %}
+             aria-label="aufs Blatt">
       <span class="grow truncate">
         <strong class="truncate">{{ model.series }}</strong>
         <span class="muted truncate">{{ model.episodes }} &middot; {{ model.model }}</span>
       </span>
-      <select name="modes" aria-label="Darstellung" style="font: inherit; padding: 6px 8px">
-        <option value="{{ fill }}">randlos</option>
-        <option value="{{ fit }}">ganzes Cover</option>
-      </select>
+
+      <!-- The two circles are the choice, not a preview of it. In the space a
+           dropdown leaves beside it, the difference between the two modes is
+           invisible - and an invisible difference is not a decision anyone can
+           make. Here both are drawn at a size where the lettering either
+           survives the circle or does not. -->
+      <span class="modes" style="width: 176px">
+        <label class="mode chosen">
+          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fill }}" checked hidden>
+          <span class="preview big"><span class="fg"></span></span>
+          <span class="muted">randlos</span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fit }}" hidden>
+          <span class="preview big is-fit"><span class="bg"></span><span class="fg"></span></span>
+          <span class="muted">ganzes Cover</span>
+        </label>
+      </span>
+
       <input type="hidden" name="models" value="{{ model.model }}">
-      <input type="number" name="counts" value="0" min="0" max="100"
-             style="width: 4.5em; font: inherit; padding: 6px 8px" aria-label="Anzahl">
+      <input type="hidden" name="modes" value="{{ fill }}">
+      <!-- One sticker per ticked tonie is what almost everyone wants. The
+           number only appears once something is ticked, for the rarer case of
+           wanting the same motif several times. -->
+      <span class="times empty">
+        <button type="button" class="small" data-step="-1">&minus;</button>
+        <span class="count">1</span>&times;
+        <button type="button" class="small" data-step="1">+</button>
+      </span>
+      <input type="hidden" name="counts" value="{{ 1 if preset == model.model else 0 }}">
     </div>
     {% else %}
     <div class="album muted">
@@ -40,26 +67,24 @@
   </div>
 
   {% if models %}
-  <p class="row" style="gap: 8px; flex-wrap: wrap; margin-top: 12px">
-    <button type="button" class="small" data-set="1">je einer</button>
-    <button type="button" class="small" data-set="0">alle auf null</button>
-    <button type="button" class="small" id="fillsheet">Blatt auffuellen</button>
-    <span class="muted grow" id="total"></span>
+  <p class="row" style="gap: 12px; flex-wrap: wrap; margin-top: 12px">
+    <strong id="total"></strong>
+    <button type="button" class="small" id="fillsheet">Blatt voll machen</button>
   </p>
   {% endif %}
 
-  <h2>Zusaetzliche Bilder</h2>
+  <h2>Zusätzliche Bilder</h2>
   <div class="card">
     <p class="muted" style="margin-top:0">Bilder ohne Modell kommen je einmal aufs Blatt.</p>
     <div class="row" style="gap: 10px; flex-wrap: wrap">
-      <label class="button">Bilder waehlen
+      <label class="button">Bilder wählen
         <input type="file" name="files" accept="image/*" multiple hidden id="extra">
       </label>
       <select name="upload_mode" style="font: inherit; padding: 7px 10px">
         <option value="{{ fill }}">randlos</option>
         <option value="{{ fit }}">ganzes Cover</option>
       </select>
-      <span class="muted grow truncate" id="extrapicked">nichts ausgewaehlt</span>
+      <span class="muted grow truncate" id="extrapicked">nichts ausgewählt</span>
     </div>
   </div>
 
@@ -72,57 +97,76 @@
   const rows = [...document.querySelectorAll('.sticker')];
   const total = document.getElementById('total');
 
-  // The preview is the same geometry the PDF uses: a circle, the cover either
-  // filling it or inset on a blurred copy of itself. Deciding this from a
-  // sentence of description is guesswork; from the picture it is obvious.
-  function draw(row) {
-    const fit = row.querySelector('select').value === '{{ fit }}';
-    const src = `url("${row.dataset.src}")`;
-    row.querySelector('.bg').style.backgroundImage = src;
-    row.querySelector('.fg').style.backgroundImage = src;
-    row.querySelector('.preview').classList.toggle('is-fit', fit);
+  // Both circles show the same cover, each rendered in its own mode, so the
+  // choice is made by looking rather than by reading a description of it.
+  for (const row of rows) {
+    const url = `url("${row.dataset.src}")`;
+    for (const layer of row.querySelectorAll('.preview span')) layer.style.backgroundImage = url;
+    for (const radio of row.querySelectorAll('input[type=radio]')) {
+      radio.addEventListener('change', () => {
+        row.querySelector('input[name=modes]').value = radio.value;
+        row.querySelectorAll('.mode').forEach(mode => mode.classList.remove('chosen'));
+        radio.closest('.mode').classList.add('chosen');
+      });
+    }
   }
 
-  function retotal() {
-    const sum = rows.reduce((n, row) => n + (+row.querySelector('input[type=number]').value || 0), 0);
-    const sheets = Math.ceil(sum / perPage) || 0;
+  const countOf = row => +row.querySelector('input[name=counts]').value || 0;
+
+  function setCount(row, value) {
+    value = Math.max(0, Math.min(99, value));
+    row.querySelector('input[name=counts]').value = value;
+    row.querySelector('.want').checked = value > 0;
+    row.querySelector('.times').classList.toggle('empty', value < 1);
+    row.querySelector('.count').textContent = value;
+    refresh();
+  }
+
+  function refresh() {
+    const sum = rows.reduce((n, row) => n + countOf(row), 0);
+    const sheets = Math.ceil(sum / perPage);
     total.textContent = sum
-      ? `${sum} Aufkleber, ${sheets} ${sheets === 1 ? 'Blatt' : 'Blaetter'}`
-      : 'nichts ausgewaehlt';
+      ? `${sum} Aufkleber, ${sheets} ${sheets === 1 ? 'Blatt' : 'Blätter'}`
+      : 'Noch keiner ausgewählt';
+    const all = document.getElementById('allon');
+    if (all) all.checked = rows.length > 0 && rows.every(row => countOf(row) > 0);
   }
 
-  document.getElementById('sheetform').addEventListener('change', event => {
-    const row = event.target.closest('.sticker');
-    if (row) draw(row);
-    retotal();
-  });
-
-  document.querySelectorAll('button[data-set]').forEach(button => {
-    button.addEventListener('click', () => {
-      for (const row of rows) row.querySelector('input[type=number]').value = button.dataset.set;
-      retotal();
+  for (const row of rows) {
+    row.querySelector('.want').addEventListener('change', event => {
+      setCount(row, event.target.checked ? 1 : 0);
     });
+    row.querySelectorAll('button[data-step]').forEach(button => {
+      button.addEventListener('click', () => setCount(row, countOf(row) + +button.dataset.step));
+    });
+  }
+
+  const all = document.getElementById('allon');
+  if (all) all.addEventListener('change', () => {
+    // Read once: setCount refreshes the header box, so reading it inside the
+    // loop would turn the first row off again for every row after it.
+    const wanted = all.checked ? 1 : 0;
+    for (const row of rows) setCount(row, wanted);
   });
 
   const fillsheet = document.getElementById('fillsheet');
   if (fillsheet) fillsheet.addEventListener('click', () => {
-    // Spread a whole sheet over the chosen motifs, the remainder onto the first.
-    const chosen = rows.filter(row => +row.querySelector('input[type=number]').value > 0);
+    // Spread a whole sheet over what is ticked, the remainder onto the first.
+    const chosen = rows.filter(row => countOf(row) > 0);
     const spread = chosen.length ? chosen : rows;
     const each = Math.floor(perPage / spread.length);
     spread.forEach((row, index) => {
-      row.querySelector('input[type=number]').value = each + (index === 0 ? perPage % spread.length : 0);
+      setCount(row, each + (index === 0 ? perPage % spread.length : 0));
     });
-    retotal();
   });
 
   const extra = document.getElementById('extra');
   if (extra) extra.addEventListener('change', () => {
     document.getElementById('extrapicked').textContent =
-      extra.files.length ? `${extra.files.length} Bilder` : 'nichts ausgewaehlt';
+      extra.files.length ? `${extra.files.length} Bilder` : 'nichts ausgewählt';
   });
 
-  rows.forEach(draw);
-  retotal();
+  for (const row of rows) setCount(row, countOf(row));
+  refresh();
 </script>
 {% endblock %}

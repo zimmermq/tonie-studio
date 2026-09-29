@@ -4,8 +4,8 @@
 {% block body %}
 <h1>Tonies</h1>
 <p class="sub">
-  {{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt.
-  <span id="boxnote" class="muted"></span>
+  {{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt<span
+    id="boxnote" class="muted"></span>.
 </p>
 
 <div class="list">
@@ -26,13 +26,17 @@
         {{ tag.uid }}{% if tag.model %} &middot; {{ tag.model }} &middot; bearbeiten{% endif %}
       </span>
     </a>
+    {% if tag.model %}
+    <a class="button small" href="/sheet?model={{ tag.model }}"
+       title="Aufkleber für diesen Tonie">Aufkleber</a>
+    {% endif %}
   </div>
 {% else %}
   <div class="album muted">teddyCloud kennt noch keinen Tag. Halte einen an die Box.</div>
 {% endfor %}
 </div>
 
-<p><a class="button" href="/">Zurueck zur Uebersicht</a>
+<p><a class="button" href="/">Zurück zur Übersicht</a>
    <a class="button" href="/sheet" style="margin-left:8px">Blatt drucken</a></p>
 
 <script>
@@ -56,13 +60,13 @@
 
     if (box.on_box && row) {
       row.querySelector('.onbox').hidden = false;
-      note.textContent = box.playing ? '- spielt gerade' : '- ein Tonie liegt auf';
+      note.textContent = box.playing ? ', einer spielt gerade' : ', einer liegt auf der Box';
     } else if (!box.connected) {
-      note.textContent = '- keine Verbindung zu teddyCloud';
+      note.textContent = ', keine Verbindung zu teddyCloud';
     } else if (box.stale) {
-      note.textContent = '- Box war lange nicht zu hoeren';
+      note.textContent = ', die Box war lange nicht zu hören';
     } else {
-      note.textContent = '- nichts auf der Box';
+      note.textContent = ', nichts auf der Box';
     }
     schedule();
   }

@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Union
 
-from .encode import EncodeResult
+from .encode import EncodeResult, taf_exists
 from .teddycloud import TeddyCloudClient
 
 log = logging.getLogger(__name__)
@@ -125,6 +125,14 @@ def publish(
     """Give the tag its audio and its identity, and return the model id used."""
     if not encoded.source:
         raise TonieError("the encode produced no library path to point the tag at")
+    # A tag pointing at a path that is not there plays nothing, and nothing
+    # says so: teddyCloud stores whatever it is handed. This has happened once
+    # already, from a source string that had been read with the wrong encoding
+    # and written straight back.
+    if encoded.source.startswith("lib://") and not taf_exists(client, encoded.target):
+        raise TonieError(
+            f"there is no taf at {encoded.target}; the tag would play nothing"
+        )
     if not any(tag.ruid == ruid for tag in list_tags(client)):
         raise TonieError(
             f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
@@ -148,6 +156,62 @@ def find_model(client: TeddyCloudClient, model_id: str) -> Optional[Dict[str, An
         if str(model.get("model", "")).lower() == model_id.lower():
             return model
     return None
+
+
+def publish_stream(
+    client: TeddyCloudClient,
+    ruid: str,
+    url: str,
+    series: str,
+    episode: str = "",
+    cover: Optional[Union[Path, bytes]] = None,
+    cover_name: str = "jpg",
+    model_id: Optional[str] = None,
+    language: str = DEFAULT_LANGUAGE,
+    category: str = DEFAULT_CATEGORY,
+) -> str:
+    """Point a tag at a radio stream instead of at a taf.
+
+    teddyCloud decides this by the source alone: a source containing ``://`` is
+    a stream, and it then sets ``live`` and ``nocloud`` itself and persists
+    that (`contentJson.c`, where `_source_type` becomes `CT_SOURCE_STREAM`).
+    Both are set here anyway so the tag is right the moment it is written
+    rather than the first time teddyCloud reads it.
+
+    The model carries no ``audio_id`` or ``hash``: there is no taf to identify,
+    so nothing can be recognised automatically and the tag names the model
+    outright.
+
+    Worth knowing at the box: it reserves a file of ``encode.stream_max_size``
+    per stream, 240 MB by default, and stops when that is full - roughly six
+    hours. The tonie then has to be lifted and put back.
+    """
+    url = (url or "").strip()
+    if "://" not in url:
+        raise TonieError(f"a stream needs a URL, not {url!r}")
+    if not url.lower().startswith(("http://", "https://")):
+        raise TonieError("only http and https streams are supported")
+    if not any(tag.ruid == ruid for tag in list_tags(client)):
+        raise TonieError(
+            f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
+        )
+
+    model_id = model_id or next_model_id(client)
+    model: Dict[str, Any] = {
+        "model": model_id,
+        "series": series.strip() or model_id,
+        "episodes": episode.strip(),
+        "tracks": [],
+        "language": language,
+        "category": category if category in CATEGORIES else DEFAULT_CATEGORY,
+    }
+    if cover is not None:
+        model["pic"] = _upload_cover(client, model_id, cover, cover_name)
+
+    client.upsert_custom_tonie(model)
+    client.set_tag(ruid, source=url, tonie_model=model_id, live=True, nocloud=True)
+    log.info("tag %s now streams %s as %s", ruid, url, model_id)
+    return model_id
 
 
 def find_model_by_audio(
