@@ -15,12 +15,13 @@ the moment someone prints from another computer.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+from .i18n import DEFAULT, Translator
 from .sheet import CUT_LINE_GREY, DIAMETER_MM, PER_PAGE, font_name, sticker_positions
 from .store import LOCK, read_json, write_json
 
@@ -64,11 +65,13 @@ def save_measurement(data_dir: Path, left_mm: float, top_mm: float) -> Tuple[flo
     return right, down
 
 
-def build_calibration(target: Path, shift_mm: Tuple[float, float] = (0.0, 0.0)) -> None:
+def build_calibration(target: Path, shift_mm: Tuple[float, float] = (0.0, 0.0),
+                      translate: Optional[Translator] = None) -> None:
     """A sheet with a cross on every sticker centre and a ruler to check the scale."""
+    translate = translate or Translator(DEFAULT)
     page_width, page_height = A4
     sheet = canvas.Canvas(str(target), pagesize=A4)
-    sheet.setTitle("Kalibrierblatt")
+    sheet.setTitle(translate("pdf.calibration_title"))
     radius = DIAMETER_MM * mm / 2
 
     for number, position in enumerate(sticker_positions(PER_PAGE, shift_mm), 1):
@@ -87,13 +90,12 @@ def build_calibration(target: Path, shift_mm: Tuple[float, float] = (0.0, 0.0)) 
     want_left, want_top = expected_first_centre()
     sheet.setFillGray(0.1)
     sheet.setFont(font_name(True), 10)
-    sheet.drawString(12 * mm, page_height - 10 * mm, "Kalibrierblatt")
+    sheet.drawString(12 * mm, page_height - 10 * mm, translate("pdf.calibration_title"))
     sheet.setFont(font_name(False), 8)
     lines = [
-        f"Miss die Mitte von Kreuz 1: vom linken Blattrand sollen es {want_left:.1f} mm sein, "
-        f"vom oberen {want_top:.1f} mm.",
-        "Trag die gemessenen Werte auf der Blatt-Seite ein. Die Linie unten muss genau "
-        f"{RULER_MM} mm lang sein; sonst im Druckdialog auf 100 % stellen.",
+        translate("pdf.calibration_measure", left=translate.number(want_left),
+                  top=translate.number(want_top)),
+        translate("pdf.calibration_ruler", length=RULER_MM),
     ]
     for offset, text in enumerate(lines):
         sheet.drawString(12 * mm, page_height - (15 + 4 * offset) * mm, text)

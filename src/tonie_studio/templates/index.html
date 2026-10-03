@@ -10,66 +10,65 @@
   {% endif %}
   <span class="grow truncate">
     <strong class="truncate">{{ album.title or album.name }}
-      {%- if id in new %} <span class="pill new">neu</span>{% endif %}
-      {%- if id in done %} <span class="pill done" title="{{ done[id] }}">hat einen Tonie</span>{% endif -%}
+      {%- if id in new %} <span class="pill new">{{ t("albums.new") }}</span>{% endif %}
+      {%- if id in done %} <span class="pill done" title="{{ done[id] }}">{{ t("albums.has_tonie") }}</span>{% endif -%}
     </strong>
     <span class="muted truncate">
-      {{- album.artist or "Verschiedene" }}{% if album.year %} &middot; {{ album.year }}{% endif %}
-      &middot; {{ album.track_count }} Tracks
-      {%- if not album.has_cover %} &middot; kein Cover{% endif -%}
+      {{- album.artist or t("albums.various") }}{% if album.year %} &middot; {{ album.year }}{% endif %}
+      &middot; {{ t("albums.tracks", count=album.track_count) }}
+      {%- if not album.has_cover %} &middot; {{ t("albums.no_cover") }}{% endif -%}
     </span>
   </span>
 </a>
 {%- endmacro %}
 
 {% block body %}
-<h1>Album auswählen</h1>
+<h1>{{ t("albums.title") }}</h1>
 
 {% if jobs %}
-<h2>Läuft gerade</h2>
+<h2>{{ t("albums.running") }}</h2>
 {% for job in jobs %}
 <div class="card row">
   <div class="grow truncate">
     <a href="/job/{{ job.id }}">{{ job.label }}</a>
-    <div class="muted">{{ states.get(job.state.value, job.state.value) }}{% if job.step %} - {{ job.step }} {{ job.done_count }}/{{ job.total }}{% endif %}</div>
+    <div class="muted">{{ t("job.state." ~ job.state.value) }}{% if job.step %} - {{ t("job.step." ~ job.step) }} {{ job.done_count }}/{{ job.total }}{% endif %}</div>
   </div>
-  {% if job.state.value == 'failed' %}<span class="state-failed">fehlgeschlagen</span>
-  {% elif job.state.value == 'done' %}<span class="state-done">fertig</span>{% endif %}
+  {% if job.state.value == 'failed' %}<span class="state-failed">{{ t("job.state.failed") }}</span>
+  {% elif job.state.value == 'done' %}<span class="state-done">{{ t("job.state.done") }}</span>{% endif %}
 </div>
 {% endfor %}
 {% endif %}
 
 <div class="searchbar">
-  <input type="search" id="search" placeholder="Album, Interpret oder Jahr suchen"
-         autocomplete="off" aria-label="Alben durchsuchen">
-  <span class="muted" id="count">{{ albums | length }} Alben</span>
+  <input type="search" id="search" placeholder="{{ t('albums.search') }}"
+         autocomplete="off" aria-label="{{ t('albums.search_label') }}">
+  <span class="muted" id="count">{{ t("albums.count", count=albums | length) }}</span>
 </div>
 
 <div class="list" id="albums">
   {% for id, album, origin in uploads %}{{ album_row(id, album) }}{% endfor %}
   {% for id, album, origin in archive %}{{ album_row(id, album) }}{% endfor %}
 </div>
-<p class="muted" id="nohits" hidden>Kein Album passt dazu.</p>
+<p class="muted" id="nohits" hidden>{{ t("albums.no_match") }}</p>
 
-<h2>Hochladen</h2>
+<h2>{{ t("upload.title") }}</h2>
 <div class="card">
   <p class="muted" style="margin-top:0">
-    Für Alben, die nicht auf dem Server liegen. Bilder dürfen mit dabei sein, das erste
-    davon wird als Cover genommen.
+    {{ t("upload.hint") }}
   </p>
   <form method="post" action="/upload" enctype="multipart/form-data" id="upload">
     <div class="row" style="flex-wrap: wrap; gap: 10px">
       <!-- A file input cannot be styled, so it is hidden behind a label that
            can be. webkitdirectory picks a whole album folder at once; a 60
            track release is otherwise 60 clicks in the dialog. -->
-      <label class="button">Ordner wählen
+      <label class="button">{{ t("upload.folder") }}
         <input type="file" name="files" webkitdirectory directory multiple hidden>
       </label>
-      <label class="button">Einzelne Dateien
+      <label class="button">{{ t("upload.files") }}
         <input type="file" name="files" multiple hidden>
       </label>
-      <span class="muted grow truncate" id="picked">nichts ausgewählt</span>
-      <button class="primary" type="submit" id="send" disabled>Hochladen</button>
+      <span class="muted grow truncate" id="picked">{{ t("common.nothing_chosen") }}</span>
+      <button class="primary" type="submit" id="send" disabled>{{ t("upload.send") }}</button>
     </div>
   </form>
 </div>
@@ -78,6 +77,7 @@
   // Filtering happens over the rendered rows. At sixteen albums a round trip
   // per keystroke would be slower than the browser is; if the archive ever
   // grows to hundreds, this becomes a server-side filter.
+  const words = {{ t.strings("albums.count", "albums.shown_of", "upload.picked") | tojson }};
   const search = document.getElementById('search');
   const rows = [...document.querySelectorAll('#albums .album')];
   const count = document.getElementById('count');
@@ -92,7 +92,8 @@
       if (hit) shown++;
     }
     count.textContent = shown === rows.length
-      ? `${rows.length} Alben` : `${shown} von ${rows.length}`;
+      ? say(words['albums.count'], {count: rows.length})
+      : say(words['albums.shown_of'], {shown, count: rows.length});
     nohits.hidden = shown > 0;
   });
 
@@ -111,7 +112,7 @@
     const files = [...input.files];
     if (!files.length) return;
     const bytes = files.reduce((sum, file) => sum + file.size, 0);
-    picked.textContent = `${files.length} Dateien, ${(bytes / 1048576).toFixed(0)} MB`;
+    picked.textContent = say(words['upload.picked'], {count: files.length, size: (bytes / 1048576).toFixed(0)});
     send.disabled = false;
   });
 </script>

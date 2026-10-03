@@ -11,6 +11,12 @@ from unittest.mock import patch
 import pytest
 
 from tonie_studio.album import (
+    BY_FILE_NUMBER,
+    BY_NAME,
+    BY_PLAYLIST,
+    BY_TRACK_TAG,
+    WARN_ARTEFACT_COVER,
+    WARN_NO_COVER,
     TrackTags,
     album_id,
     list_albums,
@@ -45,7 +51,7 @@ class TestTrackOrder:
         album = read_album(directory)
 
         assert [track.path.name for track in album.tracks] == ["01-c.flac", "02-a.flac", "10-b.flac"]
-        assert album.ordering == "filename number"
+        assert album.ordering == BY_FILE_NUMBER
 
     def test_numbers_the_tracks_consecutively_from_one(self, tmp_path, tags):
         directory = _album(tmp_path, "album", ["05-a.flac", "09-b.flac"])
@@ -62,7 +68,7 @@ class TestTrackOrder:
         album = read_album(directory)
 
         assert [track.path.name for track in album.tracks] == ["beta.flac", "alpha.flac"]
-        assert album.ordering == "track tag"
+        assert album.ordering == BY_TRACK_TAG
 
     def test_sorts_by_disc_before_track(self, tmp_path, tags):
         directory = _album(tmp_path, "album", ["a.flac", "b.flac", "c.flac"])
@@ -81,7 +87,7 @@ class TestTrackOrder:
         album = read_album(directory)
 
         assert [track.path.name for track in album.tracks] == ["beta.flac", "alpha.flac"]
-        assert album.ordering == "playlist"
+        assert album.ordering == BY_PLAYLIST
 
     def test_ignores_a_playlist_that_does_not_cover_every_track(self, tmp_path, tags):
         directory = _album(tmp_path, "album", ["beta.flac", "alpha.flac"])
@@ -90,14 +96,14 @@ class TestTrackOrder:
         album = read_album(directory)
 
         assert [track.path.name for track in album.tracks] == ["alpha.flac", "beta.flac"]
-        assert album.ordering == "name"
+        assert album.ordering == BY_NAME
 
     def test_ignores_duplicate_numbers_rather_than_guessing(self, tmp_path, tags):
         directory = _album(tmp_path, "album", ["01-a.flac", "01-b.flac"])
 
         album = read_album(directory)
 
-        assert album.ordering == "name"
+        assert album.ordering == BY_NAME
 
 
 class TestTrackTitle:
@@ -258,7 +264,7 @@ class TestCover:
         album = read_album(directory)
 
         assert album.cover.name == "x-proof.jpg"
-        assert any("proof" in warning.lower() for warning in album.warnings)
+        assert WARN_ARTEFACT_COVER in album.warnings
 
     def test_reports_no_cover_rather_than_an_arbitrary_file(self, tmp_path, tags):
         directory = _album(tmp_path, "album", ["01-a.flac"])
@@ -266,7 +272,7 @@ class TestCover:
         album = read_album(directory)
 
         assert album.cover is None
-        assert "cover" in " ".join(album.warnings).lower()
+        assert WARN_NO_COVER in album.warnings
 
 
 class TestWhatCountsAsATrack:

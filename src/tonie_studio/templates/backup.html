@@ -1,53 +1,47 @@
 {% extends "base.html" %}
-{% block title %}Sicherung - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.backup") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Sicherung</h1>
-<p class="sub">
-  Alles, was einen Tonie ausmacht und nicht im Archiv steht: Namen, Titel, Cover, welcher
-  Sticker was spielt, Spielzeiten und das Hörprotokoll. Das Audio ist nicht dabei, das lässt
-  sich aus dem Archiv neu bauen.
-</p>
+<h1>{{ t("nav.backup") }}</h1>
+<p class="sub">{{ t("backup.intro") }}</p>
 
 <div class="card">
-  <p style="margin-top: 0">Eine Zip-Datei mit dem heutigen Stand. Sie enthält:</p>
+  <p style="margin-top: 0">{{ t("backup.contains") }}</p>
   <table class="sizes">
     <tbody>
       {% for part in parts %}
       <tr>
-        <td>{{ part.what }}</td>
+        <td>{{ t("backup.part." ~ part.what) }}</td>
         <td class="number">{{ part.count }}</td>
-        <td class="number muted">{% if part.size %}{{ part.size | filesize }}{% else %}-{% endif %}</td>
+        <td class="number muted">{% if part.size %}{{ t.size(part.size) }}{% else %}-{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
     <tfoot>
-      <tr><td>zusammen etwa</td><td></td><td class="number">{{ total | filesize }}</td></tr>
+      <tr><td>{{ t("backup.total") }}</td><td></td><td class="number">{{ t.size(total) }}</td></tr>
     </tfoot>
   </table>
-  <a class="button primary" href="/backup/download">Sicherung herunterladen</a>
+  <a class="button primary" href="/backup/download">{{ t("backup.download") }}</a>
 </div>
 
-<h2>Wiederherstellen</h2>
+<h2>{{ t("backup.restore") }}</h2>
 <div class="card">
-  <p class="muted" style="margin-top: 0">
-    Erst kommt eine Vorschau, was sich ändern würde; geschrieben wird erst nach deiner
-    Bestätigung. Gelöscht wird nie etwas: was es jetzt gibt und in der Sicherung fehlt, bleibt.
-  </p>
+  <p class="muted" style="margin-top: 0">{{ t("backup.restore_hint") }}</p>
   <form method="post" action="/restore" enctype="multipart/form-data" class="row" style="gap: 10px; flex-wrap: wrap">
-    <label class="button">Sicherung wählen
+    <label class="button">{{ t("backup.choose") }}
       <input type="file" name="file" accept=".zip,application/zip" required hidden id="restorefile">
     </label>
-    <span class="muted grow truncate" id="restorepicked">nichts ausgewählt</span>
-    <button type="submit">Vorschau</button>
+    <span class="muted grow truncate" id="restorepicked">{{ t("common.nothing_chosen") }}</span>
+    <button type="submit">{{ t("backup.preview") }}</button>
   </form>
 </div>
 
 <script>
+  const words = {{ t.strings("common.nothing_chosen") | tojson }};
   const picker = document.getElementById('restorefile');
   picker.addEventListener('change', () => {
     document.getElementById('restorepicked').textContent =
-      picker.files.length ? picker.files[0].name : 'nichts ausgewählt';
+      picker.files.length ? picker.files[0].name : words['common.nothing_chosen'];
   });
 </script>
 {% endblock %}

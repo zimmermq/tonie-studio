@@ -3,26 +3,29 @@
 
 {% block body %}
 <h1>{{ job.label }}</h1>
-<p class="sub" id="state">{{ states.get(job.state.value, job.state.value) }}</p>
+<p class="sub" id="state">{{ t("job.state." ~ job.state.value) }}</p>
 
 <div class="card">
   <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
   <p class="muted" id="detail" style="margin-bottom:0">
-    <span id="detailtext">{% if job.step %}{{ job.step }} {{ job.done_count }}/{{ job.total }}{% else %}wird vorbereitet{% endif %}</span>
+    <span id="detailtext">{% if job.step %}{{ t("job.step." ~ job.step) }} {{ job.done_count }}/{{ job.total }}{% else %}{{ t("job.preparing") }}{% endif %}</span>
   </p>
 </div>
 
 <div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>
   <p id="message" class="{% if job.state.value == 'failed' %}state-failed{% else %}state-done{% endif %}">
-    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}{{ done_text }}{% endif -%}
+    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif -%}
   </p>
   <a class="button" id="next" href="{{ next_href }}"
-     {% if job.state.value != 'done' %}hidden{% endif %}>{{ next_label }}</a>
-  <a class="button" href="/">Zurück zur Übersicht</a>
+     {% if job.state.value != 'done' %}hidden{% endif %}>{{ t(next_key) }}</a>
+  <a class="button" href="/">{{ t("job.back") }}</a>
 </div>
 
 <script>
   const id = {{ job.id | tojson }};
+  const words = {{ t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding",
+                             "job.state.queued", "job.state.running", "job.state.done",
+                             "job.state.failed", done_key) | tojson }};
   const fill = document.getElementById('fill');
   const state = document.getElementById('state');
   const detail = document.getElementById('detail');
@@ -32,13 +35,13 @@
   // The encode counts in seconds of audio, the uploads in files. Showing
   // "encode 312/4917" would be true and useless.
   function describe(data) {
-    if (!data.step) return 'wird vorbereitet';
-    if (data.step === 'upload') return `Track ${data.done} von ${data.total} hochgeladen`;
+    if (!data.step) return words['job.preparing'];
+    if (data.step === 'upload') return say(words['job.uploaded'], {done: data.done, count: data.total});
     if (data.step === 'encode') {
       const mins = value => Math.round(value / 60);
       return data.total > 90
-        ? `encodiert, etwa ${mins(data.done)} von ${mins(data.total)} Minuten`
-        : 'wird encodiert';
+        ? say(words['job.encoded_minutes'], {done: mins(data.done), count: mins(data.total)})
+        : words['job.encoding'];
     }
     return `${data.step} ${data.done}/${data.total}`;
   }
@@ -54,14 +57,14 @@
       return setTimeout(poll, 3000);
     }
 
-    state.textContent = ({{ states | tojson }})[data.state] || data.state;
+    state.textContent = words[`job.state.${data.state}`] || data.state;
     fill.style.width = (data.percent ?? 0) + '%';
     detail.textContent = describe(data);
 
     if (data.state === 'done' || data.state === 'failed') {
       outcome.hidden = false;
       document.getElementById('next').hidden = data.state !== 'done';
-      message.textContent = data.error || {{ done_text | tojson }};
+      message.textContent = data.error || words[{{ done_key | tojson }}];
       message.className = data.state === 'failed' ? 'state-failed' : 'state-done';
       return;
     }

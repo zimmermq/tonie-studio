@@ -63,5 +63,10 @@ def split(durations: Sequence[Optional[float]], parts: int) -> List[List[int]]:
 
 
 def part_name(name: str, part: int, parts: int) -> str:
-    """The episode name of one part; a whole album keeps its own."""
+    """The episode name of one part; a whole album keeps its own.
+
+    Always German, whatever language the page is read in: the name is stored
+    in the model and in the taf's library path, and a path that changed with
+    the reader would orphan every part encoded before.
+    """
     return name if parts == 1 else f"{name} - Teil {part} von {parts}"

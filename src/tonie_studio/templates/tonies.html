@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Tonies - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.tonies") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Tonies</h1>
+<h1>{{ t("nav.tonies") }}</h1>
 <p class="sub">
-  {{ tags | selectattr('assigned') | list | length }} von {{ tags | length }} Tags bespielt<span
+  {{ t("tonies.summary", used=tags | selectattr('assigned') | list | length, count=tags | length) }}<span
     id="boxnote" class="muted"></span>.
 </p>
 
@@ -19,31 +19,33 @@
     <a class="grow truncate" href="/tonies/{{ tag.ruid }}"
        style="color: inherit; text-decoration: none">
       <strong class="truncate">
-        {% if tag.assigned %}{{ tag.label }}{% else %}frei{% endif %}
-        <span class="onbox" hidden>auf der Box</span>
+        {% if tag.assigned %}{{ tag.label }}{% else %}{{ t("tag.free") }}{% endif %}
+        <span class="onbox" hidden>{{ t("tonies.on_box") }}</span>
       </strong>
       <span class="muted truncate">
-        {{ tag.uid }}{% if tag.model %} &middot; {{ tag.model }} &middot; bearbeiten{% endif %}
+        {{ tag.uid }}{% if tag.model %} &middot; {{ tag.model }} &middot; {{ t("tonies.edit") }}{% endif %}
       </span>
     </a>
     {% if tag.model %}
     <a class="button small" href="/sheet?model={{ tag.model }}"
-       title="Aufkleber für diesen Tonie">Aufkleber</a>
+       title="{{ t('tonies.sticker_title') }}">{{ t("tonies.sticker") }}</a>
     {% endif %}
   </div>
 {% else %}
-  <div class="album muted">teddyCloud kennt noch keinen Tag. Halte einen an die Box.</div>
+  <div class="album muted">{{ t("tonies.none") }}</div>
 {% endfor %}
 </div>
 
-<p><a class="button" href="/">Zurück zur Übersicht</a>
-   <a class="button" href="/sheet" style="margin-left:8px">Blatt drucken</a></p>
+<p><a class="button" href="/">{{ t("job.back") }}</a>
+   <a class="button" href="/sheet" style="margin-left:8px">{{ t("tonies.print") }}</a></p>
 
 <script>
   // The marker follows the box live: teddyCloud pushes the events, this only
   // asks for the result. Polling every few seconds is plenty for something a
   // person changes by hand.
   const note = document.getElementById('boxnote');
+  const words = {{ t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline",
+                             "tonies.note_stale", "tonies.note_nothing") | tojson }};
 
   async function refresh() {
     let box;
@@ -60,13 +62,13 @@
 
     if (box.on_box && row) {
       row.querySelector('.onbox').hidden = false;
-      note.textContent = box.playing ? ', einer spielt gerade' : ', einer liegt auf der Box';
+      note.textContent = box.playing ? words['tonies.note_playing'] : words['tonies.note_on_box'];
     } else if (!box.connected) {
-      note.textContent = ', keine Verbindung zu teddyCloud';
+      note.textContent = words['tonies.note_offline'];
     } else if (box.stale) {
-      note.textContent = ', die Box war lange nicht zu hören';
+      note.textContent = words['tonies.note_stale'];
     } else {
-      note.textContent = ', nichts auf der Box';
+      note.textContent = words['tonies.note_nothing'];
     }
     schedule();
   }

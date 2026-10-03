@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .encode import list_tafs
+from .i18n import Problem
 from .listening import FILE_NAME as LISTENING_FILE
 from .runtimes import FILE_NAME as TIMES_FILE
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -43,15 +44,27 @@ CUSTOM_IMG = "/custom_img/"
 # and far below what would hurt the process holding it in memory.
 LARGEST_BACKUP = 64 * 1024 * 1024
 
-SAME = "gleich"
-NEW = "neu"
-CHANGES = "ändert"
-REPLACES = "ersetzt"
-SKIPPED = "übersprungen"
-KEPT = "behalten"
+# What a restore step does, and what it does it to. The values name texts in
+# the language files (restore.action.*, restore.what.*); changing one means
+# renaming its text there as well.
+SAME = "same"
+NEW = "new"
+CHANGES = "changes"
+REPLACES = "replaces"
+SKIPPED = "skipped"
+KEPT = "kept"
+FAILED = "failed"
+ACTIONS = (SAME, NEW, CHANGES, REPLACES, SKIPPED, KEPT, FAILED)
+
+MODEL, COVER, TAG, TIMES, LISTENING = "model", "cover", "tag", "times", "listening"
+KINDS = (MODEL, COVER, TAG, TIMES, LISTENING)
+
+# The parts of a backup as the backup page lists them; texts in backup.part.*.
+PART_MODELS, PART_TAGS, PART_COVERS = "models", "tags", "covers"
+PARTS = (PART_MODELS, PART_TAGS, PART_COVERS, TIMES, LISTENING)
 
 
-class BackupError(ValueError):
+class BackupError(Problem, ValueError):
     """A file that is not a backup this app can restore."""
 
 
@@ -72,7 +85,8 @@ class Step:
     what: str
     name: str
     action: str
-    note: str = ""
+    note: str = ""      # key of a text explaining the action, if it needs one
+    detail: str = ""    # what went wrong, as the failing call said it; not translated
 
 
 @dataclass(frozen=True)
@@ -101,14 +115,14 @@ def describe_backup(client: TeddyCloudClient, data_dir: Path) -> List[Part]:
     covers = [listed[name] for name in wanted if name in listed]
 
     parts = [
-        Part("Modelle", len(models), len(_json(models).encode("utf-8"))),
-        Part("Sticker", len(tags), len(_json(tags).encode("utf-8"))),
-        Part("Cover", len(covers), sum(covers)),
+        Part(PART_MODELS, len(models), len(_json(models).encode("utf-8"))),
+        Part(PART_TAGS, len(tags), len(_json(tags).encode("utf-8"))),
+        Part(PART_COVERS, len(covers), sum(covers)),
     ]
     times = data_dir / TIMES_FILE
-    parts.append(Part("Spielzeiten", len(_entries(times, json_object=True)), _size(times)))
+    parts.append(Part(TIMES, len(_entries(times, json_object=True)), _size(times)))
     listening = data_dir / LISTENING_FILE
-    parts.append(Part("Hörprotokoll", len(_entries(listening)), _size(listening)))
+    parts.append(Part(LISTENING, len(_entries(listening)), _size(listening)))
     return parts
 
 
@@ -169,24 +183,24 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
 def read_backup(data: bytes) -> Backup:
     """Unpack a backup, refusing anything that is not one."""
     if len(data) > LARGEST_BACKUP:
-        raise BackupError("that file is far larger than any backup")
+        raise BackupError("backup.too_large")
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as error:
-        raise BackupError("that is not a zip file") from error
+        raise BackupError("backup.not_zip") from error
 
     with archive:
         names = set(archive.namelist())
         if "manifest.json" not in names:
-            raise BackupError("that zip is not a tonie-studio backup")
+            raise BackupError("backup.not_ours")
         try:
             manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
             models = json.loads(archive.read("models.json").decode("utf-8"))
             tags = json.loads(archive.read("tags.json").decode("utf-8"))
         except (KeyError, ValueError, UnicodeDecodeError) as error:
-            raise BackupError(f"the backup is damaged: {error}") from error
+            raise BackupError("backup.damaged", detail=str(error)) from error
         if manifest.get("format") != FORMAT:
-            raise BackupError(f"backup format {manifest.get('format')} is not one this app knows")
+            raise BackupError("backup.unknown_format", format=manifest.get("format"))
 
         covers = {}
         for name in names:
@@ -227,7 +241,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     for model in backup.models:
         existing = current_models.get(str(model["model"]).lower())
         action = NEW if existing is None else (SAME if existing == model else CHANGES)
-        steps.append(_attempt(write and action != SAME, "model", _model_label(model), action,
+        steps.append(_attempt(write and action != SAME, MODEL, _model_label(model), action,
                               lambda model=model: client.upsert_custom_tonie(model)))
 
     for name, data in sorted(backup.covers.items()):
@@ -237,7 +251,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
             existing_cover = None
         action = NEW if existing_cover is None else (SAME if existing_cover == data else REPLACES)
         steps.append(_attempt(
-            write and action != SAME, "cover", name, action,
+            write and action != SAME, COVER, name, action,
             lambda name=name, data=data: client.upload(io.BytesIO(data), name, path="/",
                                                        special="custom_img")))
 
@@ -248,16 +262,14 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
         label = record.get("label") or ruid
         entry = known.get(ruid)
         if entry is None:
-            steps.append(Step("tag", label, SKIPPED,
-                              "Die Box hat diesen Sticker noch nicht gelesen. Einmal auflegen, "
-                              "dann noch einmal wiederherstellen."))
+            steps.append(Step(TAG, label, SKIPPED, "restore.note.tag_unread"))
             continue
 
         wanted = _restorable(record)
         current = _tag_record(entry)
         changed = {field: value for field, value in wanted.items() if current.get(field) != value}
         note = _missing_note(record.get("source") or "", present)
-        steps.append(_attempt(write and bool(changed), "tag", label,
+        steps.append(_attempt(write and bool(changed), TAG, label,
                               CHANGES if changed else SAME,
                               lambda ruid=ruid, changed=changed: client.set_tag(ruid, **changed),
                               note))
@@ -267,9 +279,6 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     if write:
         log.info("restored a backup from %s", backup.manifest.get("created"))
     return steps
-
-
-FAILED = "fehlgeschlagen"
 
 
 def _attempt(write: bool, what: str, name: str, action: str, apply, note: str = "") -> Step:
@@ -284,7 +293,7 @@ def _attempt(write: bool, what: str, name: str, action: str, apply, note: str = 
         apply()
     except (TeddyCloudError, ValueError) as error:
         log.warning("restore: %s %s failed: %s", what, name, error)
-        return Step(what, name, FAILED, str(error))
+        return Step(what, name, FAILED, "restore.note.failed", str(error))
     return Step(what, name, action, note)
 
 
@@ -314,7 +323,7 @@ def _restore_times(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     try:
         saved = json.loads(backup.times.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
-        return [Step("zeiten", TIMES_FILE, SKIPPED, "In der Sicherung unlesbar.")]
+        return [Step(TIMES, TIMES_FILE, SKIPPED, "restore.note.unreadable")]
     path = data_dir / TIMES_FILE
     try:
         current = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
@@ -324,11 +333,11 @@ def _restore_times(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     merged = dict(saved)
     merged.update(current)
     if merged == current:
-        return [Step("zeiten", TIMES_FILE, SAME)]
+        return [Step(TIMES, TIMES_FILE, SAME)]
     if write:
         data_dir.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(merged, indent=1, sort_keys=True), encoding="utf-8")
-    return [Step("zeiten", TIMES_FILE, NEW if not current else CHANGES)]
+    return [Step(TIMES, TIMES_FILE, NEW if not current else CHANGES)]
 
 
 def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
@@ -339,14 +348,13 @@ def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step
     path = data_dir / LISTENING_FILE
     current = path.read_bytes() if path.is_file() else b""
     if current == backup.listening:
-        return [Step("protokoll", LISTENING_FILE, SAME)]
+        return [Step(LISTENING, LISTENING_FILE, SAME)]
     if current.strip():
-        return [Step("protokoll", LISTENING_FILE, KEPT,
-                     "Hier läuft schon ein Protokoll; es wird nicht überschrieben.")]
+        return [Step(LISTENING, LISTENING_FILE, KEPT, "restore.note.log_kept")]
     if write:
         data_dir.mkdir(parents=True, exist_ok=True)
         path.write_bytes(backup.listening)
-    return [Step("protokoll", LISTENING_FILE, NEW)]
+    return [Step(LISTENING, LISTENING_FILE, NEW)]
 
 
 def _library_sources(client: TeddyCloudClient) -> Optional[set]:
@@ -360,9 +368,9 @@ def _missing_note(source: str, present: Optional[set]) -> str:
     if not source.startswith("lib://"):
         return ""
     if present is None:
-        return "Library nicht lesbar; ob das Taf da ist, ist unbekannt."
+        return "restore.note.library_unreadable"
     if source not in present:
-        return "Das Taf fehlt noch. Der Tonie bleibt stumm, bis es neu encodiert ist."
+        return "restore.note.taf_missing"
     return ""
 
 
@@ -397,5 +405,5 @@ def _model_label(model: Dict) -> str:
 
 def _json(value) -> str:
     # Umlauts written as themselves: a backup someone opens to check should
-    # read "Siebenschläfer", and the zip stores UTF-8 either way.
+    # read "Siebenschl\u00e4fer", and the zip stores UTF-8 either way.
     return json.dumps(value, ensure_ascii=False, indent=1)

@@ -4,21 +4,20 @@
 {% block body %}
 <h1>{{ album.title }}</h1>
 <p class="sub">
-  {{ album.artist or "Verschiedene Interpreten" }}{% if album.year %} - {{ album.year }}{% endif %}
-  - {{ album.tracks|length }} Tracks
-  {%- if album.duration %} - {{ (album.duration / 60) | round | int }} Minuten{% endif %}
-  - Reihenfolge nach {{ orderings.get(album.ordering, album.ordering) }}
+  {{ album.artist or t("album.various_artists") }}{% if album.year %} - {{ album.year }}{% endif %}
+  - {{ t("albums.tracks", count=album.tracks | length) }}
+  {%- if album.duration %} - {{ t("album.minutes", count=(album.duration / 60) | round | int) }}{% endif %}
+  - {{ t("album.ordered_by", ordering=t("ordering." ~ album.ordering)) }}
 </p>
 
 {% for warning in album.warnings %}
-<div class="warn">{{ warning }}</div>
+<div class="warn">{{ t(warning) }}</div>
 {% endfor %}
 
 {% if conflict %}
 <div class="warn">
-  <strong>Dort liegt schon ein Taf:</strong> <code>{{ conflict }}</code><br>
-  Wähle einen anderen Namen, oder ersetze es. Beim Ersetzen spielt ein Tonie, der darauf
-  zeigt, so lange nichts, bis das neue Taf fertig ist.
+  <strong>{{ t("album.conflict") }}</strong> <code>{{ conflict }}</code><br>
+  {{ t("album.conflict_hint") }}
 </div>
 {% endif %}
 
@@ -33,12 +32,12 @@
         <span class="fg" id="coverimg"></span>
       </span>
       <p class="muted" style="font-size: 13px; margin: 6px 0 4px">
-        Ziehen zum Verschieben, Regler oder zwei Finger zum Zoomen.
+        {{ t("album.crop_hint") }}
       </p>
       <div class="row" style="gap: 8px">
         <input type="range" name="cover_zoom" id="zoom" min="0.5" max="2.5" step="0.02" value="1"
                style="flex: 1" aria-label="Zoom">
-        <button type="button" class="small" id="coverreset">zurück</button>
+        <button type="button" class="small" id="coverreset">{{ t("album.crop_reset") }}</button>
       </div>
       <input type="hidden" name="cover_index" id="cover_index" value="0">
       <input type="hidden" name="cover_x" id="cx" value="0">
@@ -56,23 +55,23 @@
     {% endif %}
     <div class="grow">
       <label class="field">
-        <span>Serie (Ordner in der Library)</span>
+        <span>{{ t("album.series") }}</span>
         <input type="text" name="series" value="{{ suggested_target.series }}">
       </label>
       <label class="field" style="margin-bottom:0">
-        <span>Folge (Name der Taf-Datei)</span>
+        <span>{{ t("album.episode") }}</span>
         <input type="text" name="episode" value="{{ suggested_target.episode }}" required>
       </label>
     </div>
   </div>
 
-  <h2>Tracks</h2>
+  <h2>{{ t("album.tracks") }}</h2>
   <div class="card">
     <p class="row" style="gap: 8px; flex-wrap: wrap; margin-top: 0">
-      <button type="button" class="small" data-pick="all">alle</button>
-      <button type="button" class="small" data-pick="none">keine</button>
+      <button type="button" class="small" data-pick="all">{{ t("common.all") }}</button>
+      <button type="button" class="small" data-pick="none">{{ t("common.none") }}</button>
       {% if album.tracks | selectattr('extra') | list %}
-      <button type="button" class="small" data-pick="main">ohne Karaoke</button>
+      <button type="button" class="small" data-pick="main">{{ t("album.no_karaoke") }}</button>
       {% endif %}
       <span class="muted grow" id="chosen"></span>
     </p>
@@ -94,18 +93,18 @@
 
   <div class="card row" style="gap: 12px; flex-wrap: wrap; align-items: center" id="partsrow">
     <label class="row" style="gap: 8px">
-      <span>In</span>
+      <span>{{ t("album.parts_before") }}</span>
       <input type="number" name="parts" id="parts" value="1" min="1" max="20" style="width: 4.5em">
-      <span>Teile</span>
+      <span>{{ t("album.parts_after") }}</span>
     </label>
     <span class="muted grow" id="partshint"></span>
   </div>
 
-  <p><button class="primary" type="submit">Taf erzeugen</button>
+  <p><button class="primary" type="submit">{{ t("album.encode") }}</button>
      {% if conflict %}
-     <button type="submit" name="replace" value="{{ replace_value }}">Vorhandenes ersetzen</button>
+     <button type="submit" name="replace" value="{{ replace_value }}">{{ t("album.replace") }}</button>
      {% endif %}
-     <a href="/" style="margin-left:12px">Abbrechen</a></p>
+     <a href="/" style="margin-left:12px">{{ t("common.cancel") }}</a></p>
 </form>
 
 <script>
@@ -219,13 +218,15 @@
   // A taf can be skipped through by at most this many chapters; teddyCloud
   // writes anything beyond into the last one without a word.
   const mostChapters = {{ most_chapters }};
+  const words = {{ t.strings("album.chosen", "album.parts_one", "album.parts_many",
+                             "album.parts_many_minutes", "album.parts_limit") | tojson }};
   const partsField = document.getElementById('parts');
   const partsHint = document.getElementById('partshint');
 
   function recount() {
     const picked = [...list.children].filter(item => item.querySelector('input[type=checkbox]').checked);
     const n = picked.length;
-    chosen.textContent = `${n} von ${boxes().length} ausgewählt`;
+    chosen.textContent = say(words['album.chosen'], {chosen: n, count: boxes().length});
 
     const needed = Math.max(1, Math.ceil(n / mostChapters));
     partsField.min = needed;
@@ -235,9 +236,9 @@
     const each = seconds && parts ? Math.round(seconds / parts / 60) : 0;
 
     partsHint.textContent = parts === 1
-      ? (needed > 1 ? '' : 'Ein Tonie. Bei langen Hörbüchern lohnen sich Teile, die man einzeln auflegt.')
-      : `${parts} Tonies, jeder ein eigenes Taf${each ? `, je etwa ${each} Minuten` : ''}.`
-        + (needed > 1 ? ` Mehr als ${mostChapters} Tracks passen nicht in eines.` : '');
+      ? (needed > 1 ? '' : words['album.parts_one'])
+      : say(each ? words['album.parts_many_minutes'] : words['album.parts_many'], {count: parts, minutes: each})
+        + (needed > 1 ? ' ' + say(words['album.parts_limit'], {count: mostChapters}) : '');
   }
   partsField.addEventListener('input', recount);
 

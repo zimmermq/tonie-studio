@@ -1,17 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Nicht erreichbar - tonie-studio{% endblock %}
+{% block title %}{{ t("offline.title") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>teddyCloud antwortet nicht</h1>
-<p class="sub">Ohne teddyCloud gibt es keine Tags, keine Modelle und keine Cover.</p>
+<h1>{{ t("offline.heading") }}</h1>
+<p class="sub">{{ t("offline.sub") }}</p>
 
 <div class="card">
   <p class="muted" style="margin-top:0">{{ message }}</p>
-  <p style="margin-bottom:0">
-    Das Album-Verzeichnis funktioniert weiter - encodieren geht erst wieder,
-    wenn teddyCloud läuft.
-  </p>
+  <p style="margin-bottom:0">{{ t("offline.albums_work") }}</p>
 </div>
 
-<p><a class="button" href="/">Zu den Alben</a></p>
+<p><a class="button" href="/">{{ t("offline.to_albums") }}</a></p>
 {% endblock %}

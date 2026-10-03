@@ -200,8 +200,10 @@ class TestRefreshEdges:
         refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
         cloud.tag_entries[RUID]["source"] = "lib://Lichterkinder/Schlaflieder.taf"
 
-        with pytest.raises(FeedError, match="anderes"):
+        with pytest.raises(FeedError) as caught:
             refresh(cloud, subscription, tmp_path, now=NOW.replace(day=10), fetch=FakeWeb(newer()))
+
+        assert caught.value.key == "feed.sticker_reused"
 
         assert cloud.tag_entries[RUID]["source"] == "lib://Lichterkinder/Schlaflieder.taf"
 

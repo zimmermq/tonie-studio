@@ -28,6 +28,20 @@ log = logging.getLogger(__name__)
 
 # What teddyCloud's ffmpeg build accepts as encoder input. Offering anything
 # else only produces a failure minutes into an encode.
+# How the tracks were put in order, as ``Album.ordering`` reports it. The page
+# names each one in the reader's language under ``ordering.<value>``.
+BY_FILE_NUMBER = "file_number"
+BY_TRACK_TAG = "track_tag"
+BY_PLAYLIST = "playlist"
+BY_NAME = "name"
+ORDERINGS = (BY_FILE_NUMBER, BY_TRACK_TAG, BY_PLAYLIST, BY_NAME)
+
+# What can be wrong with an album folder, as keys of the reader's language.
+WARN_NO_AUDIO = "album.warn.no_audio"
+WARN_NO_TITLES = "album.warn.no_titles"
+WARN_NO_COVER = "album.warn.no_cover"
+WARN_ARTEFACT_COVER = "album.warn.artefact_cover"
+
 AUDIO_EXTENSIONS = frozenset({
     ".mp3", ".aac", ".m4a", ".wav", ".flac", ".ogg", ".opus",
     ".aiff", ".aif", ".wma", ".ac3", ".dts", ".mp4",
@@ -231,18 +245,15 @@ def read_album(path: Path) -> Album:
     ]
 
     if not tracks:
-        warnings.append("No audio files in this folder.")
+        warnings.append(WARN_NO_AUDIO)
     elif not any(tags[file].title for file in files):
-        warnings.append("No title tags; track names were derived from the file names.")
+        warnings.append(WARN_NO_TITLES)
 
     candidates = _cover_candidates(entries)
     if not candidates:
-        warnings.append("No cover image in this folder; upload one.")
+        warnings.append(WARN_NO_COVER)
     elif _cover_rank(candidates[0]) == ARTEFACT_RANK:
-        warnings.append(
-            "The only images here are a proof photo or a rip log, not artwork; "
-            "check the cover."
-        )
+        warnings.append(WARN_ARTEFACT_COVER)
 
     title, artist, year = _describe(path, tags.values())
 
@@ -265,21 +276,21 @@ def read_album(path: Path) -> Album:
 def _order(files, tags, directory: Path):
     """Return the files in playing order, plus the name of the rule that won."""
     if not files:
-        return [], "name"
+        return [], BY_NAME
 
     numbers = [_filename_number(file.name) for file in files]
     if all(number is not None for number in numbers) and len(set(numbers)) == len(numbers):
-        return [file for _, file in sorted(zip(numbers, files))], "filename number"
+        return [file for _, file in sorted(zip(numbers, files))], BY_FILE_NUMBER
 
     keys = [(tags[file].disc or 1, tags[file].track) for file in files]
     if all(track is not None for _, track in keys) and len(set(keys)) == len(keys):
-        return [file for _, file in sorted(zip(keys, files))], "track tag"
+        return [file for _, file in sorted(zip(keys, files))], BY_TRACK_TAG
 
     playlist = _playlist_order(directory, files)
     if playlist:
-        return playlist, "playlist"
+        return playlist, BY_PLAYLIST
 
-    return files, "name"
+    return files, BY_NAME
 
 
 def _filename_number(name: str) -> Optional[int]:

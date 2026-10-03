@@ -1,49 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Hausmeister - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.checkup") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Hausmeister</h1>
+<h1>{{ t("nav.checkup") }}</h1>
 <p class="sub">
-  Sucht, was kaputt ist, bevor es jemand an der Box merkt: Tags, die ins Leere zeigen,
-  verstümmelte Umlaute, Übriggebliebenes.
+  {{ t("checkup.intro") }}
 </p>
 
 {% if done %}
-<div class="card">Erledigt. Die Liste unten ist neu geprüft.</div>
+<div class="card">{{ t("checkup.done") }}</div>
 {% endif %}
 {% if stale %}
 <div class="warn">
-  Dieser Befund war nicht mehr aktuell, darum wurde nichts geändert. Die Liste unten ist neu geprüft.
+  {{ t("checkup.stale") }}
 </div>
 {% endif %}
 
 {% if not findings %}
-<div class="card"><strong>Alles in Ordnung.</strong>
-  <span class="muted">Jeder Tag zeigt auf ein vorhandenes Taf, alle Namen sind lesbar, nichts liegt übrig.</span>
+<div class="card"><strong>{{ t("checkup.healthy") }}</strong>
+  <span class="muted">{{ t("checkup.healthy_hint") }}</span>
 </div>
 {% endif %}
 
-{% for severity, heading in [("fehler", "Fehler"), ("warnung", "Warnungen"), ("hinweis", "Hinweise")] %}
+{% for severity in ("error", "warning", "note") %}
 {% set group = findings | selectattr("severity", "equalto", severity) | list %}
 {% if group %}
-<h2>{{ heading }} <span class="muted">({{ group | length }})</span></h2>
+<h2>{{ t("checkup.severity." ~ severity) }} <span class="muted">({{ group | length }})</span></h2>
 <div class="list">
   {% for finding in group %}
   <div class="album checkup {{ severity }}">
     <span class="grow">
       <strong class="truncate">{{ finding.subject }}</strong>
-      <span class="muted" style="display: block; white-space: normal">{{ finding.detail }}</span>
-      {% if finding.preview %}
-      <code class="preview-text">{{ finding.preview }}</code>
+      {%- set params = dict(finding.params) %}
+      {%- if "size" in params %}{% set _ = params.update(size=t.size(params["size"])) %}{% endif %}
+      {%- set preview = t(finding.preview_key, **params) if finding.preview_key else finding.preview %}
+      <span class="muted" style="display: block; white-space: normal">{{ t(finding.detail, **params) }}</span>
+      {% if preview %}
+      <code class="preview-text">{{ preview }}</code>
       {% endif %}
     </span>
     {% if finding.fix %}
     <form method="post" action="/checkup/fix"
-          {% if finding.fix.startswith("delete") %}data-confirm="{{ finding.preview }}"{% endif %}>
+          {% if finding.fix.startswith("delete") %}data-confirm="{{ preview }}"{% endif %}>
       <input type="hidden" name="fix" value="{{ finding.fix }}">
       <input type="hidden" name="target" value="{{ finding.target }}">
       <button type="submit" class="small">
-        {% if finding.fix.startswith("delete") %}löschen{% else %}reparieren{% endif %}
+        {% if finding.fix.startswith("delete") %}{{ t("common.delete") }}{% else %}{{ t("checkup.repair") }}{% endif %}
       </button>
     </form>
     {% endif %}
@@ -56,9 +58,10 @@
 <script>
   // A repair is shown before it runs; a deletion also asks, because it cannot
   // be taken back.
+  const words = {{ t.strings("checkup.really") | tojson }};
   for (const form of document.querySelectorAll('form[data-confirm]')) {
     form.addEventListener('submit', event => {
-      if (!window.confirm(`${form.dataset.confirm}\n\nWirklich?`)) event.preventDefault();
+      if (!window.confirm(`${form.dataset.confirm}\n\n${words['checkup.really']}`)) event.preventDefault();
     });
   }
 </script>

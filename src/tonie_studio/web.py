@@ -28,7 +28,7 @@ from threading import Lock
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import requests
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
@@ -41,6 +41,9 @@ from .backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, 
 from .boxstate import BoxWatcher
 from .calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from .checkup import examine, model_repairs, repaired
+from .i18n import COOKIE as LANG_COOKIE
+from .i18n import DEFAULT as DEFAULT_LANGUAGE
+from .i18n import Problem, Translator, catalogs, languages, negotiate
 from .encode import (EncodeError, delete_taf, encode_files, library_path, list_tafs,
                      remove_orphaned_staging, taf_exists)
 from .jobs import JobRunner, JobState
@@ -69,24 +72,6 @@ TEMPLATES = Path(__file__).parent / "templates"
 # Which root an album id belongs to.
 ARCHIVE = "a"
 UPLOAD = "u"
-
-# What a job state is called in the interface; the values stay English because
-# they are the API's own.
-JOB_STATES = {
-    "queued": "wartet",
-    "running": "läuft",
-    "done": "fertig",
-    "failed": "fehlgeschlagen",
-}
-
-# What `album.ordering` is called in the interface. The values themselves stay
-# in English because they are identifiers the tests pin.
-ORDERING_NAMES = {
-    "filename number": "Dateinummer",
-    "track tag": "Track-Tag",
-    "playlist": "Playlist",
-    "name": "Dateiname",
-}
 
 # Where teddyCloud serves the covers of custom models.
 CUSTOM_IMG_PREFIX = "/custom_img/"
@@ -127,10 +112,7 @@ def create_app(
     fetch: Fetch = download,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
-    templates = Jinja2Templates(directory=str(TEMPLATES))
-    templates.env.filters["duration"] = _duration
-    templates.env.filters["when"] = _when
-    templates.env.filters["filesize"] = _filesize
+    templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[_language])
     jobs = runner or JobRunner()
     listening = ListeningLog(settings.data_dir)
     box = watcher if watcher is not None else BoxWatcher(settings.teddycloud_url, settings.overlay)
@@ -187,8 +169,15 @@ def create_app(
                     changed = refresh(client(), subscription, settings.data_dir, fetch=fetch)
                 except Exception as error:
                     # Kept on the subscription, so the podcast page can say
-                    # why the episodes are old, not only the job list.
-                    subscription.error = str(error) or error.__class__.__name__
+                    # why the episodes are old, not only the job list. A
+                    # problem this app describes is kept as its key, to be
+                    # said in the reader's language; anything else as it came.
+                    if isinstance(error, Problem):
+                        subscription.error = ""
+                        subscription.error_key, subscription.error_params = error.key, error.params
+                    else:
+                        subscription.error = str(error) or error.__class__.__name__
+                        subscription.error_key, subscription.error_params = "", {}
                     subscription.checked = datetime.now(timezone.utc).isoformat()
                     update_subscription(settings.data_dir, subscription)
                     raise
@@ -246,6 +235,28 @@ def create_app(
             request, "error.html", {"message": str(error)}, status_code=503,
         )
 
+    @app.exception_handler(Refused)
+    def refused(request: Request, error: Refused):
+        """Say why a request was turned down, in the reader's language."""
+        message = error.say(translator(request))
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": message}, status_code=error.status)
+        return templates.TemplateResponse(
+            request, "refused.html", {"message": message}, status_code=error.status,
+        )
+
+    @app.get("/lang/{code}")
+    def choose_language(code: str, next: str = "/"):
+        """Remember the language chosen and go back to where it was chosen."""
+        if code not in catalogs():
+            raise Refused(404, "error.no_language")
+        # Only a path on this site: an address from elsewhere in ``next``
+        # would make this an open redirect.
+        target = next if next.startswith("/") and not next.startswith("//") else "/"
+        response = RedirectResponse(target, 303)
+        response.set_cookie(LANG_COOKIE, code, max_age=365 * 24 * 3600, samesite="lax")
+        return response
+
     @app.get("/health")
     def health() -> Dict[str, str]:
         return {"status": "ok"}
@@ -260,7 +271,6 @@ def create_app(
             "archive": [row for row in albums if row[2] == "archive"],
             "uploads": [row for row in albums if row[2] == "upload"],
             "jobs": jobs.all()[:10],
-            "states": JOB_STATES,
             "thumb_size": DEFAULT_SIZE,
             "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
             "done": _albums_with_tonies(albums),
@@ -327,7 +337,7 @@ def create_app(
         """Spool a browser upload into its own folder, then treat it as an album."""
         audio = [file for file in files if _is_audio_name(file.filename)]
         if not audio:
-            raise HTTPException(400, "None of those files is audio teddyCloud can encode.")
+            raise Refused(400, "error.no_audio")
 
         folder = settings.upload_dir / uuid.uuid4().hex[:12]
         folder.mkdir(parents=True)
@@ -350,7 +360,6 @@ def create_app(
             "suggested_target": _suggest_target(album),
             "conflict": conflict,
             "replace_value": replace_value or conflict,
-            "orderings": ORDERING_NAMES,
             "most_chapters": MOST_CHAPTERS,
         })
 
@@ -371,7 +380,7 @@ def create_app(
         """
         candidates = cover_candidates(_resolve(settings, identifier))
         if index >= len(candidates):
-            raise HTTPException(404, "No cover image here.")
+            raise Refused(404, "error.no_cover")
 
         path = candidates[index]
         if not size:
@@ -379,7 +388,7 @@ def create_app(
 
         preview = thumbnail(path, size)
         if preview is None:
-            raise HTTPException(404, "That cover cannot be read.")
+            raise Refused(404, "error.cover_unreadable")
         return Response(preview, media_type="image/jpeg",
                         headers={"Cache-Control": "private, max-age=3600"})
 
@@ -402,26 +411,20 @@ def create_app(
         album = read_album(_resolve(settings, identifier))
         chosen = _chosen_tracks(album, order, selected, titles)
         if not chosen:
-            raise HTTPException(400, "No track selected.")
+            raise Refused(400, "error.no_track")
         if parts < 1:
-            raise HTTPException(400, "Mindestens ein Teil.")
+            raise Refused(400, "error.no_parts")
         if parts > len(chosen):
-            raise HTTPException(
-                400, f"{len(chosen)} Tracks lassen sich nicht in {parts} Teile teilen; "
-                     f"jeder Teil braucht mindestens einen Track.")
+            raise Refused(400, "error.too_many_parts", tracks=len(chosen), parts=parts)
         if parts < fewest_parts(len(chosen)):
-            raise HTTPException(
-                400,
-                f"{len(chosen)} Tracks passen nicht in ein Taf: teddyCloud kann höchstens "
-                f"{MOST_CHAPTERS} Kapitel anspringen und hängt den Rest still an das letzte. "
-                f"Mindestens {fewest_parts(len(chosen))} Teile wählen.",
-            )
+            raise Refused(400, "error.too_few_parts", tracks=len(chosen), chapters=MOST_CHAPTERS,
+                          fewest=fewest_parts(len(chosen)))
         try:
             groups_of_tracks = split([track.duration for track, _name in chosen], parts)
             targets = [library_path(series, part_name(episode, number, parts))
                        for number in range(1, parts + 1)]
         except (EncodeError, ValueError) as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
 
         # Asked here rather than inside the job: an occupied name is a question
         # to answer on the form, not a failure minutes later on a progress page.
@@ -476,26 +479,24 @@ def create_app(
     @app.get("/parts/{group}", response_class=HTMLResponse)
     def parts_page(request: Request, group: str):
         if group not in groups:
-            raise HTTPException(404, "Those parts are not known; the app may have restarted.")
+            raise Refused(404, "error.parts_gone")
         return templates.TemplateResponse(request, "parts.html", {
             "jobs": [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)],
-            "states": JOB_STATES,
         })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
     def job_page(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            raise HTTPException(404, "No such job.")
+            raise Refused(404, "error.no_job")
         # A podcast refresh puts its taf on the sticker itself; only an album
         # encode still has to be given to one.
         podcast = job.kind == "podcast"
         return templates.TemplateResponse(request, "job.html", {
             "job": job,
-            "states": JOB_STATES,
-            "done_text": "Die neuen Folgen sind auf dem Sticker." if podcast else "Taf fertig.",
+            "done_key": "job.podcast_done" if podcast else "job.taf_done",
             "next_href": "/podcasts" if podcast else f"/job/{job.id}/assign",
-            "next_label": "Zu den Podcasts" if podcast else "Auf einen Tonie legen",
+            "next_key": "job.to_podcasts" if podcast else "job.to_assign",
         })
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
@@ -543,7 +544,7 @@ def create_app(
                 year=result.get("year"),
             )
         except TonieError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         remember(settings.data_dir, model_id, result.get("seconds"))
         remember_made(settings.data_dir, result.get("album", ""), model_id)
         return RedirectResponse("/tonies", 303)
@@ -561,7 +562,7 @@ def create_app(
         tags = list_tags(connection)
         tag = next((candidate for candidate in tags if candidate.ruid == ruid), None)
         if tag is None:
-            raise HTTPException(404, "teddyCloud does not know that tag.")
+            raise Refused(404, "error.no_tag")
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
             "model": find_model(connection, tag.model) if tag.model else None,
@@ -575,7 +576,7 @@ def create_app(
         try:
             copy_tag(client(), ruid, target)
         except TonieError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
     @app.post("/tonies/{ruid}")
@@ -591,7 +592,7 @@ def create_app(
         tag = next((candidate for candidate in list_tags(connection)
                     if candidate.ruid == ruid), None)
         if tag is None or not tag.model:
-            raise HTTPException(404, "That tag has no model to edit.")
+            raise Refused(404, "error.no_model")
 
         picture = None
         suffix = "jpg"
@@ -603,7 +604,7 @@ def create_app(
             update_model(connection, tag.model, series=series, episode=episode,
                          category=category, cover=picture, cover_name=suffix)
         except TonieError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
     @app.post("/tonies/{ruid}/delete")
@@ -613,7 +614,7 @@ def create_app(
         tag = next((candidate for candidate in list_tags(connection)
                     if candidate.ruid == ruid), None)
         if tag is None or not tag.model:
-            raise HTTPException(404, "That tag has no model to remove.")
+            raise Refused(404, "error.no_model")
         remove_model(connection, tag.model, ruid=ruid)
         forget(settings.data_dir, tag.model)
         forget_model(settings.data_dir, tag.model)
@@ -735,7 +736,7 @@ def create_app(
         try:
             _apply_fix(connection, settings, fix, target)
         except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         log.info("checkup: %s applied to %s", fix, target)
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
@@ -757,11 +758,11 @@ def create_app(
         try:
             parsed = parse_feed(fetch(feed, LARGEST_FEED))
         except (FeedError, requests.RequestException) as error:
-            raise HTTPException(400, f"Dieser Feed lässt sich nicht lesen: {error}") from error
+            raise Refused(400, "error.feed_unreadable", detail=error) from error
         if not parsed.episodes:
-            raise HTTPException(400, "Der Feed enthält keine Folge mit Audio.")
+            raise Refused(400, "feed.no_audio")
         if not any(tag.ruid == ruid for tag in list_tags(client())):
-            raise HTTPException(400, "Die Box kennt diesen Sticker nicht.")
+            raise Refused(400, "error.no_tag")
 
         subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
                                     keep=max(1, min(keep, 20)), title=parsed.title)
@@ -808,7 +809,7 @@ def create_app(
         try:
             backup = read_backup(data)
         except BackupError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
 
         token = uuid.uuid4().hex
         _restore_dir(settings).mkdir(parents=True, exist_ok=True)
@@ -823,15 +824,15 @@ def create_app(
     @app.post("/restore/{token}", response_class=HTMLResponse)
     def restore_apply(request: Request, token: str):
         if not token.isalnum():
-            raise HTTPException(400, "Not a restore.")
+            raise Refused(400, "error.not_a_restore")
         parked = _restore_dir(settings) / f"{token}.zip"
         if not parked.is_file():
-            raise HTTPException(404, "That restore is gone; upload the backup again.")
+            raise Refused(404, "error.restore_gone")
         try:
             backup = read_backup(parked.read_bytes())
             steps = apply_restore(client(), backup, settings.data_dir)
         except BackupError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         finally:
             parked.unlink(missing_ok=True)
         return templates.TemplateResponse(request, "restore.html", {
@@ -854,11 +855,11 @@ def create_app(
         same rendering rather than two that merely resemble each other.
         """
         if "/" in name or ".." in name:
-            raise HTTPException(400, "Not an image name.")
+            raise Refused(400, "error.not_an_image")
         try:
             data = client().fetch(f"/custom_img/{name}")
         except TeddyCloudError as error:
-            raise HTTPException(502, str(error)) from error
+            raise Refused(502, "error.failed", detail=error) from error
 
         if mode in (FILL, FIT):
             try:
@@ -877,10 +878,10 @@ def create_app(
         """The cover as the round sticker will cut it."""
         candidates = cover_candidates(_resolve(settings, identifier))
         if index >= len(candidates):
-            raise HTTPException(404, "No cover image here.")
+            raise Refused(404, "error.no_cover")
         rendered = crop(candidates[index], zoom, x, y, max(32, min(size, 800)))
         if rendered is None:
-            raise HTTPException(404, "That cover cannot be read.")
+            raise Refused(404, "error.cover_unreadable")
         return Response(rendered, media_type="image/jpeg")
 
     @app.get("/radio", response_class=HTMLResponse)
@@ -914,7 +915,7 @@ def create_app(
             publish_stream(client(), ruid, url, series=series, episode=episode,
                            cover=picture, cover_name=suffix, category=category)
         except TonieError as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
     @app.get("/library", response_class=HTMLResponse)
@@ -938,7 +939,7 @@ def create_app(
         try:
             delete_taf(client(), path)
         except (EncodeError, TeddyCloudError) as error:
-            raise HTTPException(400, str(error)) from error
+            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/library", 303)
 
     @app.get("/sheet", response_class=HTMLResponse)
@@ -955,7 +956,7 @@ def create_app(
             "fill": FILL,
             "fit": FIT,
             "preset": model,
-            "backs": _back_preview(models, playing_times(settings.data_dir)),
+            "backs": _back_preview(models, playing_times(settings.data_dir), translator(request)),
             "back_fade": BACK_FADE,
             "diameter_mm": DIAMETER_MM,
             "shift": read_shift(settings.data_dir),
@@ -964,12 +965,12 @@ def create_app(
         })
 
     @app.get("/sheet/calibration")
-    def calibration_sheet():
+    def calibration_sheet(request: Request):
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         target = settings.data_dir / f"calibration-{uuid.uuid4().hex[:8]}.pdf"
         # Printed with the current correction, so measuring it shows what is
         # still off rather than what was off before.
-        build_calibration(target, read_shift(settings.data_dir))
+        build_calibration(target, read_shift(settings.data_dir), translator(request))
         return FileResponse(
             target,
             media_type="application/pdf",
@@ -982,7 +983,7 @@ def create_app(
         try:
             left, top = _millimetres(left_mm), _millimetres(top_mm)
         except ValueError as error:
-            raise HTTPException(400, "Bitte zwei Zahlen in Millimetern eintragen.") from error
+            raise Refused(400, "error.millimetres") from error
         save_measurement(settings.data_dir, left, top)
         return RedirectResponse("/sheet?calibrated=1#printer", 303)
 
@@ -995,13 +996,14 @@ def create_app(
         return RedirectResponse("/sheet#printer", 303)
 
     @app.get("/sheet/overview")
-    def overview():
-        entries = _overview_entries(client(), playing_times(settings.data_dir))
+    def overview(request: Request):
+        translate = translator(request)
+        entries = _overview_entries(client(), playing_times(settings.data_dir), translate)
         if not entries:
-            raise HTTPException(400, "No tonie with a model to list yet.")
+            raise Refused(400, "error.nothing_to_list")
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         target = settings.data_dir / f"overview-{uuid.uuid4().hex[:8]}.pdf"
-        build_overview(entries, target)
+        build_overview(entries, target, translate)
         return FileResponse(
             target,
             media_type="application/pdf",
@@ -1011,6 +1013,7 @@ def create_app(
 
     @app.post("/sheet")
     def sheet(
+        request: Request,
         models: List[str] = Form(default=[]),
         counts: List[int] = Form(default=[]),
         modes: List[str] = Form(default=[]),
@@ -1039,7 +1042,7 @@ def create_app(
             # One text side per copy, right after it, so a sheet cut up in
             # order leaves each pair together.
             if back and model in described:
-                description = _back_of(described[model], times.get(model))
+                description = _back_of(described[model], times.get(model), translator(request))
                 if not back_tracks:
                     description.tracks = ()
                 stickers.append(Sticker(image=picture, count=count, label=f"{model} back",
@@ -1052,7 +1055,7 @@ def create_app(
                                         mode=FIT if upload_mode == FIT else FILL))
 
         if not stickers:
-            raise HTTPException(400, "Nothing selected to print.")
+            raise Refused(400, "error.nothing_to_print")
 
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         target = settings.data_dir / f"sheet-{uuid.uuid4().hex[:8]}.pdf"
@@ -1071,7 +1074,7 @@ def create_app(
     def job_status(job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            raise HTTPException(404, "No such job.")
+            raise Refused(404, "error.no_job")
         return JSONResponse({
             "state": job.state.value,
             "step": job.step,
@@ -1110,7 +1113,8 @@ def _model_info(model: Dict) -> Dict:
     }
 
 
-def _overview_entries(client: TeddyCloudClient, times: Dict[str, int]) -> List[Entry]:
+def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
+                      translate: Optional[Translator] = None) -> List[Entry]:
     """One entry per model that sits on a sticker, in shelf order.
 
     A model no sticker names is not a tonie anyone can pick up, so it does not
@@ -1127,13 +1131,14 @@ def _overview_entries(client: TeddyCloudClient, times: Dict[str, int]) -> List[E
                 image = client.fetch(f"{CUSTOM_IMG_PREFIX}{info['image']}")
             except TeddyCloudError as error:
                 log.warning("overview: no cover for %s: %s", info["model"], error)
-        back = _back_of(info, times.get(info["model"]))
+        back = _back_of(info, times.get(info["model"]), translate)
         entries.append(Entry(image=image, title=back.title, series=back.series,
                              facts=list(back.notes)))
     return sorted(entries, key=lambda entry: (entry.series.casefold(), entry.title.casefold()))
 
 
-def _back_of(model: Dict, seconds: Optional[int] = None) -> Back:
+def _back_of(model: Dict, seconds: Optional[int] = None,
+             translate: Optional[Translator] = None) -> Back:
     """What the text side of one model says.
 
     The episode names the album and the series names who made it, which is the
@@ -1141,11 +1146,12 @@ def _back_of(model: Dict, seconds: Optional[int] = None) -> Back:
     Facts the model does not carry are left out rather than guessed at, so a
     tonie recorded before the app stored them simply says less.
     """
+    translate = translate or Translator(DEFAULT_LANGUAGE)
     tracks = model.get("tracks") or []
     facts = [
         str(model.get("year") or ""),
-        f"{len(tracks)} Tracks" if tracks else "",
-        f"{minutes(seconds)} Minuten" if minutes(seconds) else "",
+        translate("pdf.tracks", count=len(tracks)) if tracks else "",
+        translate("pdf.minutes", count=minutes(seconds)) if minutes(seconds) else "",
     ]
     notes = [" - ".join(fact for fact in facts if fact), model.get("model", "")]
     return Back(
@@ -1153,11 +1159,12 @@ def _back_of(model: Dict, seconds: Optional[int] = None) -> Back:
         series=model.get("series", ""),
         notes=[note for note in notes if note],
         tracks=tracks,
+        language=translate.lang,
     )
 
 
-def _back_preview(models: Sequence[Dict], times: Dict[str, int]
-                  ) -> Dict[str, Dict[str, List[Dict]]]:
+def _back_preview(models: Sequence[Dict], times: Dict[str, int],
+                  translate: Optional[Translator] = None) -> Dict[str, Dict[str, List[Dict]]]:
     """The laid-out text side of every model, for the page to draw.
 
     The lines come from the same call the sheet makes, so what the preview
@@ -1165,7 +1172,7 @@ def _back_preview(models: Sequence[Dict], times: Dict[str, int]
     """
     preview = {}
     for model in models:
-        back = _back_of(model, times.get(model["model"]))
+        back = _back_of(model, times.get(model["model"]), translate)
         preview[model["model"]] = {
             variant: [{"text": line.text, "size": line.size, "bold": line.bold}
                       for line in back_lines(back, with_tracks=with_tracks)]
@@ -1208,9 +1215,9 @@ def _finished_result(jobs: JobRunner, job_id: str) -> Dict:
     """The result of a finished encode, or a refusal explaining which it is not."""
     job = jobs.get(job_id)
     if job is None:
-        raise HTTPException(404, "No such job.")
+        raise Refused(404, "error.no_job")
     if job.state is not JobState.DONE:
-        raise HTTPException(409, f"That encode is {job.state.value}, so there is no taf yet.")
+        raise Refused(409, "error.no_taf_yet")
     return job.result
 
 
@@ -1272,7 +1279,7 @@ def _resolve(settings: Settings, identifier: str) -> Path:
     for candidate_id, summary, _origin in _catalogue(settings, describe=False):
         if candidate_id == identifier:
             return summary.path
-    raise HTTPException(404, "That album is not there any more.")
+    raise Refused(404, "error.album_gone")
 
 
 def _chosen_tracks(
@@ -1375,20 +1382,24 @@ def _duration(value: Optional[timedelta]) -> str:
     return f"{hours} h {rest} min" if hours else f"{rest} min"
 
 
-def _filesize(value: int) -> str:
-    """A size as people read it, with a decimal comma: "1,2 MB", "340 KB"."""
-    if value >= 1024 * 1024:
-        return f"{value / (1024 * 1024):.1f} MB".replace(".", ",")
-    if value >= 1024:
-        return f"{round(value / 1024)} KB"
-    return f"{value} Byte"
+class Refused(Problem):
+    """A request turned down, with the HTTP status to answer it with."""
+
+    def __init__(self, status: int, key: str, **params):
+        super().__init__(key, **params)
+        self.status = status
 
 
-def _when(value: Optional[datetime]) -> str:
-    """A moment in the box's own time zone, which is the container's."""
-    if value is None:
-        return "-"
-    return value.astimezone().strftime("%d.%m.%Y %H:%M")
+def translator(request: Request) -> Translator:
+    """The translator for whoever sent ``request``."""
+    return Translator(negotiate(request.cookies.get(LANG_COOKIE),
+                                request.headers.get("accept-language")))
+
+
+def _language(request: Request) -> Dict:
+    """What every page needs to speak the reader's language."""
+    translate = translator(request)
+    return {"t": translate, "lang": translate.lang, "languages": languages()}
 
 
 def _is_audio_name(name: Optional[str]) -> bool:

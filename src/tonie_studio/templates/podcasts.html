@@ -1,12 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Podcasts - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.podcasts") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Podcasts</h1>
+<h1>{{ t("nav.podcasts") }}</h1>
 <p class="sub">
-  Ein Sticker, der immer die neuesten Folgen eines Podcasts hat. Zweimal am Tag wird nachgesehen;
-  gibt es etwas Neues, wird es heruntergeladen und auf den Sticker gelegt. Anders als ein
-  Radio-Tonie spielt er auch ohne Netz.
+  {{ t("podcasts.intro") }}
 </p>
 
 <div class="list">
@@ -15,50 +13,52 @@
     <span class="grow truncate">
       <strong class="truncate">{{ entry.title or entry.feed }}</strong>
       <span class="muted truncate">
-        auf {{ labels.get(entry.ruid, entry.ruid) }} &middot; die {{ entry.keep }} neuesten Folgen
-        &middot; {% if entry.updated %}zuletzt neu am {{ entry.updated[:10] }}{% else %}noch nicht geladen{% endif %}
+        {{ t("podcasts.on_sticker", sticker=labels.get(entry.ruid, entry.ruid)) }} &middot; {{ t("podcasts.newest", count=entry.keep) }}
+        &middot; {% if entry.updated %}{{ t("podcasts.updated", date=entry.updated[:10]) }}{% else %}{{ t("podcasts.not_loaded") }}{% endif %}
       </span>
-      {% if entry.error %}
-      <span class="state-failed" style="display: block; white-space: normal">{{ entry.error }}</span>
+      {% if entry.error_key or entry.error %}
+      <span class="state-failed" style="display: block; white-space: normal">
+        {%- if entry.error_key %}{{ t(entry.error_key, **entry.error_params) }}{% else %}{{ entry.error }}{% endif -%}
+      </span>
       {% endif %}
     </span>
     <form method="post" action="/podcasts/{{ entry.id }}/refresh">
-      <button type="submit" class="small">jetzt aktualisieren</button>
+      <button type="submit" class="small">{{ t("podcasts.refresh") }}</button>
     </form>
     <form method="post" action="/podcasts/{{ entry.id }}/delete">
-      <button type="submit" class="small">abbestellen</button>
+      <button type="submit" class="small">{{ t("podcasts.unsubscribe") }}</button>
     </form>
   </div>
 {% else %}
-  <div class="album muted">Noch kein Podcast abonniert.</div>
+  <div class="album muted">{{ t("podcasts.none") }}</div>
 {% endfor %}
 </div>
 
-<h2>Abonnieren</h2>
+<h2>{{ t("podcasts.subscribe") }}</h2>
 <form method="post" action="/podcasts" class="card">
   <label class="field">
-    <span>Adresse des Feeds (RSS)</span>
+    <span>{{ t("podcasts.feed") }}</span>
     <input type="url" name="feed" required placeholder="https://...">
   </label>
   <div class="row stackable" style="gap: 12px; flex-wrap: wrap; align-items: flex-end">
     <label class="field grow" style="margin: 0">
-      <span>Auf welchen Sticker</span>
+      <span>{{ t("podcasts.which_sticker") }}</span>
       <select name="ruid" required style="font: inherit; padding: 7px 10px; width: 100%">
         {% for tag in tags %}
         <option value="{{ tag.ruid }}">
-          {% if tag.assigned %}{{ tag.label }} (wird überschrieben){% else %}frei - {{ tag.uid }}{% endif %}
+          {% if tag.assigned %}{{ t("tag.replaced", label=tag.label) }}{% else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
         </option>
         {% endfor %}
       </select>
     </label>
     <label class="field" style="margin: 0">
-      <span>Folgen</span>
+      <span>{{ t("podcasts.episodes") }}</span>
       <input type="number" name="keep" value="{{ keep }}" min="1" max="20" style="width: 5em">
     </label>
-    <button class="primary" type="submit">Abonnieren</button>
+    <button class="primary" type="submit">{{ t("podcasts.subscribe") }}</button>
   </div>
   <p class="muted" style="margin-bottom: 0">
-    Die neueste Folge kommt zuerst. Abbestellen lässt den Sticker spielen, was er hat.
+    {{ t("podcasts.order_hint") }}
   </p>
 </form>
 {% endblock %}

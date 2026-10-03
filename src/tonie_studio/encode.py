@@ -47,6 +47,10 @@ UNSAFE = re.compile(r"[/\\\x00-\x1f]")
 # how many.
 Progress = Callable[[str, int, int], None]
 
+# The steps an encode reports progress in; texts in job.step.*.
+UPLOAD, ENCODE = "upload", "encode"
+STEPS = (UPLOAD, ENCODE)
+
 # teddyCloud encodes Opus at `encode.bitrate`, which defaults to 96 kbit/s.
 # Measured across four tafs already in the library the real rate came out at
 # 92.9 to 97.4 kbit/s, so this is close enough to turn a growing file into a
@@ -193,7 +197,7 @@ def encode_files(
             with source.open("rb") as stream:
                 client.upload(stream, name, path=staging, special="library")
             staged.append(f"{staging}/{name}")
-            _report(progress, "upload", index, len(sources))
+            _report(progress, UPLOAD, index, len(sources))
 
         # teddyCloud blocks for the whole encode and says nothing. Watching
         # the target grow is the only way to show that something is happening;
@@ -209,7 +213,7 @@ def encode_files(
             client.encode(target, staged, special="library")
         finally:
             stop.set()
-        _report(progress, "encode", int(total_seconds or len(sources)),
+        _report(progress, ENCODE, int(total_seconds or len(sources)),
                 int(total_seconds or len(sources)))
     finally:
         _remove_tree(client, staging)
@@ -389,7 +393,7 @@ def _watch_growth(
             continue
         written = entry.get("size") or 0
         done = min(written / ENCODE_BYTES_PER_SECOND, total_seconds - 1)
-        _report(progress, "encode", int(max(done, 0)), int(total_seconds))
+        _report(progress, ENCODE, int(max(done, 0)), int(total_seconds))
 
 
 def _report(progress: Optional[Progress], step: str, done: int, total: int) -> None:

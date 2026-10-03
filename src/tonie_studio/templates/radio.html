@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Radio-Tonie - tonie-studio{% endblock %}
+{% block title %}{{ t("radio.title") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Radio-Tonie</h1>
+<h1>{{ t("radio.title") }}</h1>
 <p class="sub">
-  Ein Tag muss nicht auf ein Taf zeigen - er kann auch auf einen Stream zeigen. Dann spielt die
-  Figur Radio, solange sie auf der Box steht, und es muss nichts encodiert werden.
+  {{ t("radio.intro") }}
 </p>
 
 <div class="warn">
-  <strong>Zwei Dinge, die an der Box anders sind.</strong>
-  Die Box legt pro Stream eine leere Datei an, standardmäßig 240 MB - das reicht für rund
-  <strong>sechs Stunden</strong>, danach hört sie auf und der Tonie muss einmal herunter und
-  wieder drauf. Und ohne Internet spielt ein Radio-Tonie gar nichts, während ein normaler
-  weiterläuft.
+  <strong>{{ t("radio.differences") }}</strong>
+  {{ t("radio.differences_text") }}
 </div>
 
 {% if streams %}
-<h2>Vorhandene Radio-Tonies</h2>
+<h2>{{ t("radio.existing") }}</h2>
 <div class="list">
   {% for tag in streams %}
   <div class="album">
@@ -33,23 +29,23 @@
 </div>
 {% endif %}
 
-<h2>Einrichten</h2>
+<h2>{{ t("radio.set_up") }}</h2>
 <form method="post" action="/radio" enctype="multipart/form-data">
   <div class="card">
     <label class="field">
-      <span>Welcher Tag</span>
+      <span>{{ t("radio.which_tag") }}</span>
       <select name="ruid" required style="font: inherit; padding: 7px 10px; width: 100%">
         {% for tag in tags %}
         <option value="{{ tag.ruid }}">
-          {% if tag.assigned %}{{ tag.label }} ({{ tag.uid }}) - wird überschrieben
-          {%- else %}frei - {{ tag.uid }}{% endif %}
+          {% if tag.assigned %}{{ t("tag.replaced", label=tag.label ~ " (" ~ tag.uid ~ ")") }}
+          {%- else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
         </option>
         {% endfor %}
       </select>
     </label>
 
     <label class="field">
-      <span>Stream-Adresse</span>
+      <span>{{ t("radio.stream") }}</span>
       <input type="url" name="url" required placeholder="https://..."
              list="stations" value="">
       <datalist id="stations">
@@ -57,30 +53,30 @@
       </datalist>
     </label>
     <p class="muted" style="margin-top: -6px; font-size: 13px">
-      Vorschläge beim Klick ins Feld. Ungeprüft - ob ein Sender läuft, zeigt erst die Box.
+      {{ t("radio.suggestions") }}
     </p>
 
     <label class="field">
-      <span>Name</span>
-      <input type="text" name="series" required placeholder="Kinderradio">
+      <span>{{ t("radio.name") }}</span>
+      <input type="text" name="series" required placeholder="{{ t('radio.name_example') }}">
     </label>
     <label class="field">
-      <span>Zusatz (optional)</span>
-      <input type="text" name="episode" placeholder="rund um die Uhr">
+      <span>{{ t("radio.extra") }}</span>
+      <input type="text" name="episode" placeholder="{{ t('radio.extra_example') }}">
     </label>
     <label class="field">
-      <span>Kategorie</span>
+      <span>{{ t("field.category") }}</span>
       <select name="category" style="font: inherit; padding: 7px 10px">
         {% for entry in categories %}<option value="{{ entry }}">{{ entry }}</option>{% endfor %}
       </select>
     </label>
     <label class="field" style="margin-bottom: 0">
-      <span>Cover</span>
-      <label class="button">Bild wählen<input type="file" name="cover" accept="image/*" hidden></label>
+      <span>{{ t("radio.cover") }}</span>
+      <label class="button">{{ t("common.choose_picture") }}<input type="file" name="cover" accept="image/*" hidden></label>
     </label>
   </div>
 
-  <p><button class="primary" type="submit">Radio-Tonie einrichten</button>
-     <a href="/tonies" style="margin-left:12px">Abbrechen</a></p>
+  <p><button class="primary" type="submit">{{ t("radio.submit") }}</button>
+     <a href="/tonies" style="margin-left:12px">{{ t("common.cancel") }}</a></p>
 </form>
 {% endblock %}

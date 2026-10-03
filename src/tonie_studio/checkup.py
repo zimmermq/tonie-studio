@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
 from .encode import list_tafs
@@ -33,9 +33,9 @@ from .tonie import MODEL_PREFIX, SYSTEM_RUID
 
 log = logging.getLogger(__name__)
 
-ERROR = "fehler"
-WARNING = "warnung"
-NOTE = "hinweis"
+ERROR = "error"
+WARNING = "warning"
+NOTE = "note"
 SEVERITIES = (ERROR, WARNING, NOTE)
 
 LIBRARY = "lib://"
@@ -49,21 +49,25 @@ class Finding:
     severity: str
     # What it is about, as a person recognises it: a tonie's name, a file.
     subject: str
-    # What is wrong and why it matters.
+    # What is wrong and why it matters: a key of the reader's language, and
+    # the values it names.
     detail: str
     # The ruid, model id or library path the repair acts on.
     target: str
     # The repair the page may offer, or None when only a person can decide.
     fix: Optional[str] = None
-    # What that repair would write, shown before it runs.
+    # What that repair would write, shown before it runs. Either the exact
+    # values written, which read the same in every language, or a key.
     preview: str = ""
+    preview_key: str = ""
+    params: Dict[str, object] = field(default_factory=dict)
 
 
 def repaired(text: Optional[str]) -> Optional[str]:
     """The text as it was meant, if it is UTF-8 that was read as latin-1.
 
     Mangled text has a tell: encoded back to latin-1 it is valid UTF-8 again.
-    Correct German never is - a lone "ä" is not a complete UTF-8 sequence -
+    Correct German never is - a lone "\u00e4" is not a complete UTF-8 sequence -
     and a decomposed umlaut cannot be encoded to latin-1 at all, so neither is
     ever mistaken for damage. Damage done twice is undone twice.
     """
@@ -109,9 +113,7 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
             kind="library_unreadable",
             severity=WARNING,
             subject="Library",
-            detail=("Die Library ließ sich nicht vollständig lesen. Ob ein Tag ins Leere "
-                    "zeigt oder ein Taf übrig ist, lässt sich so nicht sagen, darum steht "
-                    "dazu hier nichts."),
+            detail="checkup.library_unreadable",
             target="/",
         ))
     return sorted(findings, key=lambda finding: SEVERITIES.index(finding.severity))
@@ -133,30 +135,26 @@ def _tag_findings(tags: List[dict], tafs: Optional[List[dict]]) -> List[Finding]
             if fixed and _same(fixed) in present:
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
-                    detail=("Zeigt auf einen Pfad mit verstümmeltem Umlaut. Die Box spielt "
-                            "nichts. Das richtige Taf liegt in der Library."),
-                    fix="repair_source", preview=f"source: {source} → {fixed}",
+                    detail="checkup.garbled_path",
+                    fix="repair_source", preview=f"source: {source} \u2192 {fixed}",
                 ))
             else:
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
-                    detail=(f"Zeigt auf {source}, das gibt es nicht. Die Box spielt nichts. "
-                            "Neu bespielen oder den Tag leeren."),
+                    detail="checkup.missing_taf", params={"source": source},
                 ))
 
         if not entry.get("nocloud"):
             findings.append(Finding(
                 kind="cloud_fallback", severity=WARNING, subject=name, target=ruid,
-                detail=("Spielt aus der Library, darf aber die Tonies-Cloud fragen. Die Box "
-                        "kann dann versuchen, Inhalt zu laden, den es dort nicht gibt."),
-                fix="nocloud", preview="nocloud: false → true",
+                detail="checkup.cloud_fallback",
+                fix="nocloud", preview="nocloud: false \u2192 true",
             ))
 
         if not (entry.get("tonieInfo") or {}).get("model"):
             findings.append(Finding(
                 kind="nameless", severity=NOTE, subject=name, target=ruid,
-                detail=("Spielt, hat aber kein Modell: kein Name, kein Cover, kein Aufkleber. "
-                        "Über ein Album neu bespielen gibt ihm beides."),
+                detail="checkup.nameless",
             ))
     return findings
 
@@ -172,11 +170,10 @@ def _model_findings(models: List[dict]) -> List[Finding]:
             kind="garbled_model", severity=ERROR,
             subject=repaired(model.get("series")) or model.get("series") or model_id,
             target=model_id,
-            detail=("Name oder Titel mit verstümmelten Umlauten. So steht es in teddyCloud "
-                    "und so käme es auf jeden gedruckten Aufkleber."),
+            detail="checkup.garbled_model",
             fix="repair_model",
-            preview="; ".join(f"{field}: {before} → {after}"
-                              for field, before, after in changes),
+            preview="; ".join(f"{name}: {before} \u2192 {after}"
+                              for name, before, after in changes),
         ))
     return findings
 
@@ -184,10 +181,10 @@ def _model_findings(models: List[dict]) -> List[Finding]:
 def model_repairs(model: dict) -> Dict[str, object]:
     """The fields of a model as they should read, only those that change."""
     repairs: Dict[str, object] = {}
-    for field in ("series", "episodes"):
-        fixed = repaired(model.get(field))
+    for name in ("series", "episodes"):
+        fixed = repaired(model.get(name))
         if fixed:
-            repairs[field] = fixed
+            repairs[name] = fixed
     tracks = [str(track) for track in model.get("tracks") or []]
     fixed_tracks = [repaired(track) or track for track in tracks]
     if fixed_tracks != tracks:
@@ -197,14 +194,14 @@ def model_repairs(model: dict) -> Dict[str, object]:
 
 def _model_repairs(model: dict) -> List[tuple]:
     changes = []
-    for field, after in model_repairs(model).items():
-        if field == "tracks":
+    for name, after in model_repairs(model).items():
+        if name == "tracks":
             before_tracks = [str(track) for track in model.get("tracks") or []]
             for before, fixed in zip(before_tracks, after, strict=True):
                 if before != fixed:
                     changes.append(("track", before, fixed))
         else:
-            changes.append((field, model.get(field), after))
+            changes.append((name, model.get(name), after))
     return changes
 
 
@@ -218,12 +215,10 @@ def _leftovers(tags: List[dict], models: List[dict], tafs: Optional[List[dict]],
         path = _same(taf["path"])
         if _same(taf["source"]) in played or path in busy or path.startswith(busy_folders):
             continue
-        megabytes = taf.get("size", 0) / 1048576
         findings.append(Finding(
             kind="orphan_taf", severity=NOTE, subject=taf["name"], target=taf["path"],
-            detail=(f"Kein Tag spielt dieses Taf ({megabytes:.0f} MB). Vielleicht ist es "
-                    "bewusst auf Vorrat encodiert, vielleicht übrig von einem Fehlversuch."),
-            fix="delete_taf", preview=f"löscht {taf['path']}",
+            detail="checkup.orphan_taf", params={"size": taf.get("size", 0), "path": taf["path"]},
+            fix="delete_taf", preview_key="checkup.deletes_taf",
         ))
 
     for model in models:
@@ -234,8 +229,8 @@ def _leftovers(tags: List[dict], models: List[dict], tafs: Optional[List[dict]],
             kind="orphan_model", severity=NOTE,
             subject=f"{model.get('series', '')} - {model.get('episodes', '')}".strip(" -"),
             target=model_id,
-            detail="Kein Tag nennt dieses Modell. Name und Cover hängen an nichts.",
-            fix="delete_model", preview=f"löscht das Modell {model_id}; das Cover-Bild bleibt liegen",
+            detail="checkup.orphan_model", params={"model": model_id},
+            fix="delete_model", preview_key="checkup.deletes_model",
         ))
     return findings
 

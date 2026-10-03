@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Wiederherstellen - tonie-studio{% endblock %}
+{% block title %}{{ t("backup.restore") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>{% if done %}Wiederhergestellt{% else %}Wiederherstellen?{% endif %}</h1>
+<h1>{% if done %}{{ t("restore.done") }}{% else %}{{ t("restore.ask") }}{% endif %}</h1>
 <p class="sub">
-  Sicherung vom {{ (manifest.get("created") or "unbekannten Datum")[:10] }},
-  {{ manifest.get("models", "?") }} Modelle, {{ manifest.get("tags", "?") }} Sticker.
+  {{ t("restore.from", date=(manifest.get("created") or "?")[:10],
+       models=manifest.get("models", "?"), tags=manifest.get("tags", "?")) }}
 </p>
 
-{% set changing = steps | rejectattr("action", "equalto", "gleich") | list %}
+{% set changing = steps | rejectattr("action", "equalto", "same") | list %}
 {% if not done %}
 <div class="{% if changing %}warn{% else %}card{% endif %}">
   {% if changing %}
-  {{ changing | length }} Änderungen. Unten steht jede einzeln; bestätigen schreibt genau diese.
+  {{ t("restore.changes", count=changing | length) }}
   {% else %}
-  Die Sicherung entspricht dem jetzigen Stand. Es gibt nichts zu tun.
+  {{ t("restore.nothing") }}
   {% endif %}
 </div>
 {% endif %}
@@ -22,13 +22,13 @@
 <div class="list">
 {% for step in steps %}
   <div class="album">
-    <span class="muted" style="width: 6em">{{ step.what }}</span>
+    <span class="muted" style="width: 6em">{{ t("restore.what." ~ step.what) }}</span>
     <span class="grow truncate">
       <strong class="truncate">{{ step.name }}</strong>
-      {% if step.note %}<span class="muted" style="display: block; white-space: normal">{{ step.note }}</span>{% endif %}
+      {% if step.note %}<span class="muted" style="display: block; white-space: normal">{{ t(step.note) }}{% if step.detail %} {{ step.detail }}{% endif %}</span>{% endif %}
     </span>
-    <span class="{% if step.action == 'gleich' %}muted{% elif step.action in ('übersprungen', 'behalten', 'fehlgeschlagen') %}state-failed{% else %}state-done{% endif %}">
-      {{ step.action }}
+    <span class="{% if step.action == 'same' %}muted{% elif step.action in ('skipped', 'kept', 'failed') %}state-failed{% else %}state-done{% endif %}">
+      {{ t("restore.action." ~ step.action) }}
     </span>
   </div>
 {% endfor %}
@@ -36,10 +36,10 @@
 
 {% if not done and changing %}
 <form method="post" action="/restore/{{ token }}" style="margin-top: 14px">
-  <button class="primary" type="submit">Jetzt wiederherstellen</button>
-  <a href="/backup" style="margin-left: 12px">Abbrechen</a>
+  <button class="primary" type="submit">{{ t("restore.confirm") }}</button>
+  <a href="/backup" style="margin-left: 12px">{{ t("common.cancel") }}</a>
 </form>
 {% else %}
-<p><a class="button" href="/tonies">Zu den Tonies</a></p>
+<p><a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a></p>
 {% endif %}
 {% endblock %}

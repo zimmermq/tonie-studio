@@ -1,11 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Library - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.library") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Library</h1>
+<h1>{{ t("nav.library") }}</h1>
 <p class="sub">
-  {{ tafs | length }} Tafs, zusammen {{ (total / 1048576) | round | int }} MB.
-  Das Audio, auf das die Tonies zeigen.
+  {{ t("library.summary", count=tafs | length, size=t.size(total)) }}
 </p>
 
 <div class="list">
@@ -14,39 +13,37 @@
     <span class="grow truncate">
       <strong class="truncate">{{ taf.name }}</strong>
       <span class="muted truncate">
-        {{ taf.path }} &middot; {{ taf.chapters }} Kapitel &middot;
-        {{ (taf.size / 1048576) | round | int }} MB
-        {%- if not taf.valid %} &middot; <span class="state-failed">ungültig</span>{% endif %}
+        {{ taf.path }} &middot; {{ t("library.chapters", count=taf.chapters) }} &middot;
+        {{ t.size(taf.size) }}
+        {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}
       </span>
     </span>
     {% if taf.used_by %}
     <span class="muted truncate" style="max-width: 14em; text-align: right">
-      wird gespielt von<br>
+      {{ t("library.played_by") }}<br>
       {% for tag in taf.used_by %}{{ tag.label }}{% if not loop.last %}, {% endif %}{% endfor %}
     </span>
     {% endif %}
     <form method="post" action="/library/delete"
           {% if taf.used_by %}data-used="{{ taf.used_by | map(attribute='label') | join(', ') }}"{% endif %}>
       <input type="hidden" name="path" value="{{ taf.path }}">
-      <button type="submit" class="small">löschen</button>
+      <button type="submit" class="small">{{ t("common.delete") }}</button>
     </form>
   </div>
 {% else %}
-  <div class="album muted">Die Library ist leer.</div>
+  <div class="album muted">{{ t("library.empty") }}</div>
 {% endfor %}
 </div>
 
-<p><a class="button" href="/tonies">Zu den Tonies</a></p>
+<p><a class="button" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 
 <script>
   // Deleting a taf a tag points at leaves that tonie silent. Sometimes that is
   // the intent - replacing the audio underneath - so it asks rather than refuses.
+  const words = {{ t.strings("library.confirm_used") | tojson }};
   for (const form of document.querySelectorAll('form[data-used]')) {
     form.addEventListener('submit', event => {
-      const message =
-        `Dieses Taf wird gespielt von: ${form.dataset.used}.\n\n` +
-        `Nach dem Löschen spielt der Tonie nichts mehr, bis du ihm neues Audio gibst.\n\n` +
-        `Trotzdem löschen?`;
+      const message = say(words['library.confirm_used'], {used: form.dataset.used});
       if (!window.confirm(message)) event.preventDefault();
     });
   }

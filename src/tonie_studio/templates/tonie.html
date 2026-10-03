@@ -7,10 +7,9 @@
 
 {% if not model %}
 <div class="warn">
-  Dieser Tag hat kein eigenes Modell - es gibt also nichts zu bearbeiten. Bespiele ihn über
-  ein Album, dann bekommt er Cover und Tracknamen.
+  {{ t("tonie.no_model") }}
 </div>
-<p><a class="button" href="/tonies">Zurück</a></p>
+<p><a class="button" href="/tonies">{{ t("common.back") }}</a></p>
 {% else %}
 
 <form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data">
@@ -20,15 +19,15 @@
     {% endif %}
     <div class="grow">
       <label class="field">
-        <span>Serie</span>
+        <span>{{ t("field.series") }}</span>
         <input type="text" name="series" value="{{ model.series }}">
       </label>
       <label class="field">
-        <span>Folge</span>
+        <span>{{ t("field.episode") }}</span>
         <input type="text" name="episode" value="{{ model.episodes }}">
       </label>
       <label class="field">
-        <span>Kategorie</span>
+        <span>{{ t("field.category") }}</span>
         <select name="category" style="font: inherit; padding: 7px 10px">
           {% for entry in categories %}
           <option value="{{ entry }}" {% if entry == model.category %}selected{% endif %}>{{ entry }}</option>
@@ -36,56 +35,53 @@
         </select>
       </label>
       <label class="field" style="margin-bottom: 0">
-        <span>Cover ersetzen</span>
-        <label class="button">Bild wählen<input type="file" name="cover" accept="image/*" hidden></label>
+        <span>{{ t("tonie.replace_cover") }}</span>
+        <label class="button">{{ t("common.choose_picture") }}<input type="file" name="cover" accept="image/*" hidden></label>
       </label>
     </div>
   </div>
 
   {% if model.tracks %}
-  <h2>Tracks</h2>
+  <h2>{{ t("album.tracks") }}</h2>
   <div class="card muted">
     {% for track in model.tracks %}{{ loop.index }}. {{ track }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
   </div>
   {% endif %}
 
-  <p><button class="primary" type="submit">Speichern</button>
-     <a href="/tonies" style="margin-left:12px">Abbrechen</a></p>
+  <p><button class="primary" type="submit">{{ t("common.save") }}</button>
+     <a href="/tonies" style="margin-left:12px">{{ t("common.cancel") }}</a></p>
 </form>
 
-<h2>Modell entfernen</h2>
+<h2>{{ t("tonie.remove_model") }}</h2>
 <div class="card">
   <p class="muted" style="margin-top:0">
-    Löscht Cover, Serie, Folge und Tracknamen. <strong>Der Tonie spielt weiter</strong> - das
-    Audio hängt am Tag, nicht am Modell.
+    {{ t("tonie.remove_hint") }} <strong>{{ t("tonie.keeps_playing") }}</strong> {{ t("tonie.audio_on_tag") }}
   </p>
   <form method="post" action="/tonies/{{ tag.ruid }}/delete">
-    <button type="submit">{{ model.model }} löschen</button>
+    <button type="submit">{{ t("tonie.delete_model", model=model.model) }}</button>
   </form>
 </div>
 {% endif %}
 
 {% if tag.source %}
-<h2>Auf einen weiteren Sticker</h2>
+<h2>{{ t("tonie.copy_title") }}</h2>
 <div class="card">
   <p class="muted" style="margin-top: 0">
-    Ein zweiter Sticker, der dasselbe spielt: für die Großeltern, oder als Ersatz für einen
-    verlorenen. Er bekommt dasselbe Audio und denselben Namen, nichts wird neu encodiert.
-    Ein neuer Sticker taucht hier erst auf, wenn die Box ihn einmal gelesen hat.
+    {{ t("tonie.copy_hint") }}
   </p>
   {% if others %}
   <form method="post" action="/tonies/{{ tag.ruid }}/copy" class="row" style="gap: 10px; flex-wrap: wrap">
     <select name="target" style="font: inherit; padding: 7px 10px" required>
       {% for other in others %}
       <option value="{{ other.ruid }}">
-        {% if other.assigned %}{{ other.label }} (wird überschrieben){% else %}frei - {{ other.uid }}{% endif %}
+        {% if other.assigned %}{{ t("tag.replaced", label=other.label) }}{% else %}{{ t("tag.free_uid", uid=other.uid) }}{% endif %}
       </option>
       {% endfor %}
     </select>
-    <button type="submit">Bespielen</button>
+    <button type="submit">{{ t("tonie.copy") }}</button>
   </form>
   {% else %}
-  <p class="muted">Die Box kennt noch keinen weiteren Sticker.</p>
+  <p class="muted">{{ t("tonie.no_other") }}</p>
   {% endif %}
 </div>
 {% endif %}

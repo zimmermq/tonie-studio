@@ -206,6 +206,14 @@ class TestBackSide:
 
         assert any(line.text.startswith("und ") and "weitere" in line.text for line in lines)
 
+    def test_says_what_it_left_off_in_the_language_of_the_back(self):
+        from tonie_studio.sheet import Back, back_lines
+
+        lines = back_lines(Back(title="Long", tracks=[f"Song {n}" for n in range(1, 41)],
+                                language="en"))
+
+        assert any(line.text.startswith("and ") and line.text.endswith(" more") for line in lines)
+
     def test_leaves_the_tracks_out_when_they_are_not_wanted(self):
         from tonie_studio.sheet import Back, back_lines
 

@@ -21,6 +21,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
+from .i18n import DEFAULT, Translator
 from .sheet import CUT_LINE_GREY, FILL, font_name, render_square, wrap_text
 
 log = logging.getLogger(__name__)
@@ -49,8 +50,11 @@ class Entry:
     facts: Sequence[str] = field(default_factory=list)
 
 
-def build_overview(entries: Sequence[Entry], target: Path, heading: str = "Unsere Tonies") -> None:
+def build_overview(entries: Sequence[Entry], target: Path,
+                   translate: Optional[Translator] = None) -> None:
     """Write the overview to ``target``, as many pages as the entries need."""
+    translate = translate or Translator(DEFAULT)
+    heading = translate("pdf.overview_title")
     if not entries:
         raise ValueError("there is no tonie to list")
 
@@ -68,7 +72,8 @@ def build_overview(entries: Sequence[Entry], target: Path, heading: str = "Unser
         if slot == 0:
             if index:
                 sheet.showPage()
-            _heading(sheet, heading, index // per_page + 1, pages)
+            _heading(sheet, heading, translate("pdf.page", page=index // per_page + 1, pages=pages),
+                     pages)
         # Down the first column, then down the second, the way a list is read.
         column, row = divmod(slot, ROWS_PER_PAGE)
         left = MARGIN_MM * mm + column * column_width
@@ -78,7 +83,7 @@ def build_overview(entries: Sequence[Entry], target: Path, heading: str = "Unser
     sheet.save()
 
 
-def _heading(sheet: canvas.Canvas, heading: str, page: int, pages: int) -> None:
+def _heading(sheet: canvas.Canvas, heading: str, page: str, pages: int) -> None:
     page_width, page_height = A4
     baseline = page_height - MARGIN_MM * mm - 7 * mm
     sheet.setFillGray(0.1)
@@ -86,7 +91,7 @@ def _heading(sheet: canvas.Canvas, heading: str, page: int, pages: int) -> None:
     sheet.drawString(MARGIN_MM * mm, baseline, heading)
     if pages > 1:
         sheet.setFont(font_name(False), 9)
-        sheet.drawRightString(page_width - MARGIN_MM * mm, baseline, f"Seite {page} von {pages}")
+        sheet.drawRightString(page_width - MARGIN_MM * mm, baseline, page)
 
 
 def _entry(sheet: canvas.Canvas, entry: Entry, left: float, top: float,

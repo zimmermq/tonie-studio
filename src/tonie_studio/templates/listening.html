@@ -1,27 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Gehört - tonie-studio{% endblock %}
+{% block title %}{{ t("nav.listening") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Gehört</h1>
+<h1>{{ t("nav.listening") }}</h1>
 <div id="live">
 <p class="sub">
   {% if recorded_since %}
-  Aufgezeichnet seit {{ recorded_since | when }}. Was davor lief, weiß die App nicht.
+  {{ t("listening.since", when=t.when(recorded_since)) }}
   {% else %}
-  Noch nichts aufgezeichnet. Sobald ein Tonie auf die Box kommt, steht er hier.
+  {{ t("listening.nothing_yet") }}
   {% endif %}
 </p>
 
 </div>
 
 <p class="row" style="gap: 8px; flex-wrap: wrap">
-  {% for value, name in [("7", "7 Tage"), ("30", "30 Tage"), ("all", "alles")] %}
+  {% for value, name in [("7", t("listening.days", count=7)), ("30", t("listening.days", count=30)), ("all", t("listening.all"))] %}
   <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}">{{ name }}</a>
   {% endfor %}
 </p>
 
 <div id="lists">
-<h2>Am meisten gehört</h2>
+<h2>{{ t("listening.most") }}</h2>
 <div class="list">
 {% for tag, entry in heard %}
   <div class="album">
@@ -33,20 +33,20 @@
     <span class="grow truncate">
       <strong class="truncate">{{ tag.label }}</strong>
       <span class="muted truncate">
-        {{ entry.placed }}&times; aufgelegt &middot; {{ entry.played | duration }} gespielt
-        &middot; zuletzt {{ entry.last_placed | when }}
+        {{ t("listening.placed", count=entry.placed) }} &middot; {{ t("listening.played", time=t.duration(entry.played)) }}
+        &middot; {{ t("listening.last", when=t.when(entry.last_placed)) }}
       </span>
     </span>
   </div>
 {% else %}
   <div class="album muted">
-    {% if days %}In den letzten {{ days }} Tagen lief nichts.{% else %}Noch nichts gehört.{% endif %}
+    {% if days %}{{ t("listening.nothing_in", count=days) }}{% else %}{{ t("listening.nothing") }}{% endif %}
   </div>
 {% endfor %}
 </div>
 
 {% if quiet %}
-<h2>Lange nicht gehört</h2>
+<h2>{{ t("listening.quiet") }}</h2>
 <div class="list">
 {% for tag, entry in quiet %}
   <div class="album">
@@ -58,8 +58,8 @@
     <span class="grow truncate">
       <strong class="truncate">{{ tag.label }}</strong>
       <span class="muted truncate">
-        {% if entry and entry.last_placed %}zuletzt {{ entry.last_placed | when }}
-        {% else %}seit Beginn der Aufzeichnung nie aufgelegt{% endif %}
+        {% if entry and entry.last_placed %}{{ t("listening.last", when=t.when(entry.last_placed)) }}
+        {% else %}{{ t("listening.never") }}{% endif %}
       </span>
     </span>
   </div>
@@ -69,8 +69,7 @@
 </div>
 
 <p class="muted" style="font-size: 13px">
-  Aktualisiert sich von selbst. Die Box schickt ihr Protokoll manchmal gebündelt und erst
-  Minuten später; was sie noch nicht geschickt hat, kann hier noch nicht stehen.
+  {{ t("listening.refresh_note") }}
 </p>
 
 <script>

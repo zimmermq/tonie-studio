@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ t("error.title") }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ t("error.title") }}</h1>
+<div class="warn">{{ message }}</div>
+<p><a class="button" href="javascript:history.back()">{{ t("error.back") }}</a></p>
+{% endblock %}

@@ -35,13 +35,14 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
 
 from .album import AUDIO_EXTENSIONS
 from .encode import EncodeError, delete_taf, encode_files, library_path
+from .i18n import Problem
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -87,7 +88,7 @@ AUDIO_TYPES = {
 Fetch = Callable[..., bytes]
 
 
-class FeedError(ValueError):
+class FeedError(Problem, ValueError):
     """A feed that cannot be read or has nothing to play."""
 
 
@@ -122,20 +123,24 @@ class Subscription:
     guids: List[str] = field(default_factory=list)
     checked: str = ""
     updated: str = ""
+    # What went wrong last time: a key and its values for the reader's
+    # language, or raw text from a part that does not speak it (teddyCloud).
     error: str = ""
+    error_key: str = ""
+    error_params: Dict = field(default_factory=dict)
 
 
 def parse_feed(data: bytes) -> Feed:
     """The feed's title, cover and episodes that carry audio, in feed order."""
     if b"<!ENTITY" in data:
-        raise FeedError("the feed declares XML entities, which no podcast feed needs")
+        raise FeedError("feed.entities")
     try:
         root = ElementTree.fromstring(data)
     except ElementTree.ParseError as error:
-        raise FeedError(f"that is not a feed: {error}") from error
+        raise FeedError("feed.not_a_feed", detail=str(error)) from error
     channel = root.find("channel")
     if root.tag != "rss" or channel is None:
-        raise FeedError("that is not an RSS feed")
+        raise FeedError("feed.not_rss")
 
     image = None
     itunes_image = channel.find(f"{ITUNES}image")
@@ -164,7 +169,7 @@ def parse_feed(data: bytes) -> Feed:
 
     title = (channel.findtext("title") or "").strip()
     if not title:
-        raise FeedError("the feed has no title")
+        raise FeedError("feed.no_title")
     return Feed(title=title, image=image, episodes=episodes)
 
 
@@ -193,10 +198,10 @@ def download(url: str, limit: int = LARGEST_DOWNLOAD) -> bytes:
             for chunk in response.iter_content(1024 * 1024):
                 size += len(chunk)
                 if size > limit:
-                    raise FeedError(f"{url} is larger than {limit // 1048576} MB")
+                    raise FeedError("feed.too_large", url=url, megabytes=limit // 1048576)
                 chunks.append(chunk)
             return b"".join(chunks)
-    raise FeedError(f"more than {MOST_REDIRECTS} redirects from {url}")
+    raise FeedError("feed.redirects", count=MOST_REDIRECTS, url=url)
 
 
 def check_public(url: str, resolve: Callable = socket.getaddrinfo) -> None:
@@ -208,16 +213,16 @@ def check_public(url: str, resolve: Callable = socket.getaddrinfo) -> None:
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise FeedError(f"only http and https addresses can be fetched, not {url}")
+        raise FeedError("feed.not_http", url=url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
         answers = resolve(parsed.hostname, port, type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError) as error:
-        raise FeedError(f"{parsed.hostname} cannot be found: {error}") from error
+        raise FeedError("feed.not_found", host=parsed.hostname, detail=str(error)) from error
     for answer in answers:
         address = ipaddress.ip_address(str(answer[4][0]).split("%", 1)[0])
         if not address.is_global:
-            raise FeedError(f"{parsed.hostname} is not on the public internet ({address})")
+            raise FeedError("feed.not_public", host=parsed.hostname, address=str(address))
 
 
 def refresh(
@@ -236,7 +241,7 @@ def refresh(
     feed = parse_feed(fetch(subscription.feed, LARGEST_FEED))
     chosen = newest(feed, subscription.keep)
     if not chosen:
-        raise FeedError("the feed has no episode with audio")
+        raise FeedError("feed.no_audio")
 
     subscription.checked = now.isoformat()
     subscription.title = feed.title
@@ -282,7 +287,7 @@ def refresh(
     subscription.source = encoded.source
     subscription.guids = guids
     subscription.updated = now.isoformat()
-    subscription.error = ""
+    subscription.error, subscription.error_key, subscription.error_params = "", "", {}
     if old and old != encoded.source and old.startswith("lib://") and not _still_played(client, old):
         _delete_quietly(client, "/" + old[len("lib://"):], subscription.id)
     log.info("podcast %s now plays %d episodes from %s", subscription.id, len(chosen), feed.title)
@@ -293,13 +298,10 @@ def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None
     """Refuse to touch a sticker that now plays something else."""
     entry = next((tag for tag in client.tags() if tag.get("ruid") == subscription.ruid), None)
     if entry is None:
-        raise FeedError("Die Box kennt den Sticker dieses Abos nicht mehr.")
+        raise FeedError("feed.sticker_unknown")
     playing = entry.get("source") or ""
     if subscription.source and _same(playing) != _same(subscription.source):
-        raise FeedError(
-            f"Der Sticker spielt inzwischen etwas anderes ({playing or 'nichts'}). "
-            "Das Abo überschreibt ihn nicht; abbestellen oder auf einen anderen Sticker legen."
-        )
+        raise FeedError("feed.sticker_reused", playing=playing or "-")
 
 
 def _cover(client: TeddyCloudClient, subscription: Subscription, feed: Feed,

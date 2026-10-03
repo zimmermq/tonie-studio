@@ -36,6 +36,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
+from .i18n import DEFAULT, Translator
+
 log = logging.getLogger(__name__)
 
 # What fits on a tag.
@@ -99,6 +101,9 @@ class Back:
     # the model number that finds the tonie again in the app.
     notes: Sequence[str] = ()
     tracks: Sequence[str] = ()
+    # The language of whatever this module adds to the text, such as the count
+    # of tracks left off; the rest arrives already written.
+    language: str = DEFAULT
 
 
 @dataclass(frozen=True)
@@ -239,7 +244,8 @@ def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
                   for text in numbered[:keep]]
         left = len(numbered) - keep
         if left:
-            lines.append(TextLine(f"und {left} weitere", TRACK_PT))
+            lines.append(TextLine(Translator(back.language)("pdf.more_tracks", count=left),
+                                  TRACK_PT))
         if _stack_height(lines) <= height:
             return lines if keep else head
 

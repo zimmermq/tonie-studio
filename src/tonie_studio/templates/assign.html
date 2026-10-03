@@ -1,23 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Tonie bespielen - tonie-studio{% endblock %}
+{% block title %}{{ t("assign.title") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>Auf welchen Tonie?</h1>
-<p class="sub">{{ result.encode.target }} - {{ result.encode.tracks }} Tracks</p>
+<h1>{{ t("assign.heading") }}</h1>
+<p class="sub">{{ result.encode.target }} - {{ t("albums.tracks", count=result.encode.tracks) }}</p>
 
 <div class="warn" id="hint">
-  Ein neuer NFC-Sticker taucht hier erst auf, nachdem die Toniebox ihn einmal gelesen hat.
-  Fehlt deiner in der Liste: <strong>kurz an die Box halten</strong> - die Seite merkt es selbst.
+  {{ t("assign.new_sticker") }} <strong>{{ t("assign.hold_it") }}</strong> {{ t("assign.page_notices") }}
 </div>
 
 {% if duplicate %}
 <div class="warn">
-  <strong>Dieses Audio gibt es schon:</strong>
+  <strong>{{ t("assign.duplicate") }}</strong>
   {{ duplicate.series }}{% if duplicate.episodes %} - {{ duplicate.episodes }}{% endif %}
   ({{ duplicate.model }}).<br>
-  Ein zweites Modell mit derselben Audio-Kennung streitet sich mit dem ersten darum, welchen
-  Namen teddyCloud einem Tag von selbst zuordnet. Wenn du denselben Inhalt auf einen zweiten
-  Tonie legen willst, ist das in Ordnung - dann bekommt er eben zwei Modelle.
+  {{ t("assign.duplicate_hint") }}
 </div>
 {% endif %}
 
@@ -28,33 +25,33 @@
       <input type="radio" name="ruid" value="{{ tag.ruid }}" required
              {% if (preselect and tag.ruid == preselect) or (not preselect and loop.first) %}checked{% endif %}>
       <div class="grow truncate">
-        {% if preselect and tag.ruid == preselect %}<span class="onbox">gerade aufgelegt</span> {% endif %}
+        {% if preselect and tag.ruid == preselect %}<span class="onbox">{{ t("assign.just_placed") }}</span> {% endif %}
         {% if tag.assigned %}
           {{ tag.label }}
-          <div class="muted">belegt - {{ tag.source }} - wird überschrieben</div>
+          <div class="muted">{{ t("assign.taken", source=tag.source) }}</div>
         {% else %}
-          <strong>frei</strong>
+          <strong>{{ t("tag.free") }}</strong>
           <div class="muted">{{ tag.uid }}</div>
         {% endif %}
       </div>
     </label>
     {% else %}
-    <p class="muted">teddyCloud kennt noch keinen Tag.</p>
+    <p class="muted">{{ t("assign.no_tags") }}</p>
     {% endfor %}
   </div>
 
-  <h2>Was auf dem Tonie steht</h2>
+  <h2>{{ t("assign.what") }}</h2>
   <div class="card">
     <label class="field">
-      <span>Serie</span>
+      <span>{{ t("field.series") }}</span>
       <input type="text" name="series" value="{{ result.series }}">
     </label>
     <label class="field">
-      <span>Folge</span>
+      <span>{{ t("field.episode") }}</span>
       <input type="text" name="episode" value="{{ result.episode }}" required>
     </label>
     <label class="field" style="margin-bottom:0">
-      <span>Kategorie</span>
+      <span>{{ t("field.category") }}</span>
       <select name="category" style="font: inherit; padding: 7px 10px">
         {% for category in categories %}
         <option value="{{ category }}">{{ category }}</option>
@@ -63,16 +60,17 @@
     </label>
   </div>
 
-  <h2>Tracks im Modell</h2>
+  <h2>{{ t("assign.tracks") }}</h2>
   <div class="card muted">
     {% for track in result.tracks %}{{ loop.index }}. {{ track }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
   </div>
 
-  <p><button class="primary" type="submit">Tonie bespielen</button>
-     <a href="/" style="margin-left:12px">Später</a></p>
+  <p><button class="primary" type="submit">{{ t("assign.title") }}</button>
+     <a href="/" style="margin-left:12px">{{ t("assign.later") }}</a></p>
 </form>
 
 <script>
+  const words = {{ t.strings("assign.unknown_tag", "assign.unknown_tag_hint", "assign.new_tag") | tojson }};
   // A blank sticker reaches teddyCloud as a tag it does not know, which is
   // exactly what the box reports when one is held against it. Waiting for that
   // beats telling people to reload until it appears.
@@ -98,11 +96,11 @@
         // Reloading again would not help: the list has been fetched since and
         // still does not hold it. Reloading anyway is an endless loop that
         // throws the page back to the top every few seconds.
-        hint.innerHTML = 'Ein Tag wurde an der Box gelesen, aber teddyCloud kennt ihn nicht: '
-          + `<code>${fresh}</code>. Halte ihn noch einmal an die Box, oder waehle unten `
-          + 'einen anderen.';
+        const code = document.createElement('code');
+        code.textContent = fresh;
+        hint.replaceChildren(words['assign.unknown_tag'] + ' ', code, ' ' + words['assign.unknown_tag_hint']);
       } else {
-        hint.textContent = 'Neuer Tag erkannt, Liste wird geladen ...';
+        hint.textContent = words['assign.new_tag'];
         window.location = `${window.location.pathname}?new=${encodeURIComponent(fresh)}`;
         return;
       }

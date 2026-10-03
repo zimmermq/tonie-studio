@@ -1,11 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Teile - tonie-studio{% endblock %}
+{% block title %}{{ t("parts.title") }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>In Teilen</h1>
+<h1>{{ t("parts.heading") }}</h1>
 <p class="sub">
-  Jeder Teil wird ein eigenes Taf und ein eigener Tonie. Sie laufen nacheinander; ist einer
-  fertig, kann er schon bespielt werden, während der nächste noch encodiert wird.
+  {{ t("parts.intro") }}
 </p>
 
 <div class="list">
@@ -13,11 +12,11 @@
   <div class="album" data-job="{{ job.id }}">
     <span class="grow truncate">
       <strong class="truncate">{{ job.result.episode if job.result else job.label }}</strong>
-      <span class="muted truncate state">{{ states.get(job.state.value, job.state.value) }}</span>
+      <span class="muted truncate state">{{ t("job.state." ~ job.state.value) }}</span>
     </span>
     <a class="button small assign" href="/job/{{ job.id }}/assign"
-       {% if job.state.value != 'done' %}hidden{% endif %}>bespielen</a>
-    <a class="small" href="/job/{{ job.id }}">Details</a>
+       {% if job.state.value != 'done' %}hidden{% endif %}>{{ t("parts.assign") }}</a>
+    <a class="small" href="/job/{{ job.id }}">{{ t("parts.details") }}</a>
   </div>
 {% endfor %}
 </div>
@@ -25,7 +24,9 @@
 <script>
   // Updated in place rather than by reloading the page, which would throw it
   // back to the top every few seconds.
-  const states = {{ states | tojson }};
+  const states = Object.fromEntries(Object.entries(
+    {{ t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed") | tojson }}
+  ).map(([key, text]) => [key.replace('job.state.', ''), text]));
   async function poll() {
     let running = false;
     for (const row of document.querySelectorAll('[data-job]')) {

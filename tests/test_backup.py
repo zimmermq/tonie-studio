@@ -118,7 +118,7 @@ class TestRestoring:
 
         steps = plan_restore(cloud, backup, data_dir)
 
-        assert all(step.action == "gleich" for step in steps)
+        assert all(step.action == "same" for step in steps)
 
     def test_a_tag_the_box_has_not_read_is_skipped_and_said(self, cloud, data_dir, tmp_path):
         backup = read_backup(create_backup(cloud, data_dir))
@@ -128,7 +128,7 @@ class TestRestoring:
         steps = plan_restore(fresh, backup, tmp_path / "x")
 
         tag_step = next(step for step in steps if step.what == "tag")
-        assert tag_step.action == "übersprungen"
+        assert tag_step.action == "skipped"
 
     def test_warns_when_a_tag_would_point_at_a_missing_taf(self, cloud, data_dir, tmp_path):
         # The tafs are rebuilt separately; restoring a tag before its taf is
@@ -139,7 +139,7 @@ class TestRestoring:
 
         tag_step = next(s for s in plan_restore(fresh, backup, tmp_path / "x") if s.what == "tag")
 
-        assert "fehlt" in tag_step.note
+        assert tag_step.note == "restore.note.taf_missing"
 
     def test_does_not_delete_what_the_backup_does_not_know(self, cloud, data_dir):
         backup = read_backup(create_backup(cloud, data_dir))
@@ -205,7 +205,7 @@ class TestRestoreKeepsGoing:
 
         steps = apply_restore(fresh, backup, tmp_path / "fresh-data")
 
-        failed = [step for step in steps if step.action == "fehlgeschlagen"]
+        failed = [step for step in steps if step.action == "failed"]
         assert [step.what for step in failed] == ["model"]
         assert any(model["model"] == "TS-0001" for model in fresh.custom_models)
         assert fresh.tag_entries[TIERE]["source"]
@@ -219,10 +219,10 @@ class TestDescribing:
 
         parts = {part.what: part for part in describe_backup(cloud, data_dir)}
 
-        assert parts["Modelle"].count == 1
-        assert parts["Sticker"].count == 1
-        assert parts["Cover"].count == 1
-        assert parts["Hörprotokoll"].count == 1
+        assert parts["models"].count == 1
+        assert parts["tags"].count == 1
+        assert parts["covers"].count == 1
+        assert parts["listening"].count == 1
 
     def test_cover_sizes_come_from_the_listing(self, cloud, data_dir):
         # Fetching every picture to measure it would move half the backup on
@@ -231,7 +231,7 @@ class TestDescribing:
 
         cloud.fetch = lambda path: (_ for _ in ()).throw(AssertionError("fetched " + path))
 
-        cover = next(p for p in describe_backup(cloud, data_dir) if p.what == "Cover")
+        cover = next(p for p in describe_backup(cloud, data_dir) if p.what == "covers")
 
         assert cover.size == len(cloud.images["TS-0001.jpg"])
 
@@ -240,7 +240,7 @@ class TestDescribing:
 
         cloud.images["alt.jpg"] = b"x" * 5000
 
-        cover = next(p for p in describe_backup(cloud, data_dir) if p.what == "Cover")
+        cover = next(p for p in describe_backup(cloud, data_dir) if p.what == "covers")
 
         assert cover.count == 1
 

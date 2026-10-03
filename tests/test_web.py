@@ -5,6 +5,7 @@ runs: it uploads, encodes and cleans up against the in-memory server, and the
 test can look at what arrived.
 """
 
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
@@ -1016,7 +1017,7 @@ class TestLibraryPage:
 
         page = client.get("/library").text
 
-        assert "Halloween" in page and "MB" in page
+        assert "Halloween" in page and re.search(r"\d (Byte|KB|MB)\b", page)
 
     def test_names_the_tonie_that_would_fall_silent(self, client, runner, teddycloud):
         _publish(client, runner, teddycloud)
@@ -1125,7 +1126,7 @@ class TestGermanSurface:
         page = client.get(f"/album/{_album_id(client)}").text
 
         assert "Reihenfolge nach Dateinummer" in page
-        assert "filename number" not in page
+        assert "file_number" not in page
 
     def test_writes_umlauts_rather_than_transliterating_them(self, client):
         for path in ("/", "/tonies", "/library", "/radio", "/sheet"):
@@ -1188,7 +1189,7 @@ class TestListeningPage:
         page = client.get("/listening?period=7").text
         heard = page.split("Am meisten gehört", 1)[1].split("Lange nicht", 1)[0]
         assert "Lichterkinder" in heard
-        assert "1&times; aufgelegt" in heard
+        assert "einmal aufgelegt" in heard
 
     def test_a_recorded_tonie_never_put_on_is_listed_as_quiet(self, client, runner, teddycloud):
         _publish(client, runner, teddycloud)
@@ -1731,12 +1732,12 @@ class TestListeningRefreshes:
                    + uid[8:] + uid[:8] + '"}')
 
         box.handle("TagValid", uid)
-        assert "1&times; aufgelegt" in client.get("/listening?period=7").text
+        assert "einmal aufgelegt" in client.get("/listening?period=7").text
 
         box.handle("rtnl-raw-log2", removed)
         box.handle("TagValid", uid)
 
-        assert "2&times; aufgelegt" in client.get("/listening?period=7").text
+        assert "2-mal aufgelegt" in client.get("/listening?period=7").text
 
 
 
@@ -1753,11 +1754,45 @@ class TestBackupPageSizes:
         assert "Megabyte" not in client.get("/backup").text
 
 
-class TestFilesize:
-    @pytest.mark.parametrize("size, shown", [
-        (812, "812 Byte"), (340 * 1024, "340 KB"), (1_268_644, "1,2 MB"),
-    ])
-    def test_reads_like_a_person_says_it(self, size, shown):
-        from tonie_studio.web import _filesize
 
-        assert _filesize(size) == shown
+class TestRefusals:
+    def test_a_refusal_is_a_page_in_the_readers_language(self, client):
+        client.cookies.set("lang", "en")
+
+        response = client.get("/job/nope")
+
+        assert response.status_code == 404
+        assert "There is no such job." in response.text and "<html" in response.text
+
+    def test_german_is_the_default(self, client):
+        assert "Diesen Auftrag gibt es nicht." in client.get("/job/nope").text
+
+    def test_the_api_answers_json_in_the_readers_language(self, client):
+        response = client.get("/api/job/nope", headers={"accept-language": "en-GB,en"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "There is no such job."}
+
+    def test_a_cause_that_is_itself_translated_is_said_in_the_same_language(self):
+        from tonie_studio.i18n import Translator
+        from tonie_studio.podcast import FeedError
+        from tonie_studio.web import Refused
+
+        refusal = Refused(400, "error.feed_unreadable", detail=FeedError("feed.no_title"))
+
+        assert refusal.say(Translator("de")) == (
+            "Dieser Feed l\u00e4sst sich nicht lesen: Der Feed hat keinen Titel.")
+        assert refusal.say(Translator("en")) == "That feed cannot be read: The feed has no title."
+
+
+class TestPrintedLanguage:
+    def test_the_back_side_speaks_the_readers_language(self):
+        from tonie_studio.i18n import Translator
+        from tonie_studio.web import _back_of
+
+        model = {"model": "TS-0001", "series": "S", "episodes": "E", "year": 2019,
+                 "tracks": ["a", "b"]}
+
+        assert _back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
+        assert _back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"
+        assert _back_of(model, 1500, Translator("en")).language == "en"

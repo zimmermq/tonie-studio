@@ -70,7 +70,7 @@ class TestMissingTaf:
         found = [f for f in examine(cloud) if f.kind == "missing_taf"]
 
         assert len(found) == 1
-        assert found[0].severity == "fehler"
+        assert found[0].severity == "error"
         assert found[0].target == BOBO
 
     def test_offers_the_repair_when_the_path_is_only_garbled(self, cloud):
@@ -107,7 +107,7 @@ class TestCloudFallback:
 
         found = next(f for f in examine(cloud) if f.kind == "cloud_fallback")
 
-        assert found.severity == "warnung"
+        assert found.severity == "warning"
         assert found.fix == "nocloud"
 
     def test_a_stream_is_left_to_teddycloud(self, cloud):
@@ -139,7 +139,7 @@ class TestLeftovers:
 
         found = next(f for f in examine(cloud) if f.kind == "orphan_taf")
 
-        assert found.severity == "hinweis"
+        assert found.severity == "note"
         assert found.target == "/Lichterkinder/Alt.taf"
         assert found.fix == "delete_taf"
 
@@ -174,7 +174,7 @@ class TestOrder:
 
         severities = [finding.severity for finding in examine(cloud)]
 
-        assert severities == sorted(severities, key=["fehler", "warnung", "hinweis"].index)
+        assert severities == sorted(severities, key=["error", "warning", "note"].index)
 
 
 class TestWorkInProgress:
