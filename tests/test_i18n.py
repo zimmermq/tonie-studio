@@ -51,7 +51,7 @@ class TestCatalogs:
     def test_every_key_the_code_uses_exists(self):
         used = set()
         pattern = re.compile(r"""\bt\(\s*["']([a-z0-9_.]+)["']""")
-        for path in list(TEMPLATES.glob("*.html")) + list(SOURCES.glob("*.py")):
+        for path in list(TEMPLATES.glob("*.html")) + list(SOURCES.rglob("*.py")):
             used |= set(pattern.findall(path.read_text(encoding="utf-8")))
         # "job.state." ~ value: the family is checked below, value by value.
         used -= set(DYNAMIC)
@@ -61,7 +61,7 @@ class TestCatalogs:
     def test_no_key_is_left_unused(self):
         # A key nobody uses is a translation someone keeps up for nothing.
         text = "".join(path.read_text(encoding="utf-8")
-                       for path in list(TEMPLATES.glob("*.html")) + list(SOURCES.glob("*.py")))
+                       for path in list(TEMPLATES.glob("*.html")) + list(SOURCES.rglob("*.py")))
         unused = [key for key in catalogs()[DEFAULT]
                   if not key.startswith("_") and not key.startswith(DYNAMIC)
                   and f'"{key}"' not in text and f"'{key}'" not in text]

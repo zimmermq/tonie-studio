@@ -6,7 +6,7 @@
 <p class="sub">{{ t("backup.intro") }}</p>
 
 <div class="card">
-  <p style="margin-top: 0">{{ t("backup.contains") }}</p>
+  <p class="mt-0">{{ t("backup.contains") }}</p>
   <table class="sizes">
     <tbody>
       {% for part in parts %}
@@ -26,8 +26,8 @@
 
 <h2>{{ t("backup.restore") }}</h2>
 <div class="card">
-  <p class="muted" style="margin-top: 0">{{ t("backup.restore_hint") }}</p>
-  <form method="post" action="/restore" enctype="multipart/form-data" class="row" style="gap: 10px; flex-wrap: wrap">
+  <p class="muted mt-0">{{ t("backup.restore_hint") }}</p>
+  <form method="post" action="/restore" enctype="multipart/form-data" class="row wrap gap-10">
     <label class="button">{{ t("backup.choose") }}
       <input type="file" name="file" accept=".zip,application/zip" required hidden id="restorefile">
     </label>

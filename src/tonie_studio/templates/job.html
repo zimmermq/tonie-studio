@@ -7,7 +7,7 @@
 
 <div class="card">
   <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
-  <p class="muted" id="detail" style="margin-bottom:0">
+  <p class="muted mb-0" id="detail">
     <span id="detailtext">{% if job.step %}{{ t("job.step." ~ job.step) }} {{ job.done_count }}/{{ job.total }}{% else %}{{ t("job.preparing") }}{% endif %}</span>
   </p>
 </div>

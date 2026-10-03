@@ -10,7 +10,7 @@
 {% if placing %}
 <div class="card" id="placing">
   <strong>{{ t("place.prompt") }}</strong>
-  <p class="muted" id="placemsg" style="margin-bottom: 0">
+  <p class="muted mb-0" id="placemsg">
     {%- if next_episode %}{{ t("place.next", episode=next_episode) }}{% else %}{{ t("place.all_done") }}{% endif -%}
   </p>
 </div>

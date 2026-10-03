@@ -61,6 +61,37 @@
   .grow { flex: 1; min-width: 0; }
   .muted { color: var(--muted); font-size: 14px; }
   .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  select { font: inherit; padding: 7px 10px; }
+  select.wide { width: 100%; }
+  /* Small adjustments the pages make to the shared pieces, named for what
+     they do so the markup stays free of style attributes. They win over the
+     component rules the way a style attribute would, hence !important. */
+  .m-0 { margin: 0 !important; }
+  .mt-0 { margin-top: 0 !important; }
+  .mt-8 { margin-top: 8px !important; }
+  .mt-10 { margin-top: 10px !important; }
+  .mt-12 { margin-top: 12px !important; }
+  .mt-14 { margin-top: 14px !important; }
+  .mb-0 { margin-bottom: 0 !important; }
+  .mb-8 { margin-bottom: 8px !important; }
+  .ml-8 { margin-left: 8px !important; }
+  .ml-12 { margin-left: 12px !important; }
+  .wrap { flex-wrap: wrap !important; }
+  .gap-6 { gap: 6px !important; }
+  .gap-8 { gap: 8px !important; }
+  .gap-10 { gap: 10px !important; }
+  .gap-12 { gap: 12px !important; }
+  .gap-20 { gap: 20px !important; }
+  .items-start { align-items: flex-start !important; }
+  .items-center { align-items: center !important; }
+  .items-end { align-items: flex-end !important; }
+  .block { display: block !important; }
+  .right { text-align: right !important; }
+  .small-text { font-size: 13px !important; }
+  .clickable { cursor: pointer !important; }
+  .plain-link { color: inherit !important; text-decoration: none !important; }
+  /* A line of explanation under a name in a list row, allowed to wrap. */
+  .detail { display: block !important; white-space: normal !important; }
   button, .button {
     font: inherit; padding: 8px 16px; border-radius: 7px; cursor: pointer;
     border: 1px solid var(--line); background: var(--card); color: var(--ink);

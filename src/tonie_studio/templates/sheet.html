@@ -10,7 +10,7 @@
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
   {% if models %}
   <div class="row sheethead">
-    <label class="row" style="gap: 8px; cursor: pointer">
+    <label class="row gap-8 clickable">
       <input type="checkbox" id="allon"><span class="muted">{{ t("common.all") }}</span>
     </label>
     <span class="grow"></span>
@@ -66,29 +66,29 @@
   </div>
 
   {% if models %}
-  <p class="row" style="gap: 12px; flex-wrap: wrap; margin-top: 12px">
+  <p class="row wrap gap-12 mt-12">
     <strong id="total"></strong>
     <button type="button" class="small" id="fillsheet">{{ t("sheet.fill_sheet") }}</button>
   </p>
 
   <h2>{{ t("sheet.overview") }}</h2>
-  <div class="card row" style="gap: 12px; flex-wrap: wrap">
+  <div class="card row wrap gap-12">
     <span class="muted grow">{{ t("sheet.overview_hint") }}</span>
     <a class="button" href="/sheet/overview">{{ t("sheet.overview_pdf") }}</a>
   </div>
 
   <h2>{{ t("sheet.back") }}</h2>
   <div class="card">
-    <div class="row stackable" style="gap: 20px; align-items: flex-start">
+    <div class="row stackable gap-20 items-start">
       <div class="grow">
-        <p class="muted" style="margin-top: 0">
+        <p class="muted mt-0">
           {{ t("sheet.back_hint") }}
         </p>
-        <label class="row" style="gap: 8px; cursor: pointer; margin-bottom: 8px">
+        <label class="row gap-8 clickable mb-8">
           <input type="checkbox" name="back" value="on" id="wantback">
           <span>{{ t("sheet.back_print") }}</span>
         </label>
-        <label class="row" style="gap: 8px; cursor: pointer">
+        <label class="row gap-8 clickable">
           <input type="checkbox" name="back_tracks" value="on" id="wanttracks" checked>
           <span>{{ t("sheet.back_tracks") }}<span class="muted"> {{ t("sheet.back_tracks_hint") }}</span></span>
         </label>
@@ -97,7 +97,7 @@
            where 5.5 pt is a grey smudge. -->
       <div style="flex: none; text-align: center">
         <div class="backdisc" id="backdisc"></div>
-        <span class="muted" style="font-size: 13px" id="backwho"></span>
+        <span class="muted small-text" id="backwho"></span>
       </div>
     </div>
   </div>
@@ -105,12 +105,12 @@
 
   <h2>{{ t("sheet.extra") }}</h2>
   <div class="card">
-    <p class="muted" style="margin-top:0">{{ t("sheet.extra_hint") }}</p>
-    <div class="row" style="gap: 10px; flex-wrap: wrap">
+    <p class="muted mt-0">{{ t("sheet.extra_hint") }}</p>
+    <div class="row wrap gap-10">
       <label class="button">{{ t("sheet.choose_pictures") }}
         <input type="file" name="files" accept="image/*" multiple hidden id="extra">
       </label>
-      <select name="upload_mode" style="font: inherit; padding: 7px 10px">
+      <select name="upload_mode">
         <option value="{{ fill }}">{{ t("sheet.fill") }}</option>
         <option value="{{ fit }}">{{ t("sheet.fit") }}</option>
       </select>
@@ -119,32 +119,32 @@
   </div>
 
   <p><button class="primary" type="submit">{{ t("sheet.make_pdf") }}</button>
-     <a href="/tonies" style="margin-left:12px">{{ t("common.to_tonies") }}</a></p>
+     <a class="ml-12" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 </form>
 
 <h2 id="printer">{{ t("calibration.title") }}</h2>
 <div class="card">
-  {% if calibrated %}<p style="margin-top: 0"><strong>{{ t("calibration.saved") }}</strong> {{ t("calibration.saved_hint") }}</p>{% endif %}
-  <p class="muted" style="margin-top: 0">
+  {% if calibrated %}<p class="mt-0"><strong>{{ t("calibration.saved") }}</strong> {{ t("calibration.saved_hint") }}</p>{% endif %}
+  <p class="muted mt-0">
     {{ t("calibration.hint", left=t.number(expected[0]), top=t.number(expected[1])) }}
     {% if shift[0] or shift[1] %}
     {{ t("calibration.shifted", right=t.number(shift[0]), down=t.number(shift[1])) }}
     {% else %}{{ t("calibration.not_shifted") }}{% endif %}
   </p>
-  <form method="post" action="/sheet/calibration" class="row stackable" style="gap: 10px; flex-wrap: wrap; align-items: flex-end">
+  <form method="post" action="/sheet/calibration" class="row stackable wrap gap-10 items-end">
     <a class="button" href="/sheet/calibration">{{ t("calibration.sheet") }}</a>
-    <label class="field" style="margin: 0">
+    <label class="field m-0">
       <span>{{ t("calibration.left") }}</span>
       <input type="text" name="left_mm" inputmode="decimal" required style="width: 9em">
     </label>
-    <label class="field" style="margin: 0">
+    <label class="field m-0">
       <span>{{ t("calibration.top") }}</span>
       <input type="text" name="top_mm" inputmode="decimal" required style="width: 9em">
     </label>
     <button type="submit">{{ t("common.save") }}</button>
   </form>
   {% if shift[0] or shift[1] %}
-  <form method="post" action="/sheet/calibration/reset" style="margin-top: 10px">
+  <form class="mt-10" method="post" action="/sheet/calibration/reset">
     <button type="submit" class="small">{{ t("calibration.reset") }}</button>
   </form>
   {% endif %}

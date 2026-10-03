@@ -16,8 +16,8 @@
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}
-    <a class="grow truncate" href="/tonies/{{ tag.ruid }}"
-       style="color: inherit; text-decoration: none">
+    <a class="grow truncate plain-link" href="/tonies/{{ tag.ruid }}"
+      >
       <strong class="truncate">
         {% if tag.assigned %}{{ tag.label }}{% else %}{{ t("tag.free") }}{% endif %}
         <span class="onbox" hidden>{{ t("tonies.on_box") }}</span>
@@ -37,7 +37,7 @@
 </div>
 
 <p><a class="button" href="/">{{ t("job.back") }}</a>
-   <a class="button" href="/sheet" style="margin-left:8px">{{ t("tonies.print") }}</a></p>
+   <a class="button ml-8" href="/sheet">{{ t("tonies.print") }}</a></p>
 
 <script>
   // The marker follows the box live: teddyCloud pushes the events, this only

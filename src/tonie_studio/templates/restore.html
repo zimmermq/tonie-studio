@@ -25,7 +25,7 @@
     <span class="muted" style="width: 6em">{{ t("restore.what." ~ step.what) }}</span>
     <span class="grow truncate">
       <strong class="truncate">{{ step.name }}</strong>
-      {% if step.note %}<span class="muted" style="display: block; white-space: normal">{{ t(step.note) }}{% if step.detail %} {{ step.detail }}{% endif %}</span>{% endif %}
+      {% if step.note %}<span class="muted detail">{{ t(step.note) }}{% if step.detail %} {{ step.detail }}{% endif %}</span>{% endif %}
     </span>
     <span class="{% if step.action == 'same' %}muted{% elif step.action in ('skipped', 'kept', 'failed') %}state-failed{% else %}state-done{% endif %}">
       {{ t("restore.action." ~ step.action) }}
@@ -35,9 +35,9 @@
 </div>
 
 {% if not done and changing %}
-<form method="post" action="/restore/{{ token }}" style="margin-top: 14px">
+<form class="mt-14" method="post" action="/restore/{{ token }}">
   <button class="primary" type="submit">{{ t("restore.confirm") }}</button>
-  <a href="/backup" style="margin-left: 12px">{{ t("common.cancel") }}</a>
+  <a class="ml-12" href="/backup">{{ t("common.cancel") }}</a>
 </form>
 {% else %}
 <p><a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a></p>

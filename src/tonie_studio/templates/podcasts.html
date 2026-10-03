@@ -17,7 +17,7 @@
         &middot; {% if entry.updated %}{{ t("podcasts.updated", date=entry.updated[:10]) }}{% else %}{{ t("podcasts.not_loaded") }}{% endif %}
       </span>
       {% if entry.error_key or entry.error %}
-      <span class="state-failed" style="display: block; white-space: normal">
+      <span class="state-failed detail">
         {%- if entry.error_key %}{{ t(entry.error_key, **entry.error_params) }}{% else %}{{ entry.error }}{% endif -%}
       </span>
       {% endif %}
@@ -40,10 +40,10 @@
     <span>{{ t("podcasts.feed") }}</span>
     <input type="url" name="feed" required placeholder="https://...">
   </label>
-  <div class="row stackable" style="gap: 12px; flex-wrap: wrap; align-items: flex-end">
-    <label class="field grow" style="margin: 0">
+  <div class="row stackable wrap gap-12 items-end">
+    <label class="field grow m-0">
       <span>{{ t("podcasts.which_sticker") }}</span>
-      <select name="ruid" required style="font: inherit; padding: 7px 10px; width: 100%">
+      <select class="wide" name="ruid" required>
         {% for tag in tags %}
         <option value="{{ tag.ruid }}">
           {% if tag.assigned %}{{ t("tag.replaced", label=tag.label) }}{% else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
@@ -51,13 +51,13 @@
         {% endfor %}
       </select>
     </label>
-    <label class="field" style="margin: 0">
+    <label class="field m-0">
       <span>{{ t("podcasts.episodes") }}</span>
       <input type="number" name="keep" value="{{ keep }}" min="1" max="20" style="width: 5em">
     </label>
     <button class="primary" type="submit">{{ t("podcasts.subscribe") }}</button>
   </div>
-  <p class="muted" style="margin-bottom: 0">
+  <p class="muted mb-0">
     {{ t("podcasts.order_hint") }}
   </p>
 </form>

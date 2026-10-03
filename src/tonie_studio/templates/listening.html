@@ -14,7 +14,7 @@
 
 </div>
 
-<p class="row" style="gap: 8px; flex-wrap: wrap">
+<p class="row wrap gap-8">
   {% for value, name in [("7", t("listening.days", count=7)), ("30", t("listening.days", count=30)), ("all", t("listening.all"))] %}
   <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}">{{ name }}</a>
   {% endfor %}
@@ -68,7 +68,7 @@
 {% endif %}
 </div>
 
-<p class="muted" style="font-size: 13px">
+<p class="muted small-text">
   {{ t("listening.refresh_note") }}
 </p>
 

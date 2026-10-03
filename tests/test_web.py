@@ -345,7 +345,7 @@ class TestCatalogueCache:
     def test_scans_the_archive_once_for_a_whole_page_load(self, client, monkeypatch):
         # One page load is one listing plus a preview request per album. Over a
         # network share each of those walks costs more than rendering does.
-        import tonie_studio.web as web
+        import tonie_studio.pages.common as web
 
         web._forget_catalogue()
         scans = []
@@ -774,7 +774,7 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = _jpeg()
         seen = []
 
-        import tonie_studio.web as web
+        import tonie_studio.pages.printing as web
         original = web.build_sheet
         try:
             web.build_sheet = lambda stickers, target, shift=(0.0, 0.0): (
@@ -1171,7 +1171,7 @@ def _captured_sheet():
         target.write_bytes(b"%PDF-1.4\n")
         return []
 
-    with patch("tonie_studio.web.build_sheet", side_effect=instead):
+    with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
         yield asked
 
 
@@ -1390,7 +1390,7 @@ class TestAlbumMarkers:
         later = archive / "Lichterkinder-Schlaflieder-2021"
         later.mkdir()
         (later / "01-guter_mond.flac").write_bytes(b"x")
-        from tonie_studio.web import _forget_catalogue
+        from tonie_studio.pages.common import _forget_catalogue
         _forget_catalogue()
 
         page = client.get("/").text
@@ -1427,7 +1427,7 @@ class TestOverviewSheet:
         assert response.content.startswith(b"%PDF")
 
     def test_a_model_on_no_sticker_is_left_out(self, client, runner, teddycloud):
-        from tonie_studio.web import _overview_entries
+        from tonie_studio.pages.printing import _overview_entries
 
         _publish(client, runner, teddycloud)
         teddycloud.custom_models.append({"model": "TS-0009", "series": "Nirgends"})
@@ -1472,7 +1472,7 @@ class TestCalibrationPages:
             target.write_bytes(b"%PDF")
             return []
 
-        with patch("tonie_studio.web.build_sheet", side_effect=instead):
+        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
             client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"]})
 
         assert shifts[-1][0] == pytest.approx(-2.0, abs=0.06)
@@ -1651,10 +1651,10 @@ class TestHomePageWithoutTeddyCloud:
 class TestRestoreLimits:
     def test_a_huge_upload_is_refused(self, client, monkeypatch):
         import tonie_studio.backup as backup
-        import tonie_studio.web as web
+        import tonie_studio.pages.upkeep as upkeep
 
         monkeypatch.setattr(backup, "LARGEST_BACKUP", 1000)
-        monkeypatch.setattr(web, "LARGEST_BACKUP", 1000)
+        monkeypatch.setattr(upkeep, "LARGEST_BACKUP", 1000)
 
         response = client.post("/restore", files={"file": ("b.zip", b"x" * 5000, "application/zip")})
 
@@ -1776,7 +1776,7 @@ class TestRefusals:
     def test_a_cause_that_is_itself_translated_is_said_in_the_same_language(self):
         from tonie_studio.i18n import Translator
         from tonie_studio.podcast import FeedError
-        from tonie_studio.web import Refused
+        from tonie_studio.pages.common import Refused
 
         refusal = Refused(400, "error.feed_unreadable", detail=FeedError("feed.no_title"))
 
@@ -1788,7 +1788,7 @@ class TestRefusals:
 class TestPrintedLanguage:
     def test_the_back_side_speaks_the_readers_language(self):
         from tonie_studio.i18n import Translator
-        from tonie_studio.web import _back_of
+        from tonie_studio.pages.printing import _back_of
 
         model = {"model": "TS-0001", "series": "S", "episodes": "E", "year": 2019,
                  "tracks": ["a", "b"]}
@@ -2080,16 +2080,16 @@ class TestPlacingStickers:
                                                                           teddycloud):
         import threading
 
-        import tonie_studio.web as web
+        import tonie_studio.pages.common as common
 
         gate = threading.Event()
-        original = web.encode_files
+        original = common.encode_files
 
         def slow(*args, **kwargs):
             assert gate.wait(5)
             return original(*args, **kwargs)
 
-        with patch("tonie_studio.web.encode_files", side_effect=slow):
+        with patch("tonie_studio.pages.common.encode_files", side_effect=slow):
             group = _start_placing(client, runner)
             placed = _place(client, group, "deb4ed0e500304e0")
             assert placed["status"] == "reserved" and placed["episode"] == "Folge 1"

@@ -60,11 +60,11 @@
 
 <h2>{{ t("upload.title") }}</h2>
 <div class="card">
-  <p class="muted" style="margin-top:0">
+  <p class="muted mt-0">
     {{ t("upload.hint") }}
   </p>
   <form method="post" action="/upload" enctype="multipart/form-data" id="upload">
-    <div class="row" style="flex-wrap: wrap; gap: 10px">
+    <div class="row wrap gap-10">
       <!-- A file input cannot be styled, so it is hidden behind a label that
            can be. webkitdirectory picks a whole album folder at once; a 60
            track release is otherwise 60 clicks in the dialog. -->

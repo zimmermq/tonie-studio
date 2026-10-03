@@ -11,13 +11,13 @@
 <form method="post" action="/batch" id="batch">
   <div class="card">
     <strong>{{ t("batch.how") }}</strong>
-    <label style="display: block; margin-top: 8px">
+    <label class="block mt-8">
       <input type="radio" name="stickers" value="place" checked> {{ t("batch.how_place") }}
     </label>
-    <label style="display: block">
+    <label class="block">
       <input type="radio" name="stickers" value="auto"> {{ t("batch.how_auto") }}
     </label>
-    <p class="muted only-auto" style="margin-bottom: 0">
+    <p class="muted only-auto mb-0">
       {{ t("batch.free", count=free) }}
       {%- if needed > free %} {{ t("batch.too_few", count=needed) }}{% endif %}
       {%- if assigning %} {{ t("batch.identify") }}{% endif %}
@@ -42,12 +42,12 @@
           {%- if row.targets | length > 1 %} &middot; {{ t("batch.parts", count=row.targets | length) }}{% endif -%}
         </span>
       </span>
-      <span class="muted sticker" style="text-align: right">
+      <span class="muted sticker right">
         {% if row.tonie %}
         <span class="state-failed">{{ t("batch.has_tonie", model=row.tonie) }}</span>
         {% elif row.occupied %}
         <span class="state-failed">{{ t("batch.exists_used" if row.in_use else "batch.exists_unused") }}</span>
-        <a class="small" href="/library" style="display: block">{{ t("batch.to_library") }}</a>
+        <a class="small block" href="/library">{{ t("batch.to_library") }}</a>
         {% elif row.tags %}
         {% for ruid in row.tags %}<code>{{ ruid }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
         {% else %}
@@ -66,7 +66,7 @@
       {% if waiting %}{{ t("batch.start_place", count=waiting | length) }}
       {%- else %}{{ t("batch.nothing_new") }}{% endif %}
     </button>
-    <a href="/" style="margin-left: 12px">{{ t("common.cancel") }}</a>
+    <a class="ml-12" href="/">{{ t("common.cancel") }}</a>
   </p>
 </form>
 

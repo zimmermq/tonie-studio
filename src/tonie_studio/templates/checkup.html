@@ -34,7 +34,7 @@
       {%- set params = dict(finding.params) %}
       {%- if "size" in params %}{% set _ = params.update(size=t.size(params["size"])) %}{% endif %}
       {%- set preview = t(finding.preview_key, **params) if finding.preview_key else finding.preview %}
-      <span class="muted" style="display: block; white-space: normal">{{ t(finding.detail, **params) }}</span>
+      <span class="muted detail">{{ t(finding.detail, **params) }}</span>
       {% if preview %}
       <code class="preview-text">{{ preview }}</code>
       {% endif %}
