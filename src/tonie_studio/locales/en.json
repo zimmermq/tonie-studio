@@ -36,6 +36,7 @@
   "other": "{count} albums"
  },
  "albums.has_tonie": "has a tonie",
+ "albums.intro": "Albums are the music as it sits in the archive on the server or in your uploads. Encoding turns one into a taf in the library; a sticker pointing at that taf is what makes it a tonie.",
  "albums.new": "new",
  "albums.no_cover": "no cover",
  "albums.no_match": "No album matches.",
@@ -83,6 +84,46 @@
  "backup.too_large": "That file is far larger than any backup.",
  "backup.total": "about, in all",
  "backup.unknown_format": "Backup format {format} is not one this app knows.",
+ "batch.exists_unused": "the taf is already in the library, but no sticker plays it; skipped",
+ "batch.exists_used": "the taf is already in the library and a sticker plays it; skipped",
+ "batch.free": {
+  "one": "One free sticker is registered.",
+  "other": "{count} free stickers are registered."
+ },
+ "batch.has_tonie": "already has a tonie ({model}), skipped",
+ "batch.identify": "Free stickers look alike: put one on the box and the Tonies page shows what it plays.",
+ "batch.intro": "Each album is encoded the way its own page suggests: every track except karaoke takes, in the album's order, with the first cover. The button below encodes every album and puts each straight onto the sticker shown next to it, with no further confirmation.",
+ "batch.no_sticker": "no sticker, encoded only",
+ "batch.nothing_new": "Nothing new to encode",
+ "batch.on_sticker": "on its sticker",
+ "batch.parts": {
+  "one": "one part",
+  "other": "{count} parts"
+ },
+ "batch.pick": "Set up the selected together",
+ "batch.pick_label": "Select for several albums",
+ "batch.picked": {
+  "one": "One album selected",
+  "other": "{count} albums selected"
+ },
+ "batch.progress_intro": "The albums run one after another. Each goes onto its sticker as soon as it is done; one without a sticker can be assigned here.",
+ "batch.progress_title": "Several albums",
+ "batch.publish_failed": "It could not be put on the sticker.",
+ "batch.start": {
+  "one": "Encode one album",
+  "other": "Encode {count} albums"
+ },
+ "batch.start_assign": {
+  "one": "Encode one album and put it on a sticker",
+  "other": "Encode {count} albums and put them on stickers"
+ },
+ "batch.tag_taken": "The planned sticker has been given something else meanwhile.",
+ "batch.title": "Several albums",
+ "batch.to_library": "to the library",
+ "batch.too_few": {
+  "one": "One is needed; the remaining albums are only encoded and can be put on a sticker later.",
+  "other": "{count} are needed; the remaining albums are only encoded and can be put on a sticker later."
+ },
  "box.on_box": "on the box:",
  "box.playing": "playing:",
  "box.unreachable": "teddyCloud is not answering",
@@ -127,10 +168,12 @@
  "common.to_tonies": "To the tonies",
  "error.album_gone": "That album is not there any more.",
  "error.back": "Back",
+ "error.batch_nothing_new": "Every one of these albums already exists as a taf; nothing to do.",
  "error.cover_unreadable": "That cover cannot be read.",
  "error.failed": "That did not work: {detail}",
  "error.feed_unreadable": "That feed cannot be read: {detail}",
  "error.millimetres": "Please enter two numbers in millimetres.",
+ "error.no_album": "No album selected.",
  "error.no_audio": "None of those files is audio teddyCloud can encode.",
  "error.no_cover": "There is no cover image here.",
  "error.no_job": "There is no such job.",
@@ -169,6 +212,7 @@
  "job.encoding": "encoding",
  "job.podcast_done": "The new episodes are on the sticker.",
  "job.preparing": "getting ready",
+ "job.published": "Done and on its sticker.",
  "job.state.done": "done",
  "job.state.failed": "failed",
  "job.state.queued": "queued",
@@ -178,6 +222,7 @@
  "job.taf_done": "Taf done.",
  "job.to_assign": "Put it on a tonie",
  "job.to_podcasts": "To the podcasts",
+ "job.to_tonies": "To the tonies",
  "job.uploaded": "Uploaded track {done} of {count}",
  "library.chapters": {
   "one": "{count} chapter",
@@ -185,6 +230,7 @@
  },
  "library.confirm_used": "This taf is played by: {used}.\n\nAfter deleting it the tonie plays nothing until you give it new audio.\n\nDelete anyway?",
  "library.empty": "The library is empty.",
+ "library.intro": "The library is where teddyCloud keeps the encoded tafs, one file per tonie or part. They are made from the albums; a taf only plays once a sticker points at it.",
  "library.invalid": "invalid",
  "library.played_by": "played by",
  "library.summary": {
@@ -379,7 +425,7 @@
  "unit.under_a_minute": "< 1 min",
  "upload.files": "Single files",
  "upload.folder": "Choose folder",
- "upload.hint": "For albums that are not on the server. Pictures may come along; the first one becomes the cover.",
+ "upload.hint": "For albums that are not on the server. Pictures may come along; the first one becomes the cover. A folder holding one subfolder per episode becomes several albums, set up together.",
  "upload.picked": {
   "one": "{count} file, {size} MB",
   "other": "{count} files, {size} MB"

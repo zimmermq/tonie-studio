@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ t("parts.title") }} - tonie-studio{% endblock %}
+{% block title %}{{ t(title_key) }} - tonie-studio{% endblock %}
 
 {% block body %}
-<h1>{{ t("parts.heading") }}</h1>
+<h1>{{ t(heading_key) }}</h1>
 <p class="sub">
-  {{ t("parts.intro") }}
+  {{ t(intro_key) }}
 </p>
 
 <div class="list">
@@ -12,10 +12,13 @@
   <div class="album" data-job="{{ job.id }}">
     <span class="grow truncate">
       <strong class="truncate">{{ job.result.episode if job.result else job.label }}</strong>
+      {%- set result = job.result if job.result is mapping else {} %}
       <span class="muted truncate state">{{ t("job.state." ~ job.state.value) }}</span>
+      <span class="muted truncate note">{% if result.assign_error %}{{ t(result.assign_error) }}{% endif %}</span>
     </span>
+    <span class="pill done assigned" {% if not result.model %}hidden{% endif %}>{{ t("batch.on_sticker") }}</span>
     <a class="button small assign" href="/job/{{ job.id }}/assign"
-       {% if job.state.value != 'done' %}hidden{% endif %}>{{ t("parts.assign") }}</a>
+       {% if job.state.value != 'done' or result.model %}hidden{% endif %}>{{ t("parts.assign") }}</a>
     <a class="small" href="/job/{{ job.id }}">{{ t("parts.details") }}</a>
   </div>
 {% endfor %}
@@ -35,7 +38,9 @@
         const text = states[job.state] || job.state;
         row.querySelector('.state').textContent =
           job.percent != null && job.state === 'running' ? `${text}, ${job.percent} %` : text;
-        row.querySelector('.assign').hidden = job.state !== 'done';
+        row.querySelector('.assign').hidden = job.state !== 'done' || job.assigned;
+        row.querySelector('.assigned').hidden = !job.assigned;
+        row.querySelector('.note').textContent = job.note || '';
         if (job.state === 'queued' || job.state === 'running') running = true;
       } catch (error) {
         running = true;

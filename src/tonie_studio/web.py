@@ -23,12 +23,14 @@ import unicodedata
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from threading import Lock
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlencode
 
 import requests
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
@@ -38,6 +40,7 @@ from .album import (AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, cover_candi
 from .albumnotes import first_sightings, forget_model, guess_made, is_new, made, remember_made
 from .backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                      plan_restore, read_backup)
+from .batch import allocate, episode_order
 from .boxstate import BoxWatcher
 from .calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from .checkup import examine, model_repairs, repaired
@@ -313,7 +316,7 @@ def create_app(
                 model_cache["at"] = time.monotonic()
                 model_cache["loading"] = False
 
-    def _albums_with_tonies(albums) -> Dict[str, str]:
+    def _albums_with_tonies(albums, models: Optional[List[Dict]] = None) -> Dict[str, str]:
         """Album id to the tonie made from it, recorded or matched by name.
 
         What was recorded is trusted as it stands. The models come from a copy
@@ -321,9 +324,14 @@ def create_app(
         tonie made in that minute. A model deleted through this app takes its
         record with it; one deleted in teddyCloud's own interface leaves the
         marker behind, which costs a wrong label and nothing else.
+
+        ``models`` is for a caller that has just read them; the album list
+        passes none and takes the cached copy.
         """
-        done = {identifier: models[-1] for identifier, models in made(settings.data_dir).items()}
-        models = cached_models()
+        done = {identifier: made_models[-1]
+                for identifier, made_models in made(settings.data_dir).items()}
+        if models is None:
+            models = cached_models()
         if models is None:
             return done
         recorded = set(done.values())
@@ -334,23 +342,35 @@ def create_app(
 
     @app.post("/upload")
     async def upload(files: List[UploadFile]):
-        """Spool a browser upload into its own folder, then treat it as an album."""
-        audio = [file for file in files if _is_audio_name(file.filename)]
-        if not audio:
+        """Spool a browser upload into its own folder, then treat it as an album.
+
+        A picked folder that holds one folder per episode arrives as one
+        upload; each of those folders becomes an album of its own and they
+        go on to the batch page together.
+        """
+        by_folder = _upload_folders(files)
+        if not by_folder:
             raise Refused(400, "error.no_audio")
 
         folder = settings.upload_dir / uuid.uuid4().hex[:12]
         folder.mkdir(parents=True)
-        for file in files:
-            # Images come along so a cover can be uploaded with the tracks.
-            if not (_is_audio_name(file.filename) or _is_image_name(file.filename)):
-                continue
-            with (folder / Path(file.filename).name).open("wb") as target:
-                shutil.copyfileobj(file.file, target)
+        destinations = ({key: folder for key in by_folder} if len(by_folder) == 1
+                        else _subfolders(folder, by_folder))
+        for key, members in by_folder.items():
+            destinations[key].mkdir(parents=True, exist_ok=True)
+            for file in members:
+                with (destinations[key] / _base_name(file.filename)).open("wb") as target:
+                    shutil.copyfileobj(file.file, target)
 
         # The new folder has to show up at once, not in ten seconds.
         _forget_catalogue()
-        return RedirectResponse(f"/album/{UPLOAD}{album_id(settings.upload_dir, folder)}", 303)
+        ids = [f"{UPLOAD}{album_id(settings.upload_dir, destination)}"
+               for destination in sorted(destinations.values(),
+                                         key=lambda path: episode_order(path.name))]
+        if len(ids) == 1:
+            return RedirectResponse(f"/album/{ids[0]}", 303)
+        return RedirectResponse(f"/batch?{urlencode([('ids', identifier) for identifier in ids])}",
+                                303)
 
     def _album_page(request: Request, identifier: str, album: Album, conflict: str = "",
                     replace_value: str = ""):
@@ -366,6 +386,8 @@ def create_app(
     # Which jobs belong to one album cut into parts. In memory like the jobs
     # themselves: a restart loses both together.
     groups: Dict[str, List[str]] = {}
+    # The groups that are several albums rather than one album in parts.
+    batches: set = set()
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str):
@@ -444,32 +466,16 @@ def create_app(
         cover = str(chosen_cover) if chosen_cover else None
         crop_settings = {"zoom": cover_zoom, "x": cover_x, "y": cover_y}
 
-        def job_for(number: int, indices: List[int], target: str) -> Callable:
-            part = [chosen[index] for index in indices]
-            paths = [track.path for track, _name in part]
-            names = [name for _track, name in part]
-            # The playing time turns the encode from a dead bar into a
-            # position; teddyCloud itself reports nothing while ffmpeg runs.
-            playing_time = sum(track.duration or 0 for track, _name in part) or None
-
-            def work(progress):
-                result = encode_files(connection, paths, target, progress=progress,
-                                      replace=target in occupied, total_seconds=playing_time)
-                # Carried along for the tag and model steps, which need the
-                # names a person approved rather than the ones that were guessed.
-                return {"encode": result, "series": series,
-                        "episode": part_name(episode, number, parts),
-                        "tracks": names, "cover": cover, "crop": crop_settings,
-                        # Both only for the printed text side; nothing plays
-                        # differently because of them.
-                        "year": album.year, "seconds": playing_time,
-                        # So the album list can say this one is done.
-                        "album": identifier}
-            return work
-
-        job_ids = [jobs.submit("encode", target, job_for(number, indices, target))
-                   for number, (indices, target)
-                   in enumerate(zip(groups_of_tracks, targets, strict=True), 1)]
+        job_ids = [
+            jobs.submit("encode", target, _encode_job(
+                connection, [chosen[index] for index in indices], target,
+                replace=target in occupied,
+                carried={"series": series, "episode": part_name(episode, number, parts),
+                         "cover": cover, "crop": crop_settings, "year": album.year,
+                         "album": identifier}))
+            for number, (indices, target)
+            in enumerate(zip(groups_of_tracks, targets, strict=True), 1)
+        ]
         if len(job_ids) == 1:
             return RedirectResponse(f"/job/{job_ids[0]}", 303)
         group = uuid.uuid4().hex[:12]
@@ -480,8 +486,12 @@ def create_app(
     def parts_page(request: Request, group: str):
         if group not in groups:
             raise Refused(404, "error.parts_gone")
+        batch = group in batches
         return templates.TemplateResponse(request, "parts.html", {
             "jobs": [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)],
+            "title_key": "batch.progress_title" if batch else "parts.title",
+            "heading_key": "batch.progress_title" if batch else "parts.heading",
+            "intro_key": "batch.progress_intro" if batch else "parts.intro",
         })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -492,11 +502,15 @@ def create_app(
         # A podcast refresh puts its taf on the sticker itself; only an album
         # encode still has to be given to one.
         podcast = job.kind == "podcast"
+        published = bool(job.result and job.result.get("model"))
+        if podcast:
+            done_key, next_href, next_key = "job.podcast_done", "/podcasts", "job.to_podcasts"
+        elif published:
+            done_key, next_href, next_key = "job.published", "/tonies", "job.to_tonies"
+        else:
+            done_key, next_href, next_key = "job.taf_done", f"/job/{job.id}/assign", "job.to_assign"
         return templates.TemplateResponse(request, "job.html", {
-            "job": job,
-            "done_key": "job.podcast_done" if podcast else "job.taf_done",
-            "next_href": "/podcasts" if podcast else f"/job/{job.id}/assign",
-            "next_key": "job.to_podcasts" if podcast else "job.to_assign",
+            "job": job, "done_key": done_key, "next_href": next_href, "next_key": next_key,
         })
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
@@ -532,22 +546,68 @@ def create_app(
     ):
         result = _finished_result(jobs, job_id)
         try:
-            model_id = publish(
-                client(),
-                ruid,
-                result["encode"],
-                series=series,
-                episode=episode,
-                tracks=result["tracks"],
-                cover=_cropped_cover(result),
-                category=category,
-                year=result.get("year"),
-            )
+            _publish_result(client(), settings, ruid, result, series, episode, category)
         except TonieError as error:
             raise Refused(400, "error.failed", detail=error) from error
-        remember(settings.data_dir, model_id, result.get("seconds"))
-        remember_made(settings.data_dir, result.get("album", ""), model_id)
         return RedirectResponse("/tonies", 303)
+
+    @app.get("/batch", response_class=HTMLResponse)
+    def batch_page(request: Request, ids: List[str] = Query(default=[])):
+        """Several albums at once, each with the sticker it will get."""
+        if not ids:
+            raise Refused(400, "error.no_album")
+        connection = client()
+        rows = _plan_batch(connection, settings, ids,
+                           tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
+        return templates.TemplateResponse(request, "batch.html", {
+            "rows": rows,
+            "free": len(_free_tags(connection)),
+            "needed": sum(len(row.targets) for row in rows if not row.skipped),
+            "thumb_size": DEFAULT_SIZE,
+        })
+
+    @app.post("/batch")
+    def start_batch(
+        ids: List[str] = Form(default=[]),
+        series: List[str] = Form(default=[]),
+        episodes: List[str] = Form(default=[]),
+    ):
+        """Encode every album that is not there yet and hand out the free stickers.
+
+        The plan is made again here rather than taken from the page: a tag
+        assigned in another tab meanwhile must not be handed out twice.
+        """
+        if not ids:
+            raise Refused(400, "error.no_album")
+        connection = client()
+        rows = _plan_batch(connection, settings, ids, dict(zip(ids, series, strict=False)),
+                           dict(zip(ids, episodes, strict=False)),
+                           tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
+        job_ids = []
+        for row in rows:
+            if row.skipped:
+                continue
+            tags = row.tags or [None] * len(row.targets)
+            for number, (indices, target, ruid) in enumerate(
+                    zip(row.groups, row.targets, tags, strict=True), 1):
+                episode = part_name(row.episode, number, len(row.targets))
+                after = (_publish_after(connection, settings, ruid, row.series, episode)
+                         if ruid else None)
+                job_ids.append(jobs.submit("encode", target, _encode_job(
+                    connection, [row.chosen[index] for index in indices], target,
+                    replace=False,
+                    carried={"series": row.series, "episode": episode,
+                             "cover": str(row.album.cover_candidates[0])
+                             if row.album.cover_candidates else None,
+                             "crop": {"zoom": 1.0, "x": 0.0, "y": 0.0},
+                             "year": row.album.year, "album": row.identifier},
+                    after=after)))
+        if not job_ids:
+            raise Refused(400, "error.batch_nothing_new")
+        group = uuid.uuid4().hex[:12]
+        groups[group] = job_ids
+        batches.add(group)
+        return RedirectResponse(f"/parts/{group}", 303)
 
     @app.get("/tonies", response_class=HTMLResponse)
     def tonies(request: Request):
@@ -1071,10 +1131,11 @@ def create_app(
         )
 
     @app.get("/api/job/{job_id}")
-    def job_status(job_id: str):
+    def job_status(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
             raise Refused(404, "error.no_job")
+        result = job.result if isinstance(job.result, dict) else {}
         return JSONResponse({
             "state": job.state.value,
             "step": job.step,
@@ -1083,6 +1144,9 @@ def create_app(
             "percent": job.percent,
             "error": job.error,
             "target": job.label,
+            "assigned": bool(result.get("model")),
+            # Why a batch encode did not get its sticker, for the reader.
+            "note": translator(request)(result["assign_error"]) if result.get("assign_error") else "",
         })
 
     return app
@@ -1191,6 +1255,218 @@ def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:
                 log.warning("cannot read the cover of %s: %s", model_id, error)
                 return None
     return None
+
+
+def _encode_job(connection: TeddyCloudClient, chosen: Sequence[Tuple[object, str]], target: str,
+                replace: bool, carried: Dict,
+                after: Optional[Callable[[Dict], None]] = None) -> Callable:
+    """The work of one encode, returning what the tag and model steps need.
+
+    ``carried`` goes into the result unchanged: the names a person approved
+    rather than the ones that were guessed, the cover, and what the printed
+    text side and the album list read back. ``after`` runs once the taf
+    exists and may add to the result; it must not raise for a failure the
+    encode itself does not share.
+    """
+    paths = [track.path for track, _name in chosen]
+    names = [name for _track, name in chosen]
+    # The playing time turns the encode from a dead bar into a position;
+    # teddyCloud itself reports nothing while ffmpeg runs.
+    playing_time = sum(track.duration or 0 for track, _name in chosen) or None
+
+    def work(progress):
+        encoded = encode_files(connection, paths, target, progress=progress,
+                               replace=replace, total_seconds=playing_time)
+        result = {"encode": encoded, "tracks": names, "seconds": playing_time, **carried}
+        if after is not None:
+            after(result)
+        return result
+    return work
+
+
+def _publish_result(connection: TeddyCloudClient, settings: Settings, ruid: str, result: Dict,
+                    series: str, episode: str, category: str = DEFAULT_CATEGORY) -> str:
+    """Put a finished encode on a tag, and record what the app keeps about it."""
+    model_id = publish(
+        connection,
+        ruid,
+        result["encode"],
+        series=series,
+        episode=episode,
+        tracks=result["tracks"],
+        cover=_cropped_cover(result),
+        category=category,
+        year=result.get("year"),
+    )
+    remember(settings.data_dir, model_id, result.get("seconds"))
+    remember_made(settings.data_dir, result.get("album", ""), model_id)
+    return model_id
+
+
+def _publish_after(connection: TeddyCloudClient, settings: Settings, ruid: str,
+                   series: str, episode: str) -> Callable[[Dict], None]:
+    """The step that puts a batch encode on the tag planned for it.
+
+    A tag that was given something else since the plan is left alone: the
+    encode still counts, and its page offers the ordinary assignment. A
+    failure to publish is recorded the same way rather than failing a job
+    whose taf is fine.
+    """
+    def after(result: Dict) -> None:
+        if ruid not in _free_tags(connection):
+            result["assign_error"] = "batch.tag_taken"
+            return
+        try:
+            result["model"] = _publish_result(connection, settings, ruid, result, series, episode)
+            result["ruid"] = ruid
+        except (TonieError, TeddyCloudError) as error:
+            log.warning("batch: could not put %s on %s: %s", episode, ruid, error)
+            result["assign_error"] = "batch.publish_failed"
+    return after
+
+
+def _free_tags(connection: TeddyCloudClient) -> List[str]:
+    """Tags the box has read that play nothing yet, in the order they are handed out."""
+    return [tag.ruid for tag in list_tags(connection) if not tag.assigned]
+
+
+@dataclass
+class BatchRow:
+    """One album of a batch, as planned."""
+
+    identifier: str
+    album: Album
+    series: str
+    episode: str
+    chosen: List[Tuple[object, str]]
+    groups: List[List[int]]
+    targets: List[str]
+    occupied: bool
+    # Whether a tag plays an existing taf; only meaningful when occupied.
+    in_use: bool = False
+    # The model already made from this album, if any.
+    tonie: str = ""
+    tags: List[str] = field(default_factory=list)
+
+    @property
+    def skipped(self) -> bool:
+        """Left out of the encoding: its taf or its tonie exists already."""
+        return self.occupied or bool(self.tonie)
+
+
+def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[str],
+                series: Optional[Dict[str, str]] = None, episodes: Optional[Dict[str, str]] = None,
+                tonies: Optional[Dict[str, str]] = None) -> List[BatchRow]:
+    """Each album with its default tracks, its taf paths and its stickers.
+
+    Every album takes what its own page would offer untouched: the tracks
+    that are not karaoke takes, in the album's order, the first cover, and as
+    few parts as teddyCloud allows. An album whose taf already exists, or
+    that a tonie was already made from (``tonies``, by album id), is left out
+    rather than encoded again: the name typed back then may differ from the
+    suggestion, and a second copy is a decision for the album's own page.
+
+    ``series`` and ``episodes`` hold what the page sent, by album id; an
+    album missing from them gets the suggestion. A series sent empty stays
+    empty, since that is a choice the album page allows too.
+    """
+    series, episodes = series or {}, episodes or {}
+    played = {tag.source for tag in list_tags(connection)}
+    rows = []
+    for identifier in dict.fromkeys(ids):
+        album = read_album(_resolve(settings, identifier))
+        row_series = (series[identifier] if identifier in series
+                      else _suggest_series(settings, album)).strip()
+        episode = (episodes.get(identifier) or "").strip() or album.title
+        chosen = [(track, track.title) for track in album.tracks if not track.extra]
+        parts = fewest_parts(len(chosen))
+        try:
+            targets = [library_path(row_series, part_name(episode, number, parts))
+                       for number in range(1, parts + 1)]
+        except EncodeError as error:
+            raise Refused(400, "error.failed", detail=error) from error
+        rows.append(BatchRow(
+            identifier=identifier, album=album, series=row_series, episode=episode,
+            chosen=chosen,
+            groups=split([track.duration for track, _name in chosen], parts),
+            targets=targets,
+            occupied=any(taf_exists(connection, target) for target in targets),
+            in_use=any(f"lib://{target.lstrip('/')}" in played for target in targets),
+            tonie=(tonies or {}).get(identifier, ""),
+        ))
+    # Grouped by series and in episode order within one, which is also the
+    # order the stickers are handed out in.
+    rows.sort(key=lambda row: (row.series.casefold(), episode_order(row.episode)))
+
+    waiting = [row for row in rows if not row.skipped]
+    for row, tags in zip(waiting, allocate([len(row.targets) for row in waiting],
+                                           _free_tags(connection)), strict=True):
+        row.tags = tags
+    return rows
+
+
+def _suggest_series(settings: Settings, album: Album) -> str:
+    """The series an album most likely belongs to.
+
+    Its artist when the tags name one; otherwise the folder holding it, the
+    way a series is usually kept on disk. A root of the archive or an upload
+    is not a name anyone chose.
+    """
+    if album.artist:
+        return album.artist
+    parent = album.path.parent
+    if parent in (settings.archive_dir, settings.upload_dir) or parent.parent == settings.upload_dir:
+        return ""
+    return parent.name
+
+
+def _upload_folders(files: Sequence[UploadFile]) -> Dict[str, List[UploadFile]]:
+    """The uploaded files that belong to an album, by the folder they came from.
+
+    A folder upload names every file by its path below the folder picked.
+    Images come along so a cover can be uploaded with the tracks; a folder
+    with no audio at all, such as a series folder holding only a picture,
+    is not an album and is dropped.
+    """
+    folders: Dict[str, List[UploadFile]] = {}
+    for file in files:
+        if not (_is_audio_name(file.filename) or _is_image_name(file.filename)):
+            continue
+        folder = str(PurePosixPath((file.filename or "").replace("\\", "/")).parent)
+        folders.setdefault(folder, []).append(file)
+    return {folder: members for folder, members in folders.items()
+            if any(_is_audio_name(member.filename) for member in members)}
+
+
+def _subfolders(root: Path, folders: Dict[str, List[UploadFile]]) -> Dict[str, Path]:
+    """One folder below ``root`` per uploaded folder, named like it and its parent.
+
+    The names matter: an album without tags is called after its folder, and
+    a series without an artist tag after the folder holding its episodes.
+    Only those two levels are kept; anything deeper would sit below what the
+    album scan reaches. Two folders that end alike get a number.
+    """
+    taken: set = set()
+    destinations = {}
+    for folder in folders:
+        parts = [part for part in map(_base_name, PurePosixPath(folder).parts) if part][-2:]
+        parts = parts or ["album"]
+        name, number = parts[-1], 2
+        while str(PurePosixPath(*parts)).casefold() in taken:
+            parts[-1], number = f"{name} ({number})", number + 1
+        taken.add(str(PurePosixPath(*parts)).casefold())
+        destinations[folder] = root.joinpath(*parts)
+    return destinations
+
+
+def _base_name(name: Optional[str]) -> str:
+    """The last part of a path a browser sent, safe to use as a file name.
+
+    Browsers send folder uploads with "/" and some Windows ones with "\\";
+    either would put a file somewhere other than the folder it is written to.
+    """
+    base = PurePosixPath((name or "").replace("\\", "/")).name
+    return "" if base in (".", "..") else base
 
 
 def _cropped_cover(result: Dict) -> Optional[bytes]:

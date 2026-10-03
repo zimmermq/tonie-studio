@@ -36,6 +36,7 @@
   "other": "{count} Alben"
  },
  "albums.has_tonie": "hat einen Tonie",
+ "albums.intro": "Alben sind die Musik, so wie sie im Archiv auf dem Server oder in deinen Uploads liegt. Encodiert wird daraus ein Taf in der Library; erst ein Sticker, der darauf zeigt, macht daraus einen Tonie.",
  "albums.new": "neu",
  "albums.no_cover": "kein Cover",
  "albums.no_match": "Kein Album passt dazu.",
@@ -83,6 +84,46 @@
  "backup.too_large": "Diese Datei ist viel größer als jede Sicherung.",
  "backup.total": "zusammen etwa",
  "backup.unknown_format": "Sicherungsformat {format} kennt diese App nicht.",
+ "batch.exists_unused": "Taf liegt schon in der Library, aber kein Sticker spielt es; wird übersprungen",
+ "batch.exists_used": "Taf liegt schon in der Library und ein Sticker spielt es; wird übersprungen",
+ "batch.free": {
+  "one": "Ein freier Sticker ist registriert.",
+  "other": "{count} freie Sticker sind registriert."
+ },
+ "batch.has_tonie": "hat schon einen Tonie ({model}), wird übersprungen",
+ "batch.identify": "Freie Sticker sehen gleich aus: leg einen auf die Box, dann zeigt die Tonies-Seite, was er spielt.",
+ "batch.intro": "Jedes Album wird so encodiert, wie seine eigene Seite es vorschlägt: alle Tracks außer Karaoke, in der Reihenfolge des Albums, mit dem ersten Cover. Der Knopf unten encodiert alle Alben und legt jedes sofort auf den Sticker, der daneben steht, ohne weitere Rückfrage.",
+ "batch.no_sticker": "ohne Sticker, wird nur encodiert",
+ "batch.nothing_new": "Nichts Neues zu encodieren",
+ "batch.on_sticker": "auf dem Sticker",
+ "batch.parts": {
+  "one": "ein Teil",
+  "other": "{count} Teile"
+ },
+ "batch.pick": "Ausgewählte zusammen anlegen",
+ "batch.pick_label": "Für mehrere Alben auswählen",
+ "batch.picked": {
+  "one": "Ein Album ausgewählt",
+  "other": "{count} Alben ausgewählt"
+ },
+ "batch.progress_intro": "Die Alben laufen nacheinander. Jedes kommt auf seinen Sticker, sobald es fertig ist; eines ohne Sticker lässt sich hier bespielen.",
+ "batch.progress_title": "Mehrere Alben",
+ "batch.publish_failed": "Auf den Sticker ließ es sich nicht legen.",
+ "batch.start": {
+  "one": "Ein Album encodieren",
+  "other": "{count} Alben encodieren"
+ },
+ "batch.start_assign": {
+  "one": "Ein Album encodieren und auf einen Sticker legen",
+  "other": "{count} Alben encodieren und auf Sticker legen"
+ },
+ "batch.tag_taken": "Der geplante Sticker wurde inzwischen anders vergeben.",
+ "batch.title": "Mehrere Alben",
+ "batch.to_library": "zur Library",
+ "batch.too_few": {
+  "one": "Gebraucht wird einer; die übrigen Alben werden nur encodiert und lassen sich später bespielen.",
+  "other": "Gebraucht werden {count}; die übrigen Alben werden nur encodiert und lassen sich später bespielen."
+ },
  "box.on_box": "auf der Box:",
  "box.playing": "spielt:",
  "box.unreachable": "teddyCloud antwortet nicht",
@@ -127,10 +168,12 @@
  "common.to_tonies": "Zu den Tonies",
  "error.album_gone": "Dieses Album ist nicht mehr da.",
  "error.back": "Zurück",
+ "error.batch_nothing_new": "Alle diese Alben gibt es schon als Taf; nichts zu tun.",
  "error.cover_unreadable": "Dieses Cover lässt sich nicht lesen.",
  "error.failed": "Das ging nicht: {detail}",
  "error.feed_unreadable": "Dieser Feed lässt sich nicht lesen: {detail}",
  "error.millimetres": "Bitte zwei Zahlen in Millimetern eintragen.",
+ "error.no_album": "Kein Album ausgewählt.",
  "error.no_audio": "Keine dieser Dateien ist Audio, das teddyCloud encodieren kann.",
  "error.no_cover": "Hier gibt es kein Cover.",
  "error.no_job": "Diesen Auftrag gibt es nicht.",
@@ -169,6 +212,7 @@
  "job.encoding": "wird encodiert",
  "job.podcast_done": "Die neuen Folgen sind auf dem Sticker.",
  "job.preparing": "wird vorbereitet",
+ "job.published": "Fertig und auf dem Sticker.",
  "job.state.done": "fertig",
  "job.state.failed": "fehlgeschlagen",
  "job.state.queued": "wartet",
@@ -178,6 +222,7 @@
  "job.taf_done": "Taf fertig.",
  "job.to_assign": "Auf einen Tonie legen",
  "job.to_podcasts": "Zu den Podcasts",
+ "job.to_tonies": "Zu den Tonies",
  "job.uploaded": "Track {done} von {count} hochgeladen",
  "library.chapters": {
   "one": "{count} Kapitel",
@@ -185,6 +230,7 @@
  },
  "library.confirm_used": "Dieses Taf wird gespielt von: {used}.\n\nNach dem Löschen spielt der Tonie nichts mehr, bis du ihm neues Audio gibst.\n\nTrotzdem löschen?",
  "library.empty": "Die Library ist leer.",
+ "library.intro": "Die Library ist teddyCloud's Ablage der fertig encodierten Tafs, eine Datei je Tonie oder Teil. Sie entsteht aus den Alben; ein Taf spielt erst, wenn ein Sticker darauf zeigt.",
  "library.invalid": "ungültig",
  "library.played_by": "wird gespielt von",
  "library.summary": {
@@ -379,7 +425,7 @@
  "unit.under_a_minute": "< 1 min",
  "upload.files": "Einzelne Dateien",
  "upload.folder": "Ordner wählen",
- "upload.hint": "Für Alben, die nicht auf dem Server liegen. Bilder dürfen mit dabei sein, das erste davon wird als Cover genommen.",
+ "upload.hint": "Für Alben, die nicht auf dem Server liegen. Bilder dürfen mit dabei sein, das erste davon wird als Cover genommen. Ein Ordner mit einem Unterordner pro Folge wird zu mehreren Alben, die zusammen angelegt werden.",
  "upload.picked": {
   "one": "{count} Datei, {size} MB",
   "other": "{count} Dateien, {size} MB"

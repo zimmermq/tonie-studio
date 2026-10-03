@@ -4,6 +4,7 @@
 {% block body %}
 <h1>{{ t("nav.library") }}</h1>
 <p class="sub">
+  {{ t("library.intro") }}
   {{ t("library.summary", count=tafs | length, size=t.size(total)) }}
 </p>
 

@@ -1796,3 +1796,245 @@ class TestPrintedLanguage:
         assert _back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
         assert _back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"
         assert _back_of(model, 1500, Translator("en")).language == "en"
+
+
+def _upload_series(client, episodes=3):
+    """Upload a parent folder holding one subfolder per episode, as a browser sends it."""
+    files = []
+    for number in range(episodes, 0, -1):
+        files.append(("files", (f"Serie/Folge {number}/01-anfang.mp3", bytes([number]) * 8, "audio/mpeg")))
+        files.append(("files", (f"Serie/Folge {number}/02-ende.mp3", bytes([number]) * 9, "audio/mpeg")))
+    return client.post("/upload", files=files, follow_redirects=False)
+
+
+def _batch_ids(response):
+    from urllib.parse import parse_qs, urlparse
+
+    location = urlparse(response.headers["location"])
+    assert location.path == "/batch"
+    return parse_qs(location.query)["ids"]
+
+
+def _run_batch(client, runner, ids, series=None, **extra):
+    data = {"ids": ids}
+    if series is not None:
+        data["series"] = [series] * len(ids)
+    data.update(extra)
+    response = client.post("/batch", data=data, follow_redirects=False)
+    assert response.status_code == 303, response.text
+    for job in runner.all():
+        assert job.done.wait(5), "a batch encode did not finish"
+    return response
+
+
+class TestSeveralFolders:
+    def test_a_folder_of_folders_becomes_one_album_each(self, client):
+        response = _upload_series(client)
+
+        assert response.status_code == 303
+        assert len(_batch_ids(response)) == 3
+        page = client.get("/").text
+        assert "Folge 1" in page and "Folge 2" in page and "Folge 3" in page
+
+    def test_one_folder_still_opens_its_album_page(self, client):
+        response = client.post("/upload", files=[
+            ("files", ("Album/01-eins.mp3", b"\x01" * 8, "audio/mpeg")),
+        ], follow_redirects=False)
+
+        assert response.headers["location"].startswith("/album/")
+
+    def test_the_batch_page_lists_the_episodes_in_order_with_their_stickers(self, client):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.index("Folge 1") < page.index("Folge 2")
+        assert "7ab4ed0e500304e0" in page and "deb4ed0e500304e0" in page
+
+    def test_says_which_episodes_will_have_no_sticker(self, client):
+        ids = _batch_ids(_upload_series(client, episodes=3))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        # Two free tags, three episodes.
+        assert page.count("ohne Sticker") == 1
+
+    def test_encodes_every_album_and_assigns_the_free_tags(self, client, runner, teddycloud):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        _run_batch(client, runner, ids, series="Serie")
+
+        sources = sorted(entry["source"] for entry in teddycloud.tag_entries.values())
+        assert sources == ["lib://Serie/Folge 1.taf", "lib://Serie/Folge 2.taf"]
+        episodes = sorted(model["episodes"] for model in teddycloud.custom_tonies())
+        assert episodes == ["Folge 1", "Folge 2"]
+
+    def test_the_first_free_tag_gets_the_first_episode(self, client, runner, teddycloud):
+        from tonie_studio.tonie import list_tags
+
+        free = [tag.ruid for tag in list_tags(teddycloud) if not tag.assigned]
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        _run_batch(client, runner, ids, series="Serie")
+
+        assert teddycloud.tag_entries[free[0]]["source"] == "lib://Serie/Folge 1.taf"
+
+    def test_an_episode_without_a_sticker_is_encoded_and_left_to_assign(self, client, runner,
+                                                                        teddycloud):
+        ids = _batch_ids(_upload_series(client, episodes=3))
+
+        _run_batch(client, runner, ids, series="Serie")
+
+        from tonie_studio.encode import library_path, taf_exists
+
+        assert taf_exists(teddycloud, library_path("Serie", "Folge 3"))
+        assert len(teddycloud.custom_tonies()) == 2
+        third = next(job for job in runner.all() if job.label.endswith("Folge 3.taf"))
+        assert third.state == JobState.DONE and not third.result.get("model")
+
+    def test_a_sticker_taken_in_the_meantime_is_not_overwritten(self, client, runner, teddycloud):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        # Taken as the first encode is queued, after the plan was made.
+        original = runner.submit
+
+        def take_then_submit(kind, label, work):
+            teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+            teddycloud.tag_entries["deb4ed0e500304e0"]["source"] = "lib://Andere/Zwei.taf"
+            return original(kind, label, work)
+
+        runner.submit = take_then_submit
+        _run_batch(client, runner, ids, series="Serie")
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == "lib://Andere/Folge.taf"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Andere/Zwei.taf"
+        for job in runner.all():
+            assert job.state == JobState.DONE and job.result.get("assign_error")
+        note = client.get(f"/api/job/{runner.all()[0].id}").json()["note"]
+        assert note and not note.startswith("batch.")
+
+    def test_the_edited_names_are_used(self, client, runner, teddycloud):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        _run_batch(client, runner, ids, series="Bobo", episodes=["Im Zoo", "Am Meer"])
+
+        models = {model["episodes"]: model for model in teddycloud.custom_tonies()}
+        assert set(models) == {"Im Zoo", "Am Meer"}
+        assert all(model["series"] == "Bobo" for model in models.values())
+
+    def test_the_album_list_offers_to_pick_several(self, client):
+        page = client.get("/").text
+
+        assert 'name="ids"' in page and 'action="/batch"' in page
+
+    def test_refuses_an_empty_batch(self, client):
+        assert client.post("/batch", data={}).status_code == 400
+
+    def test_the_result_lists_every_encode(self, client, runner):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        response = _run_batch(client, runner, ids, series="Serie")
+
+        page = client.get(response.headers["location"]).text
+        assert page.count("data-job=") == 2
+
+    def test_an_album_already_encoded_is_skipped_not_overwritten(self, client, runner, teddycloud):
+        # No free sticker, so the first round leaves tafs and no tonies.
+        for entry in teddycloud.tag_entries.values():
+            entry["source"] = "lib://Andere/Folge.taf"
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        _run_batch(client, runner, ids, series="Serie")
+        teddycloud.add_tag("aaaaaaaaaaaaaaaa")
+
+        page = client.get("/batch", params={"ids": ids}).text
+        again = client.post("/batch", data={"ids": ids, "series": ["Serie"] * len(ids)})
+
+        assert page.count("Taf liegt schon in der Library, aber kein Sticker spielt es") == 2
+        assert "Nichts Neues zu encodieren" in page and "0 Alben" not in page
+        assert again.status_code == 400
+        assert teddycloud.tag_entries["aaaaaaaaaaaaaaaa"]["source"] == ""
+
+    def test_episode_ten_comes_after_episode_two(self, client):
+        files = [("files", (f"Serie/Folge {n}/01-a.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n in (10, 2, 1)]
+        ids = _batch_ids(client.post("/upload", files=files, follow_redirects=False))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.index('value="Folge 1"') < page.index('value="Folge 2"') < page.index('value="Folge 10"')
+
+    def test_the_folder_holding_the_episodes_is_the_suggested_series(self, client):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.count('name="series" value="Serie"') == 2
+
+    def test_a_deeper_pick_keeps_only_series_and_episode(self, client):
+        files = [("files", (f"Kinder/Serie/Folge {n}/01-a.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n in (1, 2)]
+        ids = _batch_ids(client.post("/upload", files=files, follow_redirects=False))
+
+        page = client.get("/batch", params={"ids": ids})
+
+        assert page.status_code == 200
+        assert page.text.count('name="series" value="Serie"') == 2
+
+    def test_albums_of_different_series_keep_their_own(self, client, runner, teddycloud):
+        files = [("files", (f"{series}/Folge 1/01-a.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n, series in enumerate(("Bobo", "Lichterkinder"), 1)]
+        ids = _batch_ids(client.post("/upload", files=files, follow_redirects=False))
+
+        page = client.get("/batch", params={"ids": ids}).text
+        _run_batch(client, runner, ids)
+
+        assert 'value="Bobo"' in page and 'value="Lichterkinder"' in page
+        sources = sorted(entry["source"] for entry in teddycloud.tag_entries.values())
+        assert sources == ["lib://Bobo/Folge 1.taf", "lib://Lichterkinder/Folge 1.taf"]
+
+    def test_a_skipped_album_still_sends_its_names(self, client, runner):
+        # A disabled field is not submitted, which would hand the next album
+        # the skipped one's name; read-only fields are.
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        _run_batch(client, runner, ids, series="Serie")
+
+        page = client.get("/batch", params={"ids": ids}).text
+        rows = page.split('<div class="list">')[1]
+
+        assert rows.count('name="episodes"') == 2 and rows.count("readonly") == 4
+        assert 'name="episodes" value="Folge 1"' in rows and "disabled>" not in rows.split("<button")[0]
+
+    def test_an_album_that_already_has_a_tonie_is_skipped(self, client, runner, teddycloud):
+        # Made back then under names typed by hand, so its taf path differs
+        # from what the batch would suggest; the tonie is what gives it away.
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        _run_batch(client, runner, ids, series="Serie")
+        from tonie_studio.encode import delete_taf, taf_exists
+
+        for job in runner.all():
+            delete_taf(teddycloud, job.label)
+            assert not taf_exists(teddycloud, job.label)
+        teddycloud.add_tag("aaaaaaaaaaaaaaaa")
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.count("hat schon einen Tonie") == 2
+        assert "Nichts Neues zu encodieren" in page
+
+    def test_says_before_the_click_that_stickers_are_written_at_once(self, client):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert "ohne weitere R\u00fcckfrage" in page
+        assert "2 Alben encodieren und auf Sticker legen" in page
+        assert "Freie Sticker sehen gleich aus" in page
+
+    def test_the_button_does_not_promise_stickers_when_none_are_free(self, client, teddycloud):
+        for entry in teddycloud.tag_entries.values():
+            entry["source"] = "lib://Andere/Folge.taf"
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert "2 Alben encodieren" in page and "auf Sticker legen" not in page
+        assert "Freie Sticker sehen gleich aus" not in page
