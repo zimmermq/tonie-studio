@@ -36,3 +36,73 @@ class TestAllocate:
 
     def test_no_free_tags_gives_no_tags(self):
         assert allocate([1, 1], []) == [[], []]
+
+
+class TestPlacing:
+    def _placing(self, *episodes):
+        from tonie_studio.batch import Placing, Slot
+
+        return Placing([Slot(job_id=f"j{n}", episode=name) for n, name in enumerate(episodes, 1)])
+
+    def test_stickers_go_to_the_episodes_in_the_order_they_are_placed(self):
+        placing = self._placing("Folge 1", "Folge 2")
+        never = lambda job_id: False  # noqa: E731
+
+        first, _ = placing.reserve("t1", never)
+        second, _ = placing.reserve("t2", never)
+
+        assert (first.episode, second.episode) == ("Folge 1", "Folge 2")
+
+    def test_the_same_sticker_placed_again_keeps_its_episode(self):
+        # It lies on the box for several polls; it must not eat the next one.
+        placing = self._placing("Folge 1", "Folge 2")
+        never = lambda job_id: False  # noqa: E731
+
+        placing.reserve("t1", never)
+        again, _ = placing.reserve("t1", never)
+
+        assert again.episode == "Folge 1"
+        assert placing.waiting(never).episode == "Folge 2"
+
+    def test_a_sticker_placed_after_the_encode_is_published_by_the_placer(self):
+        placing = self._placing("Folge 1")
+        never = lambda job_id: False  # noqa: E731
+
+        assert placing.settle("j1") is None
+        _slot, settled = placing.reserve("t1", never)
+
+        assert settled
+
+    def test_a_sticker_placed_before_the_encode_is_taken_when_it_finishes(self):
+        placing = self._placing("Folge 1")
+        never = lambda job_id: False  # noqa: E731
+
+        _slot, settled = placing.reserve("t1", never)
+
+        assert not settled
+        assert placing.settle("j1") == "t1"
+
+    def test_a_failed_encode_is_passed_over(self):
+        placing = self._placing("Folge 1", "Folge 2")
+
+        slot, _ = placing.reserve("t1", lambda job_id: job_id == "j1")
+
+        assert slot.episode == "Folge 2"
+
+    def test_a_failed_encode_gives_its_sticker_back(self):
+        placing = self._placing("Folge 1", "Folge 2")
+        failed = set()
+        placing.reserve("t1", lambda job_id: job_id in failed)
+
+        failed.add("j1")
+        slot, _ = placing.reserve("t1", lambda job_id: job_id in failed)
+
+        assert slot.episode == "Folge 2"
+
+    def test_nothing_left_to_place(self):
+        placing = self._placing("Folge 1")
+        never = lambda job_id: False  # noqa: E731
+        placing.reserve("t1", never)
+
+        assert placing.reserve("t2", never) == (None, False)
+        assert placing.waiting(never) is None

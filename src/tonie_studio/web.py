@@ -40,7 +40,7 @@ from .album import (AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, cover_candi
 from .albumnotes import first_sightings, forget_model, guess_made, is_new, made, remember_made
 from .backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                      plan_restore, read_backup)
-from .batch import allocate, episode_order
+from .batch import AUTO, PLACE, Placing, Slot, allocate, episode_order
 from .boxstate import BoxWatcher
 from .calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from .checkup import examine, model_repairs, repaired
@@ -49,7 +49,7 @@ from .i18n import DEFAULT as DEFAULT_LANGUAGE
 from .i18n import Problem, Translator, catalogs, languages, negotiate
 from .encode import (EncodeError, delete_taf, encode_files, library_path, list_tafs,
                      remove_orphaned_staging, taf_exists)
-from .jobs import JobRunner, JobState
+from .jobs import JobRunner, JobState, new_id
 from .listening import ListeningLog, summarise
 from .overview import Entry, build_overview
 from .parts import MOST_CHAPTERS, fewest_parts, part_name, split
@@ -388,6 +388,8 @@ def create_app(
     groups: Dict[str, List[str]] = {}
     # The groups that are several albums rather than one album in parts.
     batches: set = set()
+    # Batches whose stickers are handed out as they are placed on the box.
+    placings: Dict[str, Placing] = {}
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str):
@@ -492,6 +494,9 @@ def create_app(
             "title_key": "batch.progress_title" if batch else "parts.title",
             "heading_key": "batch.progress_title" if batch else "parts.heading",
             "intro_key": "batch.progress_intro" if batch else "parts.intro",
+            "placing": group in placings,
+            "group": group,
+            "next_episode": _next_to_place(placings.get(group)),
         })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -571,12 +576,16 @@ def create_app(
         ids: List[str] = Form(default=[]),
         series: List[str] = Form(default=[]),
         episodes: List[str] = Form(default=[]),
+        stickers: str = Form(AUTO),
     ):
-        """Encode every album that is not there yet and hand out the free stickers.
+        """Encode every album that is not there yet and give each a sticker.
 
-        The plan is made again here rather than taken from the page: a tag
-        assigned in another tab meanwhile must not be handed out twice.
+        ``stickers`` says how: AUTO hands out the free ones in order at once,
+        PLACE waits for them to be put on the box one by one. The plan is made
+        again here rather than taken from the page: a tag assigned in another
+        tab meanwhile must not be handed out twice.
         """
+        placing_wanted = stickers == PLACE
         if not ids:
             raise Refused(400, "error.no_album")
         connection = client()
@@ -584,16 +593,25 @@ def create_app(
                            dict(zip(ids, episodes, strict=False)),
                            tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
         job_ids = []
+        # Made before any encode is queued: one that finishes at once must
+        # already find the slot it settles.
+        placing = Placing([]) if placing_wanted else None
         for row in rows:
             if row.skipped:
                 continue
-            tags = row.tags or [None] * len(row.targets)
+            tags = [None] * len(row.targets) if placing_wanted or not row.tags else row.tags
             for number, (indices, target, ruid) in enumerate(
                     zip(row.groups, row.targets, tags, strict=True), 1):
                 episode = part_name(row.episode, number, len(row.targets))
-                after = (_publish_after(connection, settings, ruid, row.series, episode)
-                         if ruid else None)
-                job_ids.append(jobs.submit("encode", target, _encode_job(
+                job_id = new_id()
+                if placing is not None:
+                    placing.add(Slot(job_id=job_id, episode=episode))
+                    after = _publish_when_placed(connection, settings, placing, job_id,
+                                                 row.series, episode)
+                else:
+                    after = (_publish_after(connection, settings, ruid, row.series, episode)
+                             if ruid else None)
+                job_ids.append(jobs.submit("encode", target, job_id=job_id, work=_encode_job(
                     connection, [row.chosen[index] for index in indices], target,
                     replace=False,
                     carried={"series": row.series, "episode": episode,
@@ -607,7 +625,67 @@ def create_app(
         group = uuid.uuid4().hex[:12]
         groups[group] = job_ids
         batches.add(group)
+        if placing is not None:
+            placings[group] = placing
         return RedirectResponse(f"/parts/{group}", 303)
+
+    @app.post("/api/batch/{group}/place")
+    def place_sticker(request: Request, group: str, ruid: str = Form(...)):
+        """Give the sticker lying on the box to the next episode of a batch.
+
+        Called by the progress page each time the box reports a sticker. Only
+        a free one is taken; a sticker that plays something is left as it is,
+        and one teddyCloud has not filed yet is answered "unknown" so the page
+        asks again.
+        """
+        placing = placings.get(group)
+        if placing is None:
+            raise Refused(404, "error.parts_gone")
+        translate = translator(request)
+        connection = client()
+
+        def failed(job_id: str) -> bool:
+            job = jobs.get(job_id)
+            return job is None or job.state is JobState.FAILED
+
+        def answer(status: str, slot: Optional[Slot] = None) -> JSONResponse:
+            waiting = placing.waiting(failed)
+            return JSONResponse({
+                "status": status,
+                "message": translate(PLACE_MESSAGES[status], episode=slot.episode if slot else ""),
+                "then": (translate("place.next", episode=waiting.episode) if waiting
+                         else translate("place.all_done")),
+                "episode": slot.episode if slot else None,
+                "job": slot.job_id if slot else None,
+                "next": waiting.episode if waiting else None,
+            })
+
+        own = next((slot for slot in placing.slots if slot.ruid == ruid), None)
+        tags = {tag.ruid: tag for tag in list_tags(connection)}
+        if ruid not in tags:
+            return answer("unknown")
+        if tags[ruid].assigned:
+            if own is not None:
+                return answer("assigned", own)
+            return answer("taken")
+
+        slot, settled = placing.reserve(ruid, failed)
+        if slot is None:
+            return answer("complete")
+        if not settled:
+            return answer("reserved", slot)
+        job = jobs.get(slot.job_id)
+        if job is None or not job.done.wait(30) or not isinstance(job.result, dict):
+            return answer("reserved", slot)
+        try:
+            job.result["model"] = _publish_result(connection, settings, ruid, job.result,
+                                                  job.result["series"], slot.episode)
+            job.result["ruid"] = ruid
+        except (TonieError, TeddyCloudError) as error:
+            log.warning("batch: could not put %s on %s: %s", slot.episode, ruid, error)
+            job.result["assign_error"] = "batch.publish_failed"
+            return answer("failed", slot)
+        return answer("assigned", slot)
 
     @app.get("/tonies", response_class=HTMLResponse)
     def tonies(request: Request):
@@ -1323,6 +1401,45 @@ def _publish_after(connection: TeddyCloudClient, settings: Settings, ruid: str,
             log.warning("batch: could not put %s on %s: %s", episode, ruid, error)
             result["assign_error"] = "batch.publish_failed"
     return after
+
+
+# What the progress page says after a sticker was placed, by outcome.
+PLACE_MESSAGES = {
+    "unknown": "place.unknown",
+    "taken": "place.taken",
+    "reserved": "place.reserved",
+    "assigned": "place.assigned",
+    "complete": "place.complete",
+    "failed": "place.failed",
+}
+
+
+def _publish_when_placed(connection: TeddyCloudClient, settings: Settings, placing: Placing,
+                         job_id: str, series: str, episode: str) -> Callable[[Dict], None]:
+    """The step that puts a batch encode on the sticker placed for it meanwhile.
+
+    Without a sticker yet nothing happens here; the one placed later is
+    published by the request that reserves it.
+    """
+    def after(result: Dict) -> None:
+        ruid = placing.settle(job_id)
+        if ruid is None:
+            return
+        try:
+            result["model"] = _publish_result(connection, settings, ruid, result, series, episode)
+            result["ruid"] = ruid
+        except (TonieError, TeddyCloudError) as error:
+            log.warning("batch: could not put %s on %s: %s", episode, ruid, error)
+            result["assign_error"] = "batch.publish_failed"
+    return after
+
+
+def _next_to_place(placing: Optional[Placing]) -> str:
+    """The episode the next sticker put on the box will get, for the page."""
+    if placing is None:
+        return ""
+    waiting = placing.waiting(lambda job_id: False)
+    return waiting.episode if waiting else ""
 
 
 def _free_tags(connection: TeddyCloudClient) -> List[str]:

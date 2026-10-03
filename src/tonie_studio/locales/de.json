@@ -91,8 +91,11 @@
   "other": "{count} freie Sticker sind registriert."
  },
  "batch.has_tonie": "hat schon einen Tonie ({model}), wird übersprungen",
+ "batch.how": "Wie bekommen die Folgen ihre Sticker?",
+ "batch.how_auto": "Automatisch: der Knopf unten legt jedes Album sofort auf den freien Sticker, der daneben steht, ohne weitere Rückfrage.",
+ "batch.how_place": "Durch Auflegen: jeder Sticker, den du danach auf die Box legst, bekommt die nächste Folge. So weißt du, welcher Sticker was spielt.",
  "batch.identify": "Freie Sticker sehen gleich aus: leg einen auf die Box, dann zeigt die Tonies-Seite, was er spielt.",
- "batch.intro": "Jedes Album wird so encodiert, wie seine eigene Seite es vorschlägt: alle Tracks außer Karaoke, in der Reihenfolge des Albums, mit dem ersten Cover. Der Knopf unten encodiert alle Alben und legt jedes sofort auf den Sticker, der daneben steht, ohne weitere Rückfrage.",
+ "batch.intro": "Jedes Album wird so encodiert, wie seine eigene Seite es vorschlägt: alle Tracks außer Karaoke, in der Reihenfolge des Albums, mit dem ersten Cover.",
  "batch.no_sticker": "ohne Sticker, wird nur encodiert",
  "batch.nothing_new": "Nichts Neues zu encodieren",
  "batch.on_sticker": "auf dem Sticker",
@@ -116,6 +119,10 @@
  "batch.start_assign": {
   "one": "Ein Album encodieren und auf einen Sticker legen",
   "other": "{count} Alben encodieren und auf Sticker legen"
+ },
+ "batch.start_place": {
+  "one": "Ein Album encodieren, dann Sticker auflegen",
+  "other": "{count} Alben encodieren, dann Sticker auflegen"
  },
  "batch.tag_taken": "Der geplante Sticker wurde inzwischen anders vergeben.",
  "batch.title": "Mehrere Alben",
@@ -300,6 +307,15 @@
   "one": "1 Track",
   "other": "{count} Tracks"
  },
+ "place.all_done": "Alle Folgen haben einen Sticker.",
+ "place.assigned": "{episode} ist jetzt auf diesem Sticker. Nimm ihn runter.",
+ "place.complete": "Alle Folgen haben schon einen Sticker; dieser bleibt frei.",
+ "place.failed": "{episode} ließ sich nicht auf diesen Sticker legen.",
+ "place.next": "Der nächste bekommt: {episode}.",
+ "place.prompt": "Leg einen freien Sticker auf die Box.",
+ "place.reserved": "Dieser Sticker bekommt {episode}, sobald die Folge encodiert ist. Nimm ihn runter.",
+ "place.taken": "Dieser Sticker spielt schon etwas und bleibt, wie er ist.",
+ "place.unknown": "Ein neuer Sticker; teddyCloud lernt ihn gerade kennen. Kurz liegen lassen.",
  "podcasts.episodes": "Folgen",
  "podcasts.feed": "Adresse des Feeds (RSS)",
  "podcasts.intro": "Ein Sticker, der immer die neuesten Folgen eines Podcasts hat. Zweimal am Tag wird nachgesehen; gibt es etwas Neues, wird es heruntergeladen und auf den Sticker gelegt. Anders als ein Radio-Tonie spielt er auch ohne Netz.",

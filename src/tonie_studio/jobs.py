@@ -83,6 +83,10 @@ class Job:
         return min(100, int(share * 100))
 
 
+def new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 class JobRunner:
     """Starts jobs, tracks them, and hands them out by id."""
 
@@ -92,9 +96,14 @@ class JobRunner:
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="job")
 
-    def submit(self, kind: str, label: str, work: Callable[[Callable], Any]) -> str:
-        """Queue ``work``, which is called with a progress callback, and return the job id."""
-        job = Job(id=uuid.uuid4().hex[:12], kind=kind, label=label)
+    def submit(self, kind: str, label: str, work: Callable[[Callable], Any],
+               job_id: Optional[str] = None) -> str:
+        """Queue ``work``, which is called with a progress callback, and return the job id.
+
+        ``job_id`` is for work that has to know its own id before it starts;
+        it must be unique, which ``new_id`` provides.
+        """
+        job = Job(id=job_id or new_id(), kind=kind, label=label)
         with self._lock:
             self._jobs[job.id] = job
             self._order.append(job.id)

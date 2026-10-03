@@ -7,6 +7,15 @@
   {{ t(intro_key) }}
 </p>
 
+{% if placing %}
+<div class="card" id="placing">
+  <strong>{{ t("place.prompt") }}</strong>
+  <p class="muted" id="placemsg" style="margin-bottom: 0">
+    {%- if next_episode %}{{ t("place.next", episode=next_episode) }}{% else %}{{ t("place.all_done") }}{% endif -%}
+  </p>
+</div>
+{% endif %}
+
 <div class="list">
 {% for job in jobs %}
   <div class="album" data-job="{{ job.id }}">
@@ -49,5 +58,36 @@
     if (running) setTimeout(poll, 3000);
   }
   poll();
+
+  {% if placing %}
+  // Each sticker put on the box goes to the next episode; the server decides,
+  // the page only reports what the box sees. A sticker is asked about again
+  // only after it was taken off, or while teddyCloud has not filed it yet.
+  const group = {{ group | tojson }};
+  const placemsg = document.getElementById('placemsg');
+  let lastSticker = null;
+  async function watchBox() {
+    try {
+      const box = await (await fetch('/api/box')).json();
+      const ruid = box.unknown_ruid || (box.on_box ? box.ruid : null);
+      if (!ruid) lastSticker = null;
+      if (ruid && ruid !== lastSticker) {
+        const body = new FormData();
+        body.append('ruid', ruid);
+        const answer = await (await fetch(`/api/batch/${group}/place`, {method: 'POST', body})).json();
+        placemsg.textContent = `${answer.message} ${answer.then}`;
+        if (answer.status !== 'unknown') lastSticker = ruid;
+        if (answer.job) {
+          const row = document.querySelector(`[data-job="${answer.job}"] .note`);
+          if (row) row.textContent = answer.message;
+        }
+      }
+    } catch (error) {
+      // A dropped poll changes nothing; the next one asks again.
+    }
+    setTimeout(watchBox, 2000);
+  }
+  watchBox();
+  {% endif %}
 </script>
 {% endblock %}

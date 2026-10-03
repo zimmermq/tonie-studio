@@ -91,8 +91,11 @@
   "other": "{count} free stickers are registered."
  },
  "batch.has_tonie": "already has a tonie ({model}), skipped",
+ "batch.how": "How do the episodes get their stickers?",
+ "batch.how_auto": "Automatically: the button below puts each album straight onto the free sticker shown next to it, with no further confirmation.",
+ "batch.how_place": "By placing them: each sticker you then put on the box gets the next episode. That way you know which sticker plays what.",
  "batch.identify": "Free stickers look alike: put one on the box and the Tonies page shows what it plays.",
- "batch.intro": "Each album is encoded the way its own page suggests: every track except karaoke takes, in the album's order, with the first cover. The button below encodes every album and puts each straight onto the sticker shown next to it, with no further confirmation.",
+ "batch.intro": "Each album is encoded the way its own page suggests: every track except karaoke takes, in the album's order, with the first cover.",
  "batch.no_sticker": "no sticker, encoded only",
  "batch.nothing_new": "Nothing new to encode",
  "batch.on_sticker": "on its sticker",
@@ -116,6 +119,10 @@
  "batch.start_assign": {
   "one": "Encode one album and put it on a sticker",
   "other": "Encode {count} albums and put them on stickers"
+ },
+ "batch.start_place": {
+  "one": "Encode one album, then place stickers",
+  "other": "Encode {count} albums, then place stickers"
  },
  "batch.tag_taken": "The planned sticker has been given something else meanwhile.",
  "batch.title": "Several albums",
@@ -300,6 +307,15 @@
   "one": "1 track",
   "other": "{count} tracks"
  },
+ "place.all_done": "Every episode has a sticker.",
+ "place.assigned": "{episode} is now on this sticker. Take it off.",
+ "place.complete": "Every episode already has a sticker; this one stays free.",
+ "place.failed": "{episode} could not be put on this sticker.",
+ "place.next": "The next one gets: {episode}.",
+ "place.prompt": "Put a free sticker on the box.",
+ "place.reserved": "This sticker gets {episode} as soon as the episode is encoded. Take it off.",
+ "place.taken": "This sticker already plays something and stays as it is.",
+ "place.unknown": "A new sticker; teddyCloud is just getting to know it. Leave it there for a moment.",
  "podcasts.episodes": "Episodes",
  "podcasts.feed": "Feed address (RSS)",
  "podcasts.intro": "A sticker that always has a podcast's newest episodes. It checks twice a day; anything new is downloaded and put on the sticker. Unlike a radio tonie it plays without a network too.",

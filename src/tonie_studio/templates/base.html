@@ -125,7 +125,8 @@
   .pickbar { position: sticky; bottom: 12px; display: flex; gap: 12px; align-items: center;
              margin-top: 12px; padding: 10px 14px; background: var(--card);
              border: 1px solid var(--accent); border-radius: 10px; }
-  .pickbar[hidden] { display: none; }
+  /* Rules that set display would otherwise show what a script hid. */
+  [hidden] { display: none !important; }
   /* Series and episode side by side, the series narrower: it repeats down a
      batch, the episode is what tells the rows apart. */
   .batchnames { display: grid; grid-template-columns: 2fr 3fr; gap: 8px; }

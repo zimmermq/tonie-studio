@@ -7,13 +7,22 @@
 {% set assigning = rows | selectattr("tags") | list %}
 
 {% set waiting = rows | rejectattr("skipped") | list %}
-<div class="{% if needed > free %}warn{% else %}card{% endif %}">
-  {{ t("batch.free", count=free) }}
-  {%- if needed > free %} {{ t("batch.too_few", count=needed) }}{% endif %}
-  {%- if assigning %} {{ t("batch.identify") }}{% endif %}
-</div>
 
-<form method="post" action="/batch">
+<form method="post" action="/batch" id="batch">
+  <div class="card">
+    <strong>{{ t("batch.how") }}</strong>
+    <label style="display: block; margin-top: 8px">
+      <input type="radio" name="stickers" value="place" checked> {{ t("batch.how_place") }}
+    </label>
+    <label style="display: block">
+      <input type="radio" name="stickers" value="auto"> {{ t("batch.how_auto") }}
+    </label>
+    <p class="muted only-auto" style="margin-bottom: 0">
+      {{ t("batch.free", count=free) }}
+      {%- if needed > free %} {{ t("batch.too_few", count=needed) }}{% endif %}
+      {%- if assigning %} {{ t("batch.identify") }}{% endif %}
+    </p>
+  </div>
   <div class="list">
   {% for row in rows %}
     <div class="album">
@@ -33,7 +42,7 @@
           {%- if row.targets | length > 1 %} &middot; {{ t("batch.parts", count=row.targets | length) }}{% endif -%}
         </span>
       </span>
-      <span class="muted" style="text-align: right">
+      <span class="muted sticker" style="text-align: right">
         {% if row.tonie %}
         <span class="state-failed">{{ t("batch.has_tonie", model=row.tonie) }}</span>
         {% elif row.occupied %}
@@ -50,12 +59,31 @@
   </div>
 
   <p>
-    <button class="primary" type="submit" {% if not waiting %}disabled{% endif %}>
-      {% if assigning %}{{ t("batch.start_assign", count=waiting | length) }}
-      {%- elif waiting %}{{ t("batch.start", count=waiting | length) }}
+    <button class="primary" type="submit"
+            {% if waiting %}data-place="{{ t('batch.start_place', count=waiting | length) }}"
+            data-auto="{{ t('batch.start_assign', count=waiting | length) if assigning else t('batch.start', count=waiting | length) }}"
+            {% else %}disabled{% endif %}>
+      {% if waiting %}{{ t("batch.start_place", count=waiting | length) }}
       {%- else %}{{ t("batch.nothing_new") }}{% endif %}
     </button>
     <a href="/" style="margin-left: 12px">{{ t("common.cancel") }}</a>
   </p>
 </form>
+
+<script>
+  // The stickers shown per row are only what the automatic way would do;
+  // placing them decides the order at the box instead.
+  const form = document.getElementById('batch');
+  const button = form.querySelector('button[type=submit]');
+  function showHow() {
+    const how = form.querySelector('input[name=stickers]:checked').value;
+    for (const cell of form.querySelectorAll('.sticker')) {
+      cell.hidden = how === 'place' && !cell.querySelector('.state-failed');
+    }
+    for (const note of form.querySelectorAll('.only-auto')) note.hidden = how !== 'auto';
+    if (!button.disabled) button.textContent = button.dataset[how];
+  }
+  form.addEventListener('change', showHow);
+  showHow();
+</script>
 {% endblock %}

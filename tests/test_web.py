@@ -1897,10 +1897,10 @@ class TestSeveralFolders:
         # Taken as the first encode is queued, after the plan was made.
         original = runner.submit
 
-        def take_then_submit(kind, label, work):
+        def take_then_submit(*args, **kwargs):
             teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
             teddycloud.tag_entries["deb4ed0e500304e0"]["source"] = "lib://Andere/Zwei.taf"
-            return original(kind, label, work)
+            return original(*args, **kwargs)
 
         runner.submit = take_then_submit
         _run_batch(client, runner, ids, series="Serie")
@@ -2038,3 +2038,131 @@ class TestSeveralFolders:
 
         assert "2 Alben encodieren" in page and "auf Sticker legen" not in page
         assert "Freie Sticker sehen gleich aus" not in page
+
+
+def _start_placing(client, runner, episodes=2):
+    ids = _batch_ids(_upload_series(client, episodes=episodes))
+    response = client.post("/batch", data={"ids": ids, "series": ["Serie"] * len(ids),
+                                           "stickers": "place"}, follow_redirects=False)
+    assert response.status_code == 303, response.text
+    return response.headers["location"].rsplit("/", 1)[1]
+
+
+def _place(client, group, ruid):
+    response = client.post(f"/api/batch/{group}/place", data={"ruid": ruid})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+class TestPlacingStickers:
+    def test_nothing_is_assigned_until_a_sticker_is_placed(self, client, runner, teddycloud):
+        group = _start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        assert all(not entry["source"] for entry in teddycloud.tag_entries.values())
+        assert "Leg einen freien Sticker auf die Box" in client.get(f"/parts/{group}").text
+
+    def test_each_placed_sticker_gets_the_next_episode(self, client, runner, teddycloud):
+        group = _start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        first = _place(client, group, "deb4ed0e500304e0")
+        second = _place(client, group, "7ab4ed0e500304e0")
+
+        assert first["status"] == "assigned" and first["episode"] == "Folge 1"
+        assert second["status"] == "assigned" and second["episode"] == "Folge 2"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Serie/Folge 1.taf"
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == "lib://Serie/Folge 2.taf"
+
+    def test_a_sticker_placed_during_the_encode_is_filled_when_it_finishes(self, client, runner,
+                                                                          teddycloud):
+        import threading
+
+        import tonie_studio.web as web
+
+        gate = threading.Event()
+        original = web.encode_files
+
+        def slow(*args, **kwargs):
+            assert gate.wait(5)
+            return original(*args, **kwargs)
+
+        with patch("tonie_studio.web.encode_files", side_effect=slow):
+            group = _start_placing(client, runner)
+            placed = _place(client, group, "deb4ed0e500304e0")
+            assert placed["status"] == "reserved" and placed["episode"] == "Folge 1"
+            gate.set()
+            for job in runner.all():
+                assert job.done.wait(5)
+
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Serie/Folge 1.taf"
+
+    def test_the_sticker_still_on_the_box_is_not_given_a_second_episode(self, client, runner,
+                                                                         teddycloud):
+        group = _start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        _place(client, group, "deb4ed0e500304e0")
+        again = _place(client, group, "deb4ed0e500304e0")
+
+        assert again["status"] == "assigned" and again["episode"] == "Folge 1"
+        assert not teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+
+    def test_a_sticker_that_plays_something_is_left_alone(self, client, runner, teddycloud):
+        teddycloud.tag_entries["deb4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+        group = _start_placing(client, runner)
+
+        answer = _place(client, group, "deb4ed0e500304e0")
+
+        assert answer["status"] == "taken"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Andere/Folge.taf"
+
+    def test_a_sticker_teddycloud_has_not_filed_yet_is_waited_for(self, client, runner):
+        group = _start_placing(client, runner)
+
+        assert _place(client, group, "ffffffffffffffff")["status"] == "unknown"
+
+    def test_says_when_every_episode_has_its_sticker(self, client, runner, teddycloud):
+        teddycloud.add_tag("aaaaaaaaaaaaaaaa")
+        group = _start_placing(client, runner, episodes=2)
+        for job in runner.all():
+            assert job.done.wait(5)
+        _place(client, group, "deb4ed0e500304e0")
+        _place(client, group, "7ab4ed0e500304e0")
+
+        answer = _place(client, group, "aaaaaaaaaaaaaaaa")
+
+        assert answer["status"] == "complete"
+        assert not teddycloud.tag_entries["aaaaaaaaaaaaaaaa"]["source"]
+
+    def test_the_batch_page_offers_both_ways(self, client):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert 'name="stickers" value="auto"' in page and 'name="stickers" value="place"' in page
+
+    def test_an_unknown_batch_is_refused(self, client):
+        assert client.post("/api/batch/nope/place", data={"ruid": "x"}).status_code == 404
+
+    def test_an_encode_done_before_the_batch_is_set_up_still_gets_its_sticker(
+            self, client, runner, teddycloud):
+        # Each encode finishes before the next is even queued, so the first
+        # ones settle before the request has registered the batch.
+        original = runner.submit
+
+        def submit_and_finish(*args, **kwargs):
+            job_id = original(*args, **kwargs)
+            assert runner.get(job_id).done.wait(5)
+            return job_id
+
+        runner.submit = submit_and_finish
+        group = _start_placing(client, runner)
+
+        answer = _place(client, group, "deb4ed0e500304e0")
+
+        assert answer["status"] == "assigned"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Serie/Folge 1.taf"
