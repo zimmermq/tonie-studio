@@ -71,6 +71,33 @@
     <strong id="total"></strong>
     <button type="button" class="small" id="fillsheet">Blatt voll machen</button>
   </p>
+
+  <h2>Rückseite</h2>
+  <div class="card">
+    <div class="row stackable" style="gap: 20px; align-items: flex-start">
+      <div class="grow">
+        <p class="muted" style="margin-top: 0">
+          Ein zweiter Aufkleber je Tonie, für die freie Rückseite. Er trägt den Namen statt
+          des Bildes, damit du eine Figur auch ohne Box erkennst. Jahr und Spieldauer stehen
+          nicht dabei: teddyCloud speichert sie nicht.
+        </p>
+        <label class="row" style="gap: 8px; cursor: pointer; margin-bottom: 8px">
+          <input type="checkbox" name="back" value="on" id="wantback">
+          <span>Rückseite mitdrucken</span>
+        </label>
+        <label class="row" style="gap: 8px; cursor: pointer">
+          <input type="checkbox" name="back_tracks" value="on" id="wanttracks" checked>
+          <span>Titel mitdrucken<span class="muted"> - was nicht passt, wird gezählt</span></span>
+        </label>
+      </div>
+      <!-- One preview, big enough to read, rather than one per row at a size
+           where 5.5 pt is a grey smudge. -->
+      <div style="flex: none; text-align: center">
+        <div class="backdisc" id="backdisc"></div>
+        <span class="muted" style="font-size: 13px" id="backwho"></span>
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   <h2>Zusätzliche Bilder</h2>
@@ -91,6 +118,10 @@
   <p><button class="primary" type="submit">PDF erzeugen</button>
      <a href="/tonies" style="margin-left:12px">Zu den Tonies</a></p>
 </form>
+
+{% if models %}
+<script type="application/json" id="backdata">{{ backs | tojson }}</script>
+{% endif %}
 
 <script>
   const perPage = {{ per_page }};
@@ -165,6 +196,66 @@
     document.getElementById('extrapicked').textContent =
       extra.files.length ? `${extra.files.length} Bilder` : 'nichts ausgewählt';
   });
+
+  // The text side. The server already decided which lines fit, so this only
+  // has to draw them: a preview that re-decided would promise what the sheet
+  // does not deliver.
+  const backdata = document.getElementById('backdata');
+  if (backdata) {
+    const backs = JSON.parse(backdata.textContent);
+    const disc = document.getElementById('backdisc');
+    const who = document.getElementById('backwho');
+    const wantback = document.getElementById('wantback');
+    const wanttracks = document.getElementById('wanttracks');
+    // The circle is drawn at this many pixels for a sticker of this many
+    // millimetres, so a point on screen covers what it covers on paper.
+    const DISC_PX = 240;
+    const PX_PER_PT = DISC_PX / ({{ diameter_mm }} / 25.4 * 72);
+
+    function drawBack() {
+      const row = rows.find(row => countOf(row) > 0) || rows[0];
+      const model = row && row.querySelector('input[name=models]').value;
+      const back = model && backs[model];
+      if (!back) { disc.style.display = 'none'; return; }
+
+      disc.style.display = '';
+      // The same white the server mixes into the cover before printing, laid
+      // over the picture as a flat sheet rather than guessed at.
+      const fade = `rgba(255, 255, 255, {{ back_fade }})`;
+      disc.style.backgroundImage =
+        `linear-gradient(${fade}, ${fade}), url("${row.dataset.src}")`;
+      disc.innerHTML = '';
+      for (const line of back[wanttracks.checked ? 'tracks' : 'plain']) {
+        const span = document.createElement('span');
+        span.textContent = line.text;
+        // The blank line between the heading and the list is a gap, not a
+        // character: an empty span needs its height stated.
+        if (!line.text) span.style.height = `${line.size * PX_PER_PT * 1.22}px`;
+        span.style.fontSize = `${line.size * PX_PER_PT}px`;
+        span.style.lineHeight = '1.22';
+        if (line.bold) span.style.fontWeight = '600';
+        disc.appendChild(span);
+      }
+      who.textContent = row.querySelector('strong').textContent;
+    }
+
+    function showBack() {
+      const on = wantback.checked;
+      disc.parentElement.style.opacity = on ? '1' : '.35';
+      wanttracks.disabled = !on;
+      if (on) drawBack();
+    }
+
+    wantback.addEventListener('change', showBack);
+    wanttracks.addEventListener('change', drawBack);
+    for (const row of rows) {
+      row.querySelector('.want').addEventListener('change', () => {
+        if (wantback.checked) drawBack();
+      });
+    }
+    drawBack();
+    showBack();
+  }
 
   for (const row of rows) setCount(row, countOf(row));
   refresh();

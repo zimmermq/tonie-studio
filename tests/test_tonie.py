@@ -15,6 +15,7 @@ from tonie_studio.tonie import (
     publish_stream,
     remove_model,
     update_model,
+    year_of,
 )
 
 
@@ -347,3 +348,36 @@ class TestPublishChecksTheAudioIsThere:
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H", tracks=[])
 
         assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == encoded.source
+
+
+class TestReleaseYear:
+    """The year goes into the catalogue's own `release` field, not a new one.
+
+    Over six and a half thousand official models use exactly twelve fields, and
+    `release` is the one that carries a date. Inventing a field would mean
+    hoping teddyCloud keeps it.
+    """
+
+    def test_records_the_year_a_tag_reported(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Lichterkinder", episode="Schlaflieder",
+                tracks=["Eins"], year="2021")
+
+        assert year_of(find_model(teddycloud, "TS-0001")) == 2021
+
+    def test_reads_a_year_out_of_a_full_date(self, teddycloud, encoded):
+        # An audio tag's date field is often a whole date, not just a year.
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"],
+                year="2019-03-01")
+
+        assert year_of(find_model(teddycloud, "TS-0001")) == 2019
+
+    def test_leaves_the_field_out_when_the_year_makes_no_sense(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"],
+                year="unbekannt")
+
+        assert "release" not in find_model(teddycloud, "TS-0001")
+
+    def test_a_model_without_a_date_has_no_year(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"])
+
+        assert year_of(find_model(teddycloud, "TS-0001")) is None

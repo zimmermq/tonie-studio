@@ -23,7 +23,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -36,13 +36,15 @@ from .boxstate import BoxWatcher
 from .encode import (EncodeError, delete_taf, encode_files, library_path, list_tafs,
                      remove_orphaned_staging, taf_exists)
 from .jobs import JobRunner, JobState
+from .runtimes import forget, minutes, playing_times, remember
 from .settings import Settings
-from .sheet import FILL, FIT, PER_PAGE, Sticker, build_sheet
+from .sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, PIXELS, Back, Sticker,
+                    back_lines, build_sheet, render_square)
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .thumbnails import DEFAULT_SIZE, crop, thumbnail
 from .tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model,
                     find_model_by_audio, list_tags, publish, publish_stream, remove_model,
-                    update_model)
+                    update_model, year_of)
 from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
@@ -278,7 +280,10 @@ def create_app(
             # person approved rather than the ones that were guessed.
             return {"encode": result, "series": series, "episode": episode,
                     "tracks": names, "cover": cover,
-                    "crop": {"zoom": cover_zoom, "x": cover_x, "y": cover_y}}
+                    "crop": {"zoom": cover_zoom, "x": cover_x, "y": cover_y},
+                    # Both only for the printed text side; nothing plays
+                    # differently because of them.
+                    "year": album.year, "seconds": playing_time}
 
         return RedirectResponse(f"/job/{jobs.submit('encode', target, work)}", 303)
 
@@ -323,7 +328,7 @@ def create_app(
     ):
         result = _finished_result(jobs, job_id)
         try:
-            publish(
+            model_id = publish(
                 client(),
                 ruid,
                 result["encode"],
@@ -332,9 +337,11 @@ def create_app(
                 tracks=result["tracks"],
                 cover=_cropped_cover(result),
                 category=category,
+                year=result.get("year"),
             )
         except TonieError as error:
             raise HTTPException(400, str(error)) from error
+        remember(settings.data_dir, model_id, result.get("seconds"))
         return RedirectResponse("/tonies", 303)
 
     @app.get("/tonies", response_class=HTMLResponse)
@@ -394,6 +401,7 @@ def create_app(
         if tag is None or not tag.model:
             raise HTTPException(404, "That tag has no model to remove.")
         remove_model(connection, tag.model, ruid=ruid)
+        forget(settings.data_dir, tag.model)
         return RedirectResponse("/tonies", 303)
 
     @app.get("/api/box")
@@ -427,12 +435,16 @@ def create_app(
         })
 
     @app.get("/cover/custom/{name}")
-    def custom_cover(name: str):
-        """Pass a cover through from teddyCloud.
+    def custom_cover(name: str, mode: Optional[str] = None, size: int = 0):
+        """Pass a cover through from teddyCloud, optionally as the sticker.
 
         The browser can reach this app but not teddyCloud's own address, which
         sits behind the gateway under a different name, so linking straight to
         the image would give a broken picture.
+
+        With a ``mode`` the picture comes back the way the sheet would print it
+        in that mode, so a preview on screen and the sticker in hand are the
+        same rendering rather than two that merely resemble each other.
         """
         if "/" in name or ".." in name:
             raise HTTPException(400, "Not an image name.")
@@ -440,6 +452,16 @@ def create_app(
             data = client().fetch(f"/custom_img/{name}")
         except TeddyCloudError as error:
             raise HTTPException(502, str(error)) from error
+
+        if mode in (FILL, FIT):
+            try:
+                data = render_square(data, mode, size=max(64, min(size or PIXELS, PIXELS)))
+            except (OSError, ValueError) as error:
+                # A cover teddyCloud holds but Pillow cannot read still has to
+                # reach the page; the untouched bytes may well render there.
+                log.debug("cannot render %s as a sticker: %s", name, error)
+            else:
+                return Response(data, media_type="image/jpeg")
         return Response(data, media_type=mimetypes.guess_type(name)[0] or "image/jpeg")
 
     @app.get("/album/{identifier}/crop")
@@ -519,12 +541,16 @@ def create_app(
         Coming from a tonie that was just recorded, hunting for it again in
         this list is the step that was missing.
         """
+        models = _printable_models(client())
         return templates.TemplateResponse(request, "sheet.html", {
-            "models": _printable_models(client()),
+            "models": models,
             "per_page": PER_PAGE,
             "fill": FILL,
             "fit": FIT,
             "preset": model,
+            "backs": _back_preview(models, playing_times(settings.data_dir)),
+            "back_fade": BACK_FADE,
+            "diameter_mm": DIAMETER_MM,
         })
 
     @app.post("/sheet")
@@ -534,11 +560,15 @@ def create_app(
         modes: List[str] = Form(default=[]),
         files: List[UploadFile] = Form(default=[]),
         upload_mode: str = Form(FILL),
+        back: str = Form(""),
+        back_tracks: str = Form(""),
     ):
         # models, counts and modes are three parallel lists in row order, the
         # same shape the album page uses for its tracks.
         connection = client()
         stickers = []
+        described = {entry["model"]: entry for entry in _printable_models(connection)}
+        times = playing_times(settings.data_dir)
 
         for position, model in enumerate(models):
             count = counts[position] if position < len(counts) else 0
@@ -550,6 +580,14 @@ def create_app(
             mode = modes[position] if position < len(modes) else FILL
             stickers.append(Sticker(image=picture, count=count, label=model,
                                     mode=FIT if mode == FIT else FILL))
+            # One text side per copy, right after it, so a sheet cut up in
+            # order leaves each pair together.
+            if back and model in described:
+                description = _back_of(described[model], times.get(model))
+                if not back_tracks:
+                    description.tracks = ()
+                stickers.append(Sticker(image=picture, count=count, label=f"{model} back",
+                                        back=description))
 
         for upload_file in files:
             if _is_image_name(upload_file.filename):
@@ -610,8 +648,51 @@ def _printable_models(client: TeddyCloudClient) -> List[Dict]:
             "series": model.get("series", ""),
             "episodes": model.get("episodes", ""),
             "image": picture[len(CUSTOM_IMG_PREFIX):],
+            "tracks": [str(track) for track in model.get("tracks") or []],
+            "year": year_of(model),
         })
     return printable
+
+
+def _back_of(model: Dict, seconds: Optional[int] = None) -> Back:
+    """What the text side of one model says.
+
+    The episode names the album and the series names who made it, which is the
+    order they are looked for in: a shelf of tonies is searched by album.
+    Facts the model does not carry are left out rather than guessed at, so a
+    tonie recorded before the app stored them simply says less.
+    """
+    tracks = model.get("tracks") or []
+    facts = [
+        str(model.get("year") or ""),
+        f"{len(tracks)} Tracks" if tracks else "",
+        f"{minutes(seconds)} Minuten" if minutes(seconds) else "",
+    ]
+    notes = [" - ".join(fact for fact in facts if fact), model.get("model", "")]
+    return Back(
+        title=model.get("episodes") or model.get("series") or model.get("model", ""),
+        series=model.get("series", ""),
+        notes=[note for note in notes if note],
+        tracks=tracks,
+    )
+
+
+def _back_preview(models: Sequence[Dict], times: Dict[str, int]
+                  ) -> Dict[str, Dict[str, List[Dict]]]:
+    """The laid-out text side of every model, for the page to draw.
+
+    The lines come from the same call the sheet makes, so what the preview
+    shows is what gets printed; only the font differs.
+    """
+    preview = {}
+    for model in models:
+        back = _back_of(model, times.get(model["model"]))
+        preview[model["model"]] = {
+            variant: [{"text": line.text, "size": line.size, "bold": line.bold}
+                      for line in back_lines(back, with_tracks=with_tracks)]
+            for variant, with_tracks in (("tracks", True), ("plain", False))
+        }
+    return preview
 
 
 def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:

@@ -5,6 +5,7 @@ runs: it uploads, encodes and cleans up against the in-memory server, and the
 test can look at what arrived.
 """
 
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -42,7 +43,11 @@ def archive(tmp_path):
 def _write_jpeg(path, size=(600, 600), colour=(10, 120, 200)):
     from PIL import Image
 
-    Image.new("RGB", size, colour).save(path, format="JPEG")
+    # Marked in the corner, not flat: cropping and blurring both leave a single
+    # colour untouched, so a flat cover would hide whether either happened.
+    picture = Image.new("RGB", size, colour)
+    picture.paste(Image.new("RGB", (size[0] // 6, size[1] // 6), (240, 200, 20)), (0, 0))
+    picture.save(path, format="JPEG")
     return path
 
 
@@ -639,6 +644,25 @@ class TestSheetPage:
     def test_refuses_a_name_that_climbs_out_of_the_image_folder(self, client):
         assert client.get("/cover/custom/..%2Fconfig").status_code in (400, 404)
 
+    def test_serves_the_cover_the_way_the_chosen_mode_prints_it(self, client, runner, teddycloud):
+        # Pointing at "ganzes Cover" and being shown the edge to edge version
+        # answers a question nobody asked, so each mode renders its own picture.
+        name = _publish(client, runner, teddycloud)
+
+        fill = client.get(f"/cover/custom/{name}?mode=fill&size=128")
+        fit = client.get(f"/cover/custom/{name}?mode=fit&size=128")
+
+        assert fill.status_code == fit.status_code == 200
+        assert fill.content != fit.content
+
+    def test_an_unknown_mode_still_gives_the_cover(self, client, runner, teddycloud):
+        name = _publish(client, runner, teddycloud)
+
+        response = client.get(f"/cover/custom/{name}?mode=nonsense")
+
+        assert response.status_code == 200
+        assert response.content.startswith(b"\xff\xd8\xff")
+
 
 class TestSheet:
     def test_builds_a_pdf_for_the_chosen_count(self, client, runner, teddycloud):
@@ -652,6 +676,80 @@ class TestSheet:
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert response.content.startswith(b"%PDF")
+
+    def test_the_back_side_doubles_what_goes_on_the_sheet(self, client, runner, teddycloud):
+        # One text side per copy, so four tonies come off the sheet as four
+        # pairs rather than four pictures and a guess.
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+
+        with _captured_sheet() as asked:
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["2"], "back": "on"})
+
+        stickers = asked[-1]
+        assert [sticker.count for sticker in stickers] == [2, 2]
+        assert [sticker.back is None for sticker in stickers] == [True, False]
+
+    def test_without_the_box_ticked_only_the_cover_is_printed(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+
+        with _captured_sheet() as asked:
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"]})
+
+        assert all(sticker.back is None for sticker in asked[-1])
+
+    def test_the_back_can_leave_the_track_names_off(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+
+        with _captured_sheet() as asked:
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"],
+                                        "back": "on", "back_tracks": "on"})
+
+        assert not asked[0][1].back.tracks  # the box is only ticked the second time
+        assert asked[1][1].back.tracks
+
+    def test_the_back_carries_the_year_and_the_playing_time(self, client, runner,
+                                                            teddycloud, settings):
+        # Both only exist because the app put them there: the year in the
+        # catalogue's own release field, the playing time beside the app's data
+        # because the format has nowhere for it.
+        from tonie_studio.runtimes import remember
+
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+        model = next(entry for entry in teddycloud.custom_models
+                     if entry["model"] == "TS-0001")
+        model["release"] = "1609459200"  # 2021-01-01
+        remember(settings.data_dir, "TS-0001", 3960)
+
+        with _captured_sheet() as asked:
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
+
+        notes = " ".join(asked[-1][1].back.notes)
+        assert "2021" in notes
+        assert "66 Minuten" in notes
+
+    def test_a_tonie_recorded_before_says_less_rather_than_guessing(self, client, runner,
+                                                                    teddycloud):
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+
+        with _captured_sheet() as asked:
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
+
+        notes = " ".join(asked[-1][1].back.notes)
+        assert "Minuten" not in notes
+        assert "TS-0001" in notes
+
+    def test_the_page_offers_the_back_side(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert 'name="back"' in page and "Rückseite" in page
 
     def test_takes_an_uploaded_image_as_well(self, client):
         response = client.post(
@@ -1055,3 +1153,22 @@ class TestAssignDoesNotLoop:
 
         assert "alreadyTried" in page
         assert "kennt ihn nicht" in page
+
+
+@contextmanager
+def _captured_sheet():
+    """Collect the stickers the route asks for, without rendering a PDF.
+
+    The route answers with the file it just wrote, so the stand-in has to leave
+    one behind or the response fails for a reason that has nothing to do with
+    what is being tested.
+    """
+    asked = []
+
+    def instead(stickers, target):
+        asked.append(list(stickers))
+        target.write_bytes(b"%PDF-1.4\n")
+        return []
+
+    with patch("tonie_studio.web.build_sheet", side_effect=instead):
+        yield asked

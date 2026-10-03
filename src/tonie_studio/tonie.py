@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Union
 
@@ -121,6 +123,7 @@ def publish(
     model_id: Optional[str] = None,
     language: str = DEFAULT_LANGUAGE,
     category: str = DEFAULT_CATEGORY,
+    year: Optional[Union[int, str]] = None,
 ) -> str:
     """Give the tag its audio and its identity, and return the model id used."""
     if not encoded.source:
@@ -139,7 +142,7 @@ def publish(
         )
 
     model_id = model_id or next_model_id(client)
-    model = _model(model_id, series, episode, tracks, encoded, language, category)
+    model = _model(model_id, series, episode, tracks, encoded, language, category, year)
 
     if cover is not None:
         model["pic"] = _upload_cover(client, model_id, cover, cover_name)
@@ -293,6 +296,7 @@ def _model(
     encoded: EncodeResult,
     language: str,
     category: str,
+    year: Optional[Union[int, str]] = None,
 ) -> Dict[str, Any]:
     """The tonies.custom.json entry for this taf."""
     model: Dict[str, Any] = {
@@ -304,6 +308,10 @@ def _model(
         "category": category if category in CATEGORIES else DEFAULT_CATEGORY,
     }
 
+    released = _released(year)
+    if released:
+        model["release"] = released
+
     # These two are what lets teddyCloud recognise the audio on its own: it
     # matches a taf's header against every known model, so a tag playing this
     # taf picks the model up even if nobody set tonie_model on it.
@@ -312,6 +320,38 @@ def _model(
         model["hash"] = [encoded.sha1.upper()]
 
     return model
+
+
+def _released(year: Optional[Union[int, str]]) -> Optional[str]:
+    """A release year as the seconds-since-1970 string the catalogue uses.
+
+    The year arrives from an audio tag or a folder name, so it can be "2017",
+    "2017-03-01" or something that is not a year at all; anything but a plausible
+    four digit year is dropped rather than turned into a wrong date.
+
+    Only the year is ever known, so the day is the first of January. The
+    official catalogue carries real release dates in this same field, which is
+    why nothing may read more than a year back out of it.
+    """
+    match = re.match(r"\s*(\d{4})", str(year or ""))
+    if not match:
+        return None
+    found = int(match.group(1))
+    if not 1900 <= found <= 2200:
+        return None
+    return str(int(datetime(found, 1, 1, tzinfo=timezone.utc).timestamp()))
+
+
+def year_of(model: Dict[str, Any]) -> Optional[int]:
+    """The release year of a model, or None when it carries no date."""
+    try:
+        stamp = int(str(model.get("release") or "").strip())
+    except ValueError:
+        return None
+    try:
+        return datetime.fromtimestamp(stamp, timezone.utc).year
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _upload_cover(

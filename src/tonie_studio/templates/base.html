@@ -143,6 +143,18 @@
   #peek img { display: block; width: 260px; height: 260px; object-fit: cover; }
   @media (hover: none) { #peek { display: none !important; } }
 
+  /* The text side at print size: a round window with the cover faded behind
+     it, so the lines are judged against the artwork they will sit on. */
+  .backdisc {
+    width: 240px; height: 240px; border-radius: 50%; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center;
+    background-color: #fff; background-size: cover; background-position: center;
+    box-shadow: 0 0 0 1px var(--line); color: #1a1a1a;
+    box-sizing: border-box; padding: 10px;
+  }
+  .backdisc > span { display: block; max-width: 100%; }
+
   .sheethead { padding: 0 12px 6px; font-size: 13px; align-items: center; }
   /* Always laid out, only sometimes visible: appearing would shove the
      circles sideways every time a row is ticked. */
@@ -232,22 +244,42 @@
       return src.includes('size=') ? src.replace(/size=\d+/, 'size=520') : src;
     }
 
-    // Two shapes of row carry a cover: a thumbnail with a src, and the sheet's
-    // circles, which are drawn from the row's own cover and have no image
-    // element of their own.
+    // Every cover in the application is served from a path ending in /cover,
+    // either the archive's or a model's. Recognising the picture rather than
+    // the page it sits on means a new page gets this without knowing about it.
+    const COVER_URL = /\/cover[/?]/;
+
+    // Two shapes carry a cover: an image with a src, and the sheet's circles,
+    // which are drawn from the row's own cover and have no image element.
     function coverOf(target) {
-      const thumb = target.closest('.list .album img');
-      if (thumb) return { anchor: thumb, src: thumb.src };
+      const thumb = target.closest('img');
+      if (thumb && COVER_URL.test(thumb.getAttribute('src') || '')) {
+        return { anchor: thumb, src: thumb.src, round: false };
+      }
       // The circle only, not the whole row: ticking a row is done with the
       // pointer on it, and a picture jumping out at every tick is noise.
       const circle = target.closest('.list .album[data-src] .preview');
-      return circle ? { anchor: circle, src: circle.closest('[data-src]').dataset.src } : null;
+      if (!circle) return null;
+      // Each circle stands for one way of meeting the rim, so the large
+      // picture has to be that one - pointing at "ganzes Cover" and being
+      // shown the edge-to-edge version answers a question nobody asked.
+      const mode = circle.closest('.mode');
+      const chosen = mode && mode.querySelector('input[type=radio]');
+      const src = circle.closest('[data-src]').dataset.src;
+      return {
+        anchor: circle,
+        src: chosen ? `${src}?mode=${encodeURIComponent(chosen.value)}&size=520` : src,
+        // A sticker is cut round, and the whole point of the choice is what
+        // the rim does to the artwork.
+        round: true,
+      };
     }
 
     document.addEventListener('mouseover', event => {
       const cover = coverOf(event.target);
       if (!cover) return;
       image.src = bigger(cover.src);
+      image.style.borderRadius = peek.style.borderRadius = cover.round ? '50%' : '';
       peek.style.display = 'block';
       place(cover.anchor);
     });
@@ -257,21 +289,31 @@
     });
 
     function place(anchor) {
-      // Beside the column, never on top of it: a preview that covers the list
-      // hides the very row one is pointing at. It takes whichever margin is
-      // wider and shrinks to fit it rather than moving over the column.
+      // Never over the picture being pointed at, which is the one thing the
+      // preview exists to show. Beside the column when its margin is wide
+      // enough, otherwise against whichever window edge is further from the
+      // picture, accepting that it covers something else on the way.
       const box = anchor.getBoundingClientRect();
       const column = document.querySelector('main').getBoundingClientRect();
       const gapRight = window.innerWidth - column.right - 24;
       const gapLeft = column.left - 24;
-      const gap = Math.max(gapRight, gapLeft);
-      const size = Math.min(300, gap);
+      const beside = Math.max(gapRight, gapLeft);
+      const size = Math.min(300, Math.max(beside, window.innerWidth / 3));
       if (size < 120) {  // a preview this small says nothing a thumbnail does not
         peek.style.display = 'none';
         return;
       }
+
+      let left;
+      if (beside >= size) {
+        left = gapRight >= gapLeft ? column.right + 16 : column.left - size - 16;
+      } else {
+        const toTheRight = box.left + box.width / 2 < window.innerWidth / 2;
+        left = toTheRight ? window.innerWidth - size - 16 : 16;
+      }
+
       image.style.width = image.style.height = `${size}px`;
-      peek.style.left = `${gapRight >= gapLeft ? column.right + 16 : column.left - size - 16}px`;
+      peek.style.left = `${left}px`;
       peek.style.top = `${Math.max(12, Math.min(box.top + box.height / 2 - size / 2,
                                                 window.innerHeight - size - 12))}px`;
       peek.style.display = 'block';

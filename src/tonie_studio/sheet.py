@@ -27,12 +27,13 @@ import io
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 from PIL import Image, ImageFilter, UnidentifiedImageError
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 log = logging.getLogger(__name__)
@@ -62,9 +63,51 @@ FIT = "fit"
 # A square fits inside a circle at 1/sqrt(2) of its diameter.
 FIT_FACTOR = 0.707
 
+# How far text stays clear of the cut line. Scissors wander by about a
+# millimetre and a clipped letter is worse than a shorter line.
+TEXT_SAFE_MM = 3
+
+# The text side, in points. The title carries the weight; the track list is
+# small on purpose, because its job is to be checked, not read across a room.
+TITLE_PT = 8.0
+SERIES_PT = 6.5
+NOTE_PT = 6.0
+TRACK_PT = 5.5
+LEADING = 1.22
+
+# How much white is mixed into the cover behind the text. Below this the
+# artwork swallows the letters; above it the pair stops looking related.
+BACK_FADE = 0.78
+
 # Barely visible, but enough to cut along.
 CUT_LINE_GREY = 0.75
 CUT_LINE_WIDTH = 0.25
+
+
+@dataclass
+class Back:
+    """What the text side of a tonie says.
+
+    Only what a published model actually holds: it knows its series, its
+    episode and its track names, and nothing about the year the album came out
+    or how long it runs.
+    """
+
+    title: str
+    series: str = ""
+    # Short facts under the name, one per line: the year and playing time, then
+    # the model number that finds the tonie again in the app.
+    notes: Sequence[str] = ()
+    tracks: Sequence[str] = ()
+
+
+@dataclass(frozen=True)
+class TextLine:
+    """One laid-out line, as both the sheet and the screen have to show it."""
+
+    text: str
+    size: float
+    bold: bool = False
 
 
 @dataclass
@@ -76,6 +119,9 @@ class Sticker:
     mode: str = FILL
     # Only used to name the motif in a message about a picture that failed.
     label: str = ""
+    # Set for the text side: the cover is then faded to a watermark and these
+    # words are printed over it.
+    back: Optional[Back] = None
 
 
 @dataclass(frozen=True)
@@ -120,19 +166,21 @@ def build_sheet(stickers: Sequence[Sticker], target: Path) -> List[str]:
     the other stickers are still worth printing, and the caller is told which
     one to look at.
     """
-    prepared: List[ImageReader] = []
+    prepared: List[Tuple[ImageReader, List[TextLine]]] = []
     skipped: List[str] = []
 
     for sticker in stickers:
         if sticker.count < 1:
             continue
         try:
-            square = _square(sticker.image, sticker.mode)
+            square = _square(sticker.image, sticker.mode,
+                             fade=BACK_FADE if sticker.back else 0.0)
         except (OSError, UnidentifiedImageError, ValueError) as error:
             log.warning("skipping cover %r: %s", sticker.label, error)
             skipped.append(sticker.label or "unnamed")
             continue
-        prepared.extend([square] * sticker.count)
+        lines = back_lines(sticker.back) if sticker.back else []
+        prepared.extend([(square, lines)] * sticker.count)
 
     if not prepared:
         raise ValueError("there is no cover to print")
@@ -141,8 +189,109 @@ def build_sheet(stickers: Sequence[Sticker], target: Path) -> List[str]:
     return skipped
 
 
-def _square(source: Union[bytes, Path], mode: str = FILL) -> ImageReader:
-    """Render a cover into the square the circle is drawn over."""
+def text_width_mm() -> float:
+    """How wide a line on the text side may be.
+
+    The largest square that fits in a circle has a side of 1/sqrt(2) of its
+    diameter, which is the same arithmetic the FIT mode uses for the cover. A
+    rectangle wastes a little of the circle and never needs the line length to
+    depend on how far up the page the line happens to land.
+    """
+    return 2 * (DIAMETER_MM / 2 - TEXT_SAFE_MM) * FIT_FACTOR
+
+
+def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
+    """Lay the text side out, deciding here what fits and what is dropped.
+
+    The sheet and the page on screen both call this, so the words a preview
+    shows are the words that get printed. A track list longer than the circle
+    ends in a count of what was left off rather than being cut mid-word, which
+    would read as a rendering fault instead of a deliberate omission.
+    """
+    width = text_width_mm() * mm
+    height = width
+
+    head: List[TextLine] = []
+    head += [TextLine(line, TITLE_PT, bold=True)
+             for line in _wrap(back.title, TITLE_PT, True, width)]
+    if back.series:
+        head += [TextLine(line, SERIES_PT)
+                 for line in _wrap(back.series, SERIES_PT, False, width)]
+    for note in back.notes:
+        head += [TextLine(line, NOTE_PT) for line in _wrap(note, NOTE_PT, False, width)]
+
+    if not with_tracks or not back.tracks:
+        return head
+
+    # One line per track, each shortened to the width rather than wrapped: a
+    # track running over two lines makes the list unreadable as a list.
+    numbered = [f"{index}. {track}" for index, track in enumerate(back.tracks, 1)]
+    spacer = TextLine("", NOTE_PT * 0.5)
+
+    for keep in range(len(numbered), -1, -1):
+        lines = list(head) + [spacer]
+        lines += [TextLine(_shorten(text, TRACK_PT, width), TRACK_PT)
+                  for text in numbered[:keep]]
+        left = len(numbered) - keep
+        if left:
+            lines.append(TextLine(f"und {left} weitere", TRACK_PT))
+        if _stack_height(lines) <= height:
+            return lines if keep else head
+
+    return head
+
+
+def _wrap(text: str, size: float, bold: bool, width: float) -> List[str]:
+    """Break ``text`` into lines no wider than ``width``."""
+    words = (text or "").split()
+    if not words:
+        return []
+    lines, current = [], words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if _width_of(candidate, size, bold) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    # A single word longer than the circle still has to stop somewhere.
+    return [line if _width_of(line, size, bold) <= width
+            else _shorten(line, size, width) for line in lines]
+
+
+def _shorten(text: str, size: float, width: float) -> str:
+    if _width_of(text, size, False) <= width:
+        return text
+    while text and _width_of(text + "...", size, False) > width:
+        text = text[:-1]
+    return text.rstrip() + "..."
+
+
+def _width_of(text: str, size: float, bold: bool = False) -> float:
+    return pdfmetrics.stringWidth(text, _font(bold), size)
+
+
+def _font(bold: bool) -> str:
+    return "Helvetica-Bold" if bold else "Helvetica"
+
+
+def _stack_height(lines: Sequence[TextLine]) -> float:
+    return sum(line.size * LEADING for line in lines)
+
+
+def render_square(source: Union[bytes, Path], mode: str = FILL,
+                  size: int = PIXELS, fade: float = 0.0) -> bytes:
+    """One sticker's picture as JPEG, exactly as the sheet prints it.
+
+    The screen shows this too, so that choosing between the modes is a matter
+    of looking at what will come out of the printer rather than at a separate
+    approximation of it.
+
+    ``fade`` mixes that share of white into the result, which is how the text
+    side keeps the cover as a watermark without the letters disappearing into
+    the artwork.
+    """
     handle = io.BytesIO(source) if isinstance(source, bytes) else source
     with Image.open(handle) as image:
         image.load()
@@ -155,15 +304,23 @@ def _square(source: Union[bytes, Path], mode: str = FILL) -> ImageReader:
         (height - edge) // 2,
         (width - edge) // 2 + edge,
         (height - edge) // 2 + edge,
-    )).resize((PIXELS, PIXELS), Image.LANCZOS)
+    )).resize((size, size), Image.LANCZOS)
 
     if mode == FIT:
         picture = _inset(picture)
 
+    if fade:
+        picture = Image.blend(picture, Image.new("RGB", picture.size, (255, 255, 255)),
+                              min(max(fade, 0.0), 1.0))
+
     buffer = io.BytesIO()
     picture.save(buffer, format="JPEG", quality=92)
-    buffer.seek(0)
-    return ImageReader(buffer)
+    return buffer.getvalue()
+
+
+def _square(source: Union[bytes, Path], mode: str = FILL, fade: float = 0.0) -> ImageReader:
+    """Render a cover into the square the circle is drawn over."""
+    return ImageReader(io.BytesIO(render_square(source, mode, fade=fade)))
 
 
 def _inset(picture: Image.Image) -> Image.Image:
@@ -174,15 +331,16 @@ def _inset(picture: Image.Image) -> Image.Image:
     cover and hides the ring it leaves behind under an enlarged, blurred copy,
     so the sticker still reads as one picture rather than a badge.
     """
-    background = picture.filter(ImageFilter.GaussianBlur(PIXELS // 25))
-    inset = round(PIXELS * FIT_FACTOR)
+    edge = picture.size[0]
+    background = picture.filter(ImageFilter.GaussianBlur(max(1, edge // 25)))
+    inset = round(edge * FIT_FACTOR)
     foreground = picture.resize((inset, inset), Image.LANCZOS)
-    offset = (PIXELS - inset) // 2
+    offset = (edge - inset) // 2
     background.paste(foreground, (offset, offset))
     return background
 
 
-def _draw(images: Sequence[ImageReader], target: Path) -> None:
+def _draw(images: Sequence[Tuple[ImageReader, Sequence[TextLine]]], target: Path) -> None:
     sheet = canvas.Canvas(str(target), pagesize=A4)
     sheet.setTitle("Traveltonies")
 
@@ -191,7 +349,7 @@ def _draw(images: Sequence[ImageReader], target: Path) -> None:
     positions = sticker_positions(len(images))
     page = 0
 
-    for image, position in zip(images, positions):
+    for (image, lines), position in zip(images, positions):
         if position.page != page:
             sheet.showPage()
             page = position.page
@@ -211,8 +369,28 @@ def _draw(images: Sequence[ImageReader], target: Path) -> None:
         )
         sheet.restoreState()
 
+        if lines:
+            _draw_text(sheet, lines, position)
+
         sheet.setStrokeGray(CUT_LINE_GREY)
         sheet.setLineWidth(CUT_LINE_WIDTH)
         sheet.circle(position.x, position.y, radius, stroke=1, fill=0)
 
     sheet.save()
+
+
+def _draw_text(sheet: canvas.Canvas, lines: Sequence[TextLine], position: Position) -> None:
+    """Centre the laid-out lines on the sticker.
+
+    Drawn as PDF text rather than rendered into the picture, so 5.5 pt stays
+    sharp at whatever resolution the printer works at.
+    """
+    sheet.setFillGray(0.1)
+    # The stack is centred on the circle, so the first baseline sits half the
+    # stack above it, less the ascent of that first line.
+    cursor = position.y + _stack_height(lines) / 2
+    for line in lines:
+        cursor -= line.size * LEADING
+        if line.text:
+            sheet.setFont(_font(line.bold), line.size)
+            sheet.drawCentredString(position.x, cursor, line.text)
