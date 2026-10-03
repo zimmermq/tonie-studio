@@ -31,6 +31,21 @@
     padding: 12px 20px; display: flex; gap: 16px; align-items: baseline;
   }
   header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; }
+  .mainnav { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  .mainnav [aria-current] { font-weight: 600; }
+  .menu { position: relative; }
+  .menu summary { cursor: pointer; color: var(--accent); text-decoration: underline;
+                  list-style: none; }
+  .menu summary::-webkit-details-marker { display: none; }
+  .menu summary::after { content: " \25BE"; }
+  .menulist {
+    position: absolute; top: calc(100% + 6px); left: -12px; z-index: 20;
+    display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 6px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+  }
+  .menulist a { padding: 6px 8px; border-radius: 6px; }
+  .menulist a:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   /* Wide enough that an album title is not cut on a normal window, narrow
      enough that a line of prose stays readable. */
   main { max-width: 1200px; margin: 0 auto; padding: 20px; }
@@ -240,6 +255,7 @@
     .stackable > div { width: auto !important; }
     header { flex-wrap: wrap; gap: 10px; row-gap: 4px; }
     header a.brand { width: 100%; }
+    .mainnav { gap: 12px; }
     .boxnow { text-align: left; }
 
     /* A fixed column beside a flexible one squeezes the flexible one to
@@ -267,16 +283,38 @@
 </head>
 <body>
 <header>
+  {#- Grouped by what one is doing: making tonies is always in view, the
+      extras and the upkeep sit behind a menu each. Every entry lists the
+      path prefixes of the pages that belong to it, so a page deeper down
+      still marks where it is; the prefixes must not overlap. -#}
+  {%- set path = request.url.path %}
+  {%- set making = [("/", "nav.albums", ("/album", "/batch", "/upload", "/job", "/parts")),
+                    ("/tonies", "nav.tonies", ("/tonies",)),
+                    ("/sheet", "nav.sheet", ("/sheet",))] %}
+  {%- set menus = [("nav.extras", [("/radio", "nav.radio", ("/radio",)),
+                                   ("/podcasts", "nav.podcasts", ("/podcasts",)),
+                                   ("/listening", "nav.listening", ("/listening",))]),
+                   ("nav.upkeep", [("/library", "nav.library", ("/library",)),
+                                   ("/checkup", "nav.checkup", ("/checkup",)),
+                                   ("/backup", "nav.backup", ("/backup", "/restore"))])] %}
   <a class="brand" href="/">tonie-studio</a>
-  <a href="/">{{ t("nav.albums") }}</a>
-  <a href="/tonies">{{ t("nav.tonies") }}</a>
-  <a href="/library">{{ t("nav.library") }}</a>
-  <a href="/radio">{{ t("nav.radio") }}</a>
-  <a href="/podcasts">{{ t("nav.podcasts") }}</a>
-  <a href="/sheet">{{ t("nav.sheet") }}</a>
-  <a href="/listening">{{ t("nav.listening") }}</a>
-  <a href="/checkup">{{ t("nav.checkup") }}</a>
-  <a href="/backup">{{ t("nav.backup") }}</a>
+  <nav class="mainnav">
+    {%- for href, key, prefixes in making %}
+    <a href="{{ href }}" {% if path == href or path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
+    {%- endfor %}
+    {%- for label, entries in menus %}
+    {%- set ns = namespace(here=false) %}
+    {%- for href, key, prefixes in entries %}{% if path == href or path.startswith(prefixes) %}{% set ns.here = true %}{% endif %}{% endfor %}
+    <details class="menu">
+      <summary {% if ns.here %}aria-current="true"{% endif %}>{{ t(label) }}</summary>
+      <div class="menulist">
+        {%- for href, key, prefixes in entries %}
+        <a href="{{ href }}" {% if path == href or path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
+        {%- endfor %}
+      </div>
+    </details>
+    {%- endfor %}
+  </nav>
   <span class="boxnow muted grow truncate" id="boxnow" hidden></span>
   <span class="languages" aria-label="{{ t('nav.language') }}">
     {%- for code, name in languages %}
@@ -285,6 +323,15 @@
     {%- endfor %}
   </span>
 </header>
+<script>
+  // One menu open at a time, and a click anywhere else closes it: a details
+  // element on its own stays open until its own summary is clicked again.
+  document.addEventListener('click', event => {
+    for (const menu of document.querySelectorAll('details.menu[open]')) {
+      if (!menu.contains(event.target)) menu.open = false;
+    }
+  });
+</script>
 <main>
 {% block body %}{% endblock %}
 </main>

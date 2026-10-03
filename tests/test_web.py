@@ -2166,3 +2166,28 @@ class TestPlacingStickers:
 
         assert answer["status"] == "assigned"
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Serie/Folge 1.taf"
+
+
+class TestNavigation:
+    def test_making_tonies_is_in_view_and_the_rest_in_two_menus(self, client):
+        page = client.get("/").text
+        header = page[page.index("<header"):page.index("</header>")]
+
+        assert header.count('<details class="menu">') == 2
+        assert header.index('href="/sheet"') < header.index("<details")
+        assert all(f'href="{path}"' in header for path in
+                   ("/", "/tonies", "/sheet", "/radio", "/podcasts", "/listening",
+                    "/library", "/checkup", "/backup"))
+
+    def test_marks_the_page_and_its_menu(self, client):
+        page = client.get("/backup").text
+        header = page[page.index("<header"):page.index("</header>")]
+
+        assert '<summary aria-current="true">Pflege</summary>' in header
+        assert 'href="/backup" aria-current="page"' in header
+        assert header.count("aria-current") == 2
+
+    def test_an_album_page_counts_as_albums(self, client):
+        page = client.get(f"/album/{_album_id(client)}").text
+
+        assert 'href="/" aria-current="page"' in page
