@@ -133,12 +133,15 @@ class Position:
     y: float
 
 
-def sticker_positions(count: int) -> List[Position]:
+def sticker_positions(count: int, shift_mm: Tuple[float, float] = (0.0, 0.0)) -> List[Position]:
     """Centres for ``count`` stickers, left to right and top to bottom.
 
     The grid is centred on the page, so the margins come out the same on every
-    side and a printer's unprintable edge cannot clip a sticker.
+    side and a printer's unprintable edge cannot clip a sticker. ``shift_mm``
+    moves the whole grid right and down by that many millimetres, to cancel a
+    printer that puts everything slightly off where it was asked to.
     """
+    shift_x, shift_down = shift_mm
     page_width, page_height = A4
     pitch = (DIAMETER_MM + GAP_MM) * mm
     used_width = COLUMNS * DIAMETER_MM * mm + (COLUMNS - 1) * GAP_MM * mm
@@ -153,13 +156,15 @@ def sticker_positions(count: int) -> List[Position]:
         slot = index % PER_PAGE
         positions.append(Position(
             page=index // PER_PAGE,
-            x=left + (slot % COLUMNS) * pitch,
-            y=top - (slot // COLUMNS) * pitch,
+            x=left + (slot % COLUMNS) * pitch + shift_x * mm,
+            # PDF coordinates grow upwards, so down on paper is a smaller y.
+            y=top - (slot // COLUMNS) * pitch - shift_down * mm,
         ))
     return positions
 
 
-def build_sheet(stickers: Sequence[Sticker], target: Path) -> List[str]:
+def build_sheet(stickers: Sequence[Sticker], target: Path,
+                shift_mm: Tuple[float, float] = (0.0, 0.0)) -> List[str]:
     """Write the sheet to ``target`` and return the motifs that had to be skipped.
 
     A cover that cannot be decoded is left out rather than failing the sheet:
@@ -185,7 +190,7 @@ def build_sheet(stickers: Sequence[Sticker], target: Path) -> List[str]:
     if not prepared:
         raise ValueError("there is no cover to print")
 
-    _draw(prepared, target)
+    _draw(prepared, target, shift_mm)
     return skipped
 
 
@@ -213,12 +218,12 @@ def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
 
     head: List[TextLine] = []
     head += [TextLine(line, TITLE_PT, bold=True)
-             for line in _wrap(back.title, TITLE_PT, True, width)]
+             for line in wrap_text(back.title, TITLE_PT, True, width)]
     if back.series:
         head += [TextLine(line, SERIES_PT)
-                 for line in _wrap(back.series, SERIES_PT, False, width)]
+                 for line in wrap_text(back.series, SERIES_PT, False, width)]
     for note in back.notes:
-        head += [TextLine(line, NOTE_PT) for line in _wrap(note, NOTE_PT, False, width)]
+        head += [TextLine(line, NOTE_PT) for line in wrap_text(note, NOTE_PT, False, width)]
 
     if not with_tracks or not back.tracks:
         return head
@@ -230,7 +235,7 @@ def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
 
     for keep in range(len(numbered), -1, -1):
         lines = list(head) + [spacer]
-        lines += [TextLine(_shorten(text, TRACK_PT, width), TRACK_PT)
+        lines += [TextLine(shorten_text(text, TRACK_PT, width), TRACK_PT)
                   for text in numbered[:keep]]
         left = len(numbered) - keep
         if left:
@@ -241,7 +246,7 @@ def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
     return head
 
 
-def _wrap(text: str, size: float, bold: bool, width: float) -> List[str]:
+def wrap_text(text: str, size: float, bold: bool, width: float) -> List[str]:
     """Break ``text`` into lines no wider than ``width``."""
     words = (text or "").split()
     if not words:
@@ -249,30 +254,31 @@ def _wrap(text: str, size: float, bold: bool, width: float) -> List[str]:
     lines, current = [], words[0]
     for word in words[1:]:
         candidate = f"{current} {word}"
-        if _width_of(candidate, size, bold) <= width:
+        if text_width(candidate, size, bold) <= width:
             current = candidate
         else:
             lines.append(current)
             current = word
     lines.append(current)
     # A single word longer than the circle still has to stop somewhere.
-    return [line if _width_of(line, size, bold) <= width
-            else _shorten(line, size, width) for line in lines]
+    return [line if text_width(line, size, bold) <= width
+            else shorten_text(line, size, width, bold) for line in lines]
 
 
-def _shorten(text: str, size: float, width: float) -> str:
-    if _width_of(text, size, False) <= width:
+def shorten_text(text: str, size: float, width: float, bold: bool = False) -> str:
+    """Cut ``text`` to ``width`` and mark the cut, measured in the face it is set in."""
+    if text_width(text, size, bold) <= width:
         return text
-    while text and _width_of(text + "...", size, False) > width:
+    while text and text_width(text + "...", size, bold) > width:
         text = text[:-1]
     return text.rstrip() + "..."
 
 
-def _width_of(text: str, size: float, bold: bool = False) -> float:
-    return pdfmetrics.stringWidth(text, _font(bold), size)
+def text_width(text: str, size: float, bold: bool = False) -> float:
+    return pdfmetrics.stringWidth(text, font_name(bold), size)
 
 
-def _font(bold: bool) -> str:
+def font_name(bold: bool) -> str:
     return "Helvetica-Bold" if bold else "Helvetica"
 
 
@@ -340,13 +346,14 @@ def _inset(picture: Image.Image) -> Image.Image:
     return background
 
 
-def _draw(images: Sequence[Tuple[ImageReader, Sequence[TextLine]]], target: Path) -> None:
+def _draw(images: Sequence[Tuple[ImageReader, Sequence[TextLine]]], target: Path,
+          shift_mm: Tuple[float, float] = (0.0, 0.0)) -> None:
     sheet = canvas.Canvas(str(target), pagesize=A4)
     sheet.setTitle("Traveltonies")
 
     radius = DIAMETER_MM * mm / 2
     bleed_radius = radius + BLEED_MM * mm
-    positions = sticker_positions(len(images))
+    positions = sticker_positions(len(images), shift_mm)
     page = 0
 
     for (image, lines), position in zip(images, positions):
@@ -392,5 +399,5 @@ def _draw_text(sheet: canvas.Canvas, lines: Sequence[TextLine], position: Positi
     for line in lines:
         cursor -= line.size * LEADING
         if line.text:
-            sheet.setFont(_font(line.bold), line.size)
+            sheet.setFont(font_name(line.bold), line.size)
             sheet.drawCentredString(position.x, cursor, line.text)

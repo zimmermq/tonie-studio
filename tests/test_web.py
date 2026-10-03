@@ -776,7 +776,7 @@ class TestSheet:
         import tonie_studio.web as web
         original = web.build_sheet
         try:
-            web.build_sheet = lambda stickers, target: (
+            web.build_sheet = lambda stickers, target, shift=(0.0, 0.0): (
                 seen.extend(s.mode for s in stickers) or original(stickers, target))
             client.post("/sheet", data={
                 "models": ["TS-0001"], "counts": ["2"], "modes": ["fit"],
@@ -847,7 +847,7 @@ class TestBoxMarker:
     def test_clears_it_once_the_tonie_is_lifted(self, client, box):
         box.handle("TagValid", "E00403500EEDC9A9")
         box.handle("rtnl-raw-log2",
-                   '{"function_group":15,"function":16067,"field6":"E00403500EEDC9A9"}')
+                   '{"function_group":15,"function":16067,"field6":"0EEDC9A9E0040350"}')
 
         assert client.get("/api/box").json()["on_box"] is False
 
@@ -1165,10 +1165,599 @@ def _captured_sheet():
     """
     asked = []
 
-    def instead(stickers, target):
+    def instead(stickers, target, shift=(0.0, 0.0)):
         asked.append(list(stickers))
         target.write_bytes(b"%PDF-1.4\n")
         return []
 
     with patch("tonie_studio.web.build_sheet", side_effect=instead):
         yield asked
+
+
+class TestListeningPage:
+    """The box's events end up in the log and on the page, with names."""
+
+    def test_a_tonie_put_on_the_box_appears_as_heard(self, client, runner, teddycloud, box):
+        _publish(client, runner, teddycloud)
+        ruid = next(tag.ruid for tag in list_tags_of(teddycloud) if tag.model)
+        uid = ruid_to_uid(ruid)
+
+        box.handle("TagValid", uid)
+        box.handle("playback", "started")
+
+        page = client.get("/listening?period=7").text
+        heard = page.split("Am meisten gehört", 1)[1].split("Lange nicht", 1)[0]
+        assert "Lichterkinder" in heard
+        assert "1&times; aufgelegt" in heard
+
+    def test_a_recorded_tonie_never_put_on_is_listed_as_quiet(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/listening").text
+
+        assert "Lange nicht gehört" in page
+        assert "nie aufgelegt" in page
+
+    def test_says_since_when_it_has_been_listening(self, client, runner, teddycloud, box):
+        # Numbers without their start date read as all-time totals.
+        _publish(client, runner, teddycloud)
+        ruid = next(tag.ruid for tag in list_tags_of(teddycloud) if tag.model)
+        box.handle("TagValid", ruid_to_uid(ruid))
+
+        assert "Aufgezeichnet seit" in client.get("/listening").text
+
+    def test_an_unknown_period_falls_back_rather_than_failing(self, client):
+        assert client.get("/listening?period=forever").status_code == 200
+
+    def test_the_log_lives_on_the_data_volume(self, client, runner, teddycloud, box, settings):
+        from tonie_studio.listening import FILE_NAME
+
+        _publish(client, runner, teddycloud)
+        ruid = next(tag.ruid for tag in list_tags_of(teddycloud) if tag.model)
+        box.handle("TagValid", ruid_to_uid(ruid))
+        box.flush()
+
+        assert (settings.data_dir / FILE_NAME).exists()
+
+
+def list_tags_of(teddycloud):
+    from tonie_studio.tonie import list_tags
+
+    return list_tags(teddycloud)
+
+
+def ruid_to_uid(ruid):
+    """The reverse of ruid_from_uid, as the box would report the tag."""
+    return "".join(ruid[index:index + 2] for index in range(14, -2, -2)).upper()
+
+
+class TestCheckupPage:
+    def test_a_healthy_setup_says_so(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = True
+
+        assert "Alles in Ordnung" in client.get("/checkup").text
+
+    def test_repairs_a_garbled_name_and_nothing_else(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        model = teddycloud.custom_models[0]
+        model["series"] = "Bobo SiebenschlÃ¤fer"
+        before = {key: value for key, value in model.items() if key != "series"}
+
+        response = client.post("/checkup/fix", data={"fix": "repair_model", "target": "TS-0001"},
+                               follow_redirects=False)
+
+        repaired_model = teddycloud.custom_models[0]
+        assert response.status_code == 303
+        assert repaired_model["series"] == "Bobo Siebenschläfer"
+        assert {key: value for key, value in repaired_model.items() if key != "series"} == before
+
+    def test_switches_off_the_cloud_fallback(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        teddycloud.tag_entries[ruid]["nocloud"] = False
+
+        client.post("/checkup/fix", data={"fix": "nocloud", "target": ruid})
+
+        assert teddycloud.tag_entries[ruid]["nocloud"] is True
+
+    def test_refuses_a_repair_that_is_no_longer_due(self, client, runner, teddycloud):
+        # A page left open must not act on what it showed an hour ago.
+        _publish(client, runner, teddycloud)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = True
+        played = next(e["source"] for e in teddycloud.tag_entries.values() if e["source"])
+        path = "/" + played[len("lib://"):]
+
+        response = client.post("/checkup/fix", data={"fix": "delete_taf", "target": path},
+                               follow_redirects=False)
+
+        assert response.headers["location"] == "/checkup?stale=1"
+        assert path in teddycloud.files
+
+    def test_deletes_a_taf_nothing_plays(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        teddycloud.files["/Lichterkinder/Alt.taf"] = b"x"
+        teddycloud.taf_headers["/Lichterkinder/Alt.taf"] = {"valid": True}
+
+        client.post("/checkup/fix", data={"fix": "delete_taf", "target": "/Lichterkinder/Alt.taf"})
+
+        assert "/Lichterkinder/Alt.taf" not in teddycloud.files
+
+    def test_an_unknown_repair_is_refused(self, client):
+        response = client.post("/checkup/fix", data={"fix": "format_disk", "target": "/"},
+                               follow_redirects=False)
+
+        assert response.headers["location"] == "/checkup?stale=1"
+
+
+class TestBackupPages:
+    def test_downloads_a_backup(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        response = client.get("/backup/download")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+        assert "attachment" in response.headers["content-disposition"]
+
+    def test_a_preview_writes_nothing(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+
+        assert teddycloud.custom_models == []
+        assert "Jetzt wiederherstellen" in page
+
+    def test_confirming_restores_and_forgets_the_upload(self, client, runner, teddycloud, settings):
+        _publish(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        saved = [dict(model) for model in teddycloud.custom_models]
+        teddycloud.custom_models.clear()
+
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+        client.post(f"/restore/{token}")
+
+        assert teddycloud.custom_models == saved
+        assert not (settings.data_dir / "restore" / f"{token}.zip").exists()
+
+    def test_a_confirmation_cannot_be_replayed(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+        client.post(f"/restore/{token}")
+
+        assert client.post(f"/restore/{token}").status_code == 404
+
+    def test_refuses_a_file_that_is_not_a_backup(self, client):
+        response = client.post("/restore", files={"file": ("x.zip", b"nope", "application/zip")})
+
+        assert response.status_code == 400
+
+    def test_refuses_a_token_that_is_a_path(self, client):
+        assert client.post("/restore/..%2F..%2Fetc").status_code in (400, 404)
+
+
+class TestCopyTonie:
+    def test_a_second_sticker_plays_the_same(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        played = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        free = next(r for r, e in teddycloud.tag_entries.items() if not e["source"])
+
+        response = client.post(f"/tonies/{played}/copy", data={"target": free},
+                               follow_redirects=False)
+
+        assert response.status_code == 303
+        assert teddycloud.tag_entries[free]["source"] == teddycloud.tag_entries[played]["source"]
+
+    def test_the_page_offers_the_free_sticker(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        played = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+
+        page = client.get(f"/tonies/{played}").text
+
+        assert "Auf einen weiteren Sticker" in page and "frei - " in page
+
+
+class TestAlbumMarkers:
+    def test_an_album_made_into_a_tonie_says_so(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        assert "hat einen Tonie" in client.get("/").text
+
+    def test_deleting_the_tonie_takes_the_marker_away(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["tonie_model"])
+        # The name match would find it again; this is about the record.
+        teddycloud.custom_models[0]["episodes"] = "etwas ganz anderes"
+
+        client.post(f"/tonies/{ruid}/delete")
+
+        assert "hat einen Tonie" not in client.get("/").text
+
+    def test_nothing_is_new_on_the_first_look(self, client):
+        assert 'class="pill new"' not in client.get("/").text
+
+    def test_an_album_copied_in_later_is_new(self, client, archive):
+        client.get("/")
+        later = archive / "Lichterkinder-Schlaflieder-2021"
+        later.mkdir()
+        (later / "01-guter_mond.flac").write_bytes(b"x")
+        from tonie_studio.web import _forget_catalogue
+        _forget_catalogue()
+
+        page = client.get("/").text
+
+        assert page.count('class="pill new"') == 1
+
+    def test_the_list_works_without_teddycloud(self, settings, runner, tags, box):
+        class Offline:
+            def __getattr__(self, name):
+                def refuse(*args, **kwargs):
+                    raise TeddyCloudError("teddyCloud is away")
+                return refuse
+
+        app = create_app(settings, client_factory=Offline, runner=runner, watcher=box)
+        with TestClient(app) as offline:
+            assert offline.get("/").status_code == 200
+
+    def test_job_states_read_in_german(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/").text
+
+        assert "fertig" in page and ">done<" not in page
+
+
+class TestOverviewSheet:
+    def test_lists_the_tonies_on_stickers(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+
+        response = client.get("/sheet/overview")
+
+        assert response.status_code == 200
+        assert response.content.startswith(b"%PDF")
+
+    def test_a_model_on_no_sticker_is_left_out(self, client, runner, teddycloud):
+        from tonie_studio.web import _overview_entries
+
+        _publish(client, runner, teddycloud)
+        teddycloud.custom_models.append({"model": "TS-0009", "series": "Nirgends"})
+
+        titles = [entry.series for entry in _overview_entries(teddycloud, {})]
+
+        assert "Nirgends" not in titles
+
+    def test_nothing_to_list_is_said(self, client):
+        assert client.get("/sheet/overview").status_code == 400
+
+
+class TestCalibrationPages:
+    def test_the_calibration_sheet_downloads(self, client):
+        response = client.get("/sheet/calibration")
+
+        assert response.status_code == 200
+        assert response.content.startswith(b"%PDF")
+
+    def test_a_measurement_with_a_decimal_comma_is_understood(self, client, settings):
+        from tonie_studio.calibration import expected_first_centre, read_shift
+
+        left, top = expected_first_centre()
+        typed_left = f"{left + 1:.1f}".replace(".", ",")
+
+        client.post("/sheet/calibration", data={"left_mm": typed_left, "top_mm": f"{top:.1f}"})
+
+        assert read_shift(settings.data_dir)[0] == pytest.approx(-1.0, abs=0.06)
+
+    def test_the_stored_shift_reaches_the_sheet(self, client, runner, teddycloud, settings):
+        from tonie_studio.calibration import expected_first_centre
+
+        _publish(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = _jpeg()
+        left, top = expected_first_centre()
+        client.post("/sheet/calibration", data={"left_mm": str(left + 2), "top_mm": str(top)})
+
+        shifts = []
+
+        def instead(stickers, target, shift=(0.0, 0.0)):
+            shifts.append(shift)
+            target.write_bytes(b"%PDF")
+            return []
+
+        with patch("tonie_studio.web.build_sheet", side_effect=instead):
+            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"]})
+
+        assert shifts[-1][0] == pytest.approx(-2.0, abs=0.06)
+
+    def test_a_reset_removes_the_shift(self, client, settings):
+        from tonie_studio.calibration import expected_first_centre, read_shift
+
+        left, top = expected_first_centre()
+        client.post("/sheet/calibration", data={"left_mm": str(left + 2), "top_mm": str(top + 1)})
+
+        client.post("/sheet/calibration/reset")
+
+        assert read_shift(settings.data_dir) == pytest.approx((0.0, 0.0))
+
+    def test_nonsense_is_refused(self, client):
+        response = client.post("/sheet/calibration", data={"left_mm": "links", "top_mm": "2"})
+
+        assert response.status_code == 400
+
+
+class TestParts:
+    def _encode(self, client, **overrides):
+        data = {"series": "Lichterkinder", "episode": "Halloween",
+                "order": "1,2,3", "selected": ["1", "2", "3"],
+                "titles": ["Eins", "Zwei", "Drei"]}
+        data.update(overrides)
+        return client.post(f"/album/{_album_id(client)}/encode", data=data,
+                           follow_redirects=False)
+
+    def test_one_part_is_the_old_single_encode(self, client, runner, teddycloud):
+        job = _finish(runner, self._encode(client))
+
+        assert job.result["episode"] == "Halloween"
+
+    def test_parts_become_separate_tafs(self, client, runner, teddycloud):
+        response = self._encode(client, parts="2")
+        page = client.get(response.headers["location"]).text
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        targets = sorted(target for target, _sources in teddycloud.encoded)
+        assert len(targets) == 2
+        assert all("Teil" in target for target in targets)
+        assert "In Teilen" in page
+
+    def test_every_track_lands_in_exactly_one_part(self, client, runner, teddycloud):
+        self._encode(client, parts="2")
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        names = [name for job in runner.all() for name in job.result["tracks"]]
+        assert sorted(names) == ["Drei", "Eins", "Zwei"]
+
+    def test_too_many_tracks_for_one_taf_is_refused_with_the_reason(self, client, monkeypatch):
+        # teddyCloud would take them and quietly glue the rest onto the last
+        # chapter; the form has to stop it first.
+        import tonie_studio.parts as parts
+
+        monkeypatch.setattr(parts, "MOST_CHAPTERS", 2)
+
+        response = self._encode(client, parts="1")
+
+        assert response.status_code == 400
+        assert "Teile" in response.text
+
+    def test_a_part_already_there_asks_once_for_all_of_them(self, client, runner, teddycloud):
+        from tonie_studio.encode import library_path
+
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files[library_path("Lichterkinder", "Halloween - Teil 1 von 2")] = b"old"
+
+        page = self._encode(client, parts="2").text
+
+        assert 'name="replace" value="*"' in page
+
+
+class TestPodcastPages:
+    @pytest.fixture
+    def web(self):
+        from test_podcast import FakeWeb
+
+        return FakeWeb()
+
+    @pytest.fixture
+    def podcasts(self, settings, teddycloud, runner, tags, box, web):
+        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner,
+                         watcher=box, fetch=web)
+        with TestClient(app) as client:
+            yield client
+
+    def test_subscribing_puts_the_episodes_on_the_sticker(self, podcasts, runner, teddycloud):
+        response = podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0", "keep": "2",
+        }, follow_redirects=False)
+        job = _finish(runner, response)
+
+        assert job.error is None
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"].startswith("lib://Podcasts/")
+        assert "Kakadu" in podcasts.get("/podcasts").text
+
+    def test_a_wrong_address_is_said_on_the_form(self, podcasts, web):
+        web.feed = b"<html>kein Feed</html>"
+
+        response = podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0",
+        })
+
+        assert response.status_code == 400
+        assert "nicht lesen" in response.text
+
+    def test_a_failed_refresh_is_kept_on_the_subscription(self, podcasts, runner, teddycloud):
+        teddycloud.encode_fails = "ffmpeg died"
+
+        response = podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0",
+        }, follow_redirects=False)
+        _finish(runner, response)
+
+        assert "ffmpeg died" in podcasts.get("/podcasts").text
+
+    def test_unsubscribing_leaves_the_sticker_playing(self, podcasts, runner, teddycloud, settings):
+        from tonie_studio.podcast import load_subscriptions
+
+        _finish(runner, podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0",
+        }, follow_redirects=False))
+        subscription = load_subscriptions(settings.data_dir)[0]
+        playing = teddycloud.tag_entries["deb4ed0e500304e0"]["source"]
+
+        podcasts.post(f"/podcasts/{subscription.id}/delete")
+
+        assert load_subscriptions(settings.data_dir) == []
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == playing
+
+    def test_a_finished_podcast_job_does_not_offer_to_assign(self, podcasts, runner):
+        response = podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0",
+        }, follow_redirects=False)
+        job = _finish(runner, response)
+
+        page = podcasts.get(f"/job/{job.id}").text
+
+        assert "Zu den Podcasts" in page and "Auf einen Tonie legen" not in page
+
+
+class TestHomePageWithoutTeddyCloud:
+    def test_the_list_does_not_wait_for_a_teddycloud_that_does_not_answer(
+            self, settings, runner, tags, box):
+        # Refusing at once is the easy case; a server that never answers holds
+        # a request for the whole timeout, three times over with retries.
+        import threading
+        import time
+
+        released = threading.Event()
+
+        class Silent:
+            def custom_tonies(self):
+                released.wait(10)
+                return []
+
+            def __getattr__(self, name):
+                def refuse(*args, **kwargs):
+                    raise TeddyCloudError("away")
+                return refuse
+
+        app = create_app(settings, client_factory=Silent, runner=runner, watcher=box)
+        try:
+            with TestClient(app) as client:
+                started = time.monotonic()
+                assert client.get("/").status_code == 200
+                assert time.monotonic() - started < 2
+        finally:
+            released.set()
+
+
+class TestRestoreLimits:
+    def test_a_huge_upload_is_refused(self, client, monkeypatch):
+        import tonie_studio.backup as backup
+        import tonie_studio.web as web
+
+        monkeypatch.setattr(backup, "LARGEST_BACKUP", 1000)
+        monkeypatch.setattr(web, "LARGEST_BACKUP", 1000)
+
+        response = client.post("/restore", files={"file": ("b.zip", b"x" * 5000, "application/zip")})
+
+        assert response.status_code == 400
+
+    def test_a_backup_without_a_date_still_shows(self, client, runner, teddycloud):
+        import io
+        import json
+        import zipfile
+
+        _publish(client, runner, teddycloud)
+        original = zipfile.ZipFile(io.BytesIO(client.get("/backup/download").content))
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as rebuilt:
+            for name in original.namelist():
+                data = original.read(name)
+                if name == "manifest.json":
+                    manifest = json.loads(data)
+                    del manifest["created"]
+                    data = json.dumps(manifest).encode()
+                rebuilt.writestr(name, data)
+
+        response = client.post("/restore", files={"file": ("b.zip", buffer.getvalue(), "application/zip")})
+
+        assert response.status_code == 200
+
+
+class TestCheckupSparesWork:
+    def test_an_encoded_but_unassigned_taf_is_not_offered_for_deletion(self, client, runner):
+        job, _page = _encode_and_assign_page(client, runner)
+
+        page = client.get("/checkup").text
+
+        assert job.label not in page
+
+
+class TestSmallRefusals:
+    @pytest.mark.parametrize("typed", ["nan", "inf", "-inf"])
+    def test_a_measurement_that_is_not_a_length_is_refused(self, client, typed):
+        response = client.post("/sheet/calibration", data={"left_mm": typed, "top_mm": "50"})
+
+        assert response.status_code == 400
+
+    def test_more_parts_than_tracks_is_said_in_german(self, client):
+        response = client.post(f"/album/{_album_id(client)}/encode", data={
+            "series": "S", "episode": "E", "order": "1,2,3", "selected": ["1", "2", "3"],
+            "titles": ["a", "b", "c"], "parts": "5",
+        })
+
+        assert response.status_code == 400
+        assert "Teile" in response.text and "tracks cannot" not in response.text
+
+    def test_no_parts_at_all_is_refused_plainly(self, client):
+        response = client.post(f"/album/{_album_id(client)}/encode", data={
+            "series": "S", "episode": "E", "order": "1", "selected": ["1"],
+            "titles": ["a"], "parts": "0",
+        })
+
+        assert response.status_code == 400 and "passen nicht" not in response.text
+
+
+class TestListeningRefreshes:
+    def test_the_page_carries_the_parts_it_swaps(self, client):
+        page = client.get("/listening").text
+
+        assert 'id="live"' in page and 'id="lists"' in page
+
+    def test_asking_again_shows_a_second_listen(self, client, runner, teddycloud, box):
+        # The page refreshes by fetching itself; a second placement has to be
+        # in that answer, including the one still held back in its bundle.
+        _publish(client, runner, teddycloud)
+        ruid = next(tag.ruid for tag in list_tags_of(teddycloud) if tag.model)
+        uid = ruid_to_uid(ruid)
+        removed = ('{"function_group":15,"function":16067,"field6":"'
+                   + uid[8:] + uid[:8] + '"}')
+
+        box.handle("TagValid", uid)
+        assert "1&times; aufgelegt" in client.get("/listening?period=7").text
+
+        box.handle("rtnl-raw-log2", removed)
+        box.handle("TagValid", uid)
+
+        assert "2&times; aufgelegt" in client.get("/listening?period=7").text
+
+
+
+class TestBackupPageSizes:
+    def test_lists_the_parts_and_their_total(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        page = client.get("/backup").text
+
+        for part in ("Modelle", "Sticker", "Cover", "Spielzeiten", "Hörprotokoll", "zusammen etwa"):
+            assert part in page
+
+    def test_no_fixed_size_promise_is_left(self, client):
+        assert "Megabyte" not in client.get("/backup").text
+
+
+class TestFilesize:
+    @pytest.mark.parametrize("size, shown", [
+        (812, "812 Byte"), (340 * 1024, "340 KB"), (1_268_644, "1,2 MB"),
+    ])
+    def test_reads_like_a_person_says_it(self, size, shown):
+        from tonie_studio.web import _filesize
+
+        assert _filesize(size) == shown

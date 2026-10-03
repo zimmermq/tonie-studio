@@ -227,7 +227,7 @@ class TestBackSide:
         from reportlab.lib.units import mm
 
         from tonie_studio.sheet import (Back, LEADING, back_lines, text_width_mm,
-                                        _width_of)
+                                        text_width)
 
         back = Back(title="Tierische Tierlieder", series="Lichterkinder",
                     notes=["12 Tracks - TS-0001"],
@@ -237,7 +237,7 @@ class TestBackSide:
 
         assert sum(line.size * LEADING for line in lines) <= width
         for line in lines:
-            assert _width_of(line.text, line.size, line.bold) <= width
+            assert text_width(line.text, line.size, line.bold) <= width
 
     def test_german_names_survive_the_pdf_font(self, tmp_path):
         # The built-in PDF fonts are not Unicode: an umlaut either lands in the
@@ -294,3 +294,18 @@ class TestRenderSquare:
             # The corner is blurred background, the centre is the cover itself.
             edge = round(size * (1 - FIT_FACTOR) / 2)
             assert edge > 1
+
+
+class TestShortening:
+    def test_a_bold_word_is_cut_to_fit_in_bold(self):
+        # Measuring a bold word in the regular face cuts it too late, and the
+        # last letters land outside the circle.
+        from tonie_studio.sheet import TITLE_PT, shorten_text, text_width
+
+        word = "Donaudampfschifffahrtsgesellschaftskapitaensmuetze"
+
+        # Across a range: at a few widths the two faces happen to cut in the
+        # same place, and a single width can land on one of those.
+        for width in range(30, 200):
+            cut = shorten_text(word, TITLE_PT, float(width), bold=True)
+            assert text_width(cut, TITLE_PT, bold=True) <= width

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Sicherung - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Sicherung</h1>
+<p class="sub">
+  Alles, was einen Tonie ausmacht und nicht im Archiv steht: Namen, Titel, Cover, welcher
+  Sticker was spielt, Spielzeiten und das Hörprotokoll. Das Audio ist nicht dabei, das lässt
+  sich aus dem Archiv neu bauen.
+</p>
+
+<div class="card">
+  <p style="margin-top: 0">Eine Zip-Datei mit dem heutigen Stand. Sie enthält:</p>
+  <table class="sizes">
+    <tbody>
+      {% for part in parts %}
+      <tr>
+        <td>{{ part.what }}</td>
+        <td class="number">{{ part.count }}</td>
+        <td class="number muted">{% if part.size %}{{ part.size | filesize }}{% else %}-{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td>zusammen etwa</td><td></td><td class="number">{{ total | filesize }}</td></tr>
+    </tfoot>
+  </table>
+  <a class="button primary" href="/backup/download">Sicherung herunterladen</a>
+</div>
+
+<h2>Wiederherstellen</h2>
+<div class="card">
+  <p class="muted" style="margin-top: 0">
+    Erst kommt eine Vorschau, was sich ändern würde; geschrieben wird erst nach deiner
+    Bestätigung. Gelöscht wird nie etwas: was es jetzt gibt und in der Sicherung fehlt, bleibt.
+  </p>
+  <form method="post" action="/restore" enctype="multipart/form-data" class="row" style="gap: 10px; flex-wrap: wrap">
+    <label class="button">Sicherung wählen
+      <input type="file" name="file" accept=".zip,application/zip" required hidden id="restorefile">
+    </label>
+    <span class="muted grow truncate" id="restorepicked">nichts ausgewählt</span>
+    <button type="submit">Vorschau</button>
+  </form>
+</div>
+
+<script>
+  const picker = document.getElementById('restorefile');
+  picker.addEventListener('change', () => {
+    document.getElementById('restorepicked').textContent =
+      picker.files.length ? picker.files[0].name : 'nichts ausgewählt';
+  });
+</script>
+{% endblock %}

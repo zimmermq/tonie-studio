@@ -14,6 +14,7 @@ id, and the wrong one would be encoded.
 from __future__ import annotations
 
 import logging
+import math
 import mimetypes
 import shutil
 import threading
@@ -21,10 +22,12 @@ import time
 import unicodedata
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+import requests
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -32,17 +35,29 @@ from starlette.background import BackgroundTask
 
 from .album import (AUDIO_EXTENSIONS, Album, AlbumSummary, album_id, cover_candidates,
                      list_albums, read_album)
+from .albumnotes import first_sightings, forget_model, guess_made, is_new, made, remember_made
+from .backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
+                     plan_restore, read_backup)
 from .boxstate import BoxWatcher
+from .calibration import build_calibration, expected_first_centre, read_shift, save_measurement
+from .checkup import examine, model_repairs, repaired
 from .encode import (EncodeError, delete_taf, encode_files, library_path, list_tafs,
                      remove_orphaned_staging, taf_exists)
 from .jobs import JobRunner, JobState
+from .listening import ListeningLog, summarise
+from .overview import Entry, build_overview
+from .parts import MOST_CHAPTERS, fewest_parts, part_name, split
+from .podcast import SERIES as PODCAST_SERIES
+from .podcast import (DEFAULT_KEEP, LARGEST_FEED, Fetch, FeedError, Subscription, download,
+                      add_subscription, load_subscriptions, parse_feed, refresh,
+                      remove_subscription, update_subscription)
 from .runtimes import forget, minutes, playing_times, remember
 from .settings import Settings
 from .sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, PIXELS, Back, Sticker,
                     back_lines, build_sheet, render_square)
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .thumbnails import DEFAULT_SIZE, crop, thumbnail
-from .tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model,
+from .tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, copy_tag, find_model,
                     find_model_by_audio, list_tags, publish, publish_stream, remove_model,
                     update_model, year_of)
 from .uploads import remove_old_uploads
@@ -84,6 +99,18 @@ RADIO_SUGGESTIONS = [
     ("Kinderradio Bayern 2 Klaro", "https://dispatcher.rndfnk.com/br/br2/live/mp3/mid"),
 ]
 
+# How often the podcast updater wakes up, and how old a check has to be before
+# it looks again. Children's podcasts publish weekly at most; twice a day finds
+# a new episode before the next bedtime without asking a feed every hour.
+PODCAST_WAKE_SECONDS = 3600
+PODCAST_REFRESH_AFTER = timedelta(hours=12)
+
+# How long the album list trusts its copy of teddyCloud's models.
+MODELS_TTL = 60.0
+
+# The periods the listening page offers, by the value in its address.
+LISTENING_PERIODS = {"7": 7, "30": 30, "all": None}
+
 # How long a scan of the archive stays good enough to reuse. One page load is
 # one listing plus a preview request per album, and on a network share each of
 # those walks costs more than rendering the page does. Short enough that an
@@ -97,11 +124,20 @@ def create_app(
     client_factory: Optional[Callable[[], TeddyCloudClient]] = None,
     runner: Optional[JobRunner] = None,
     watcher: Optional[BoxWatcher] = None,
+    fetch: Fetch = download,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES))
+    templates.env.filters["duration"] = _duration
+    templates.env.filters["when"] = _when
+    templates.env.filters["filesize"] = _filesize
     jobs = runner or JobRunner()
+    listening = ListeningLog(settings.data_dir)
     box = watcher if watcher is not None else BoxWatcher(settings.teddycloud_url, settings.overlay)
+    # Whoever built the watcher decides how it connects; where its changes go
+    # is this app's business, unless a caller already said otherwise.
+    if box.on_change is None:
+        box.on_change = listening.record
 
     def client() -> TeddyCloudClient:
         if client_factory:
@@ -111,6 +147,7 @@ def create_app(
     def housekeeping() -> None:
         """What an earlier run left lying about, in teddyCloud and on the volume."""
         remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
+        _clear_parked_restores(settings)
         clear_abandoned_staging()
 
     def clear_abandoned_staging() -> None:
@@ -128,6 +165,55 @@ def create_app(
             # pages that need it will say so themselves.
             log.warning("could not reach teddyCloud at startup: %s", error)
 
+    # Podcast refreshes queued or running, so a slow one is not queued twice.
+    podcasts_in_flight: set = set()
+    podcasts_lock = Lock()
+    stop_podcasts = threading.Event()
+
+    def queue_podcast(subscription_id: str) -> Optional[str]:
+        """Start a refresh as a job, unless one for it is already under way."""
+        with podcasts_lock:
+            if subscription_id in podcasts_in_flight:
+                return None
+            podcasts_in_flight.add(subscription_id)
+
+        def work(progress):
+            try:
+                subscription = next((entry for entry in load_subscriptions(settings.data_dir)
+                                     if entry.id == subscription_id), None)
+                if subscription is None:
+                    return {"changed": False}
+                try:
+                    changed = refresh(client(), subscription, settings.data_dir, fetch=fetch)
+                except Exception as error:
+                    # Kept on the subscription, so the podcast page can say
+                    # why the episodes are old, not only the job list.
+                    subscription.error = str(error) or error.__class__.__name__
+                    subscription.checked = datetime.now(timezone.utc).isoformat()
+                    update_subscription(settings.data_dir, subscription)
+                    raise
+                update_subscription(settings.data_dir, subscription)
+                return {"changed": changed}
+            finally:
+                with podcasts_lock:
+                    podcasts_in_flight.discard(subscription_id)
+
+        label = next((entry.title or entry.feed for entry in load_subscriptions(settings.data_dir)
+                      if entry.id == subscription_id), subscription_id)
+        return jobs.submit("podcast", label, work)
+
+    def podcast_updater() -> None:
+        """Wake up now and then and refresh what has not been checked lately."""
+        while not stop_podcasts.wait(PODCAST_WAKE_SECONDS):
+            now = datetime.now(timezone.utc)
+            for subscription in load_subscriptions(settings.data_dir):
+                try:
+                    checked = datetime.fromisoformat(subscription.checked)
+                except ValueError:
+                    checked = None
+                if checked is None or now - checked >= PODCAST_REFRESH_AFTER:
+                    queue_podcast(subscription.id)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # Off the startup path on purpose. An unreachable teddyCloud answers
@@ -137,10 +223,12 @@ def create_app(
                                    name="housekeeping", daemon=True)
         cleanup.start()
         box.start()
+        threading.Thread(target=podcast_updater, name="podcasts", daemon=True).start()
         try:
             yield
         finally:
             box.stop()
+            stop_podcasts.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
     app.state.settings = settings
@@ -165,13 +253,74 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         albums = _catalogue(settings)
+        now = datetime.now(timezone.utc)
+        sightings = first_sightings(settings.data_dir, [row[0] for row in albums], now)
         return templates.TemplateResponse(request, "index.html", {
             "albums": albums,
             "archive": [row for row in albums if row[2] == "archive"],
             "uploads": [row for row in albums if row[2] == "upload"],
             "jobs": jobs.all()[:10],
+            "states": JOB_STATES,
             "thumb_size": DEFAULT_SIZE,
+            "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
+            "done": _albums_with_tonies(albums),
         })
+
+    # The models teddyCloud holds, kept for the album list. That page only
+    # decorates with them, and it must never wait: a teddyCloud that does not
+    # answer holds a request for its whole timeout, three times with retries.
+    model_cache: Dict = {"at": float("-inf"), "models": None, "loading": False}
+    model_lock = Lock()
+
+    def cached_models() -> Optional[List[Dict]]:
+        """The last models seen, or None before the first answer; never blocks.
+
+        A stale copy starts one refresh in the background and is returned as
+        it is; the page after next shows the newer one.
+        """
+        with model_lock:
+            stale = time.monotonic() - model_cache["at"] > MODELS_TTL
+            start = stale and not model_cache["loading"]
+            if start:
+                model_cache["loading"] = True
+            models = model_cache["models"]
+        if start:
+            threading.Thread(target=load_models, name="models", daemon=True).start()
+        return models
+
+    def load_models() -> None:
+        models = None
+        try:
+            models = client().custom_tonies()
+        except Exception as error:
+            log.info("album list goes without the models this time: %s", error)
+        finally:
+            with model_lock:
+                if models is not None:
+                    model_cache["models"] = models
+                # Also after a failure, so an absent teddyCloud is asked once
+                # a minute rather than on every page.
+                model_cache["at"] = time.monotonic()
+                model_cache["loading"] = False
+
+    def _albums_with_tonies(albums) -> Dict[str, str]:
+        """Album id to the tonie made from it, recorded or matched by name.
+
+        What was recorded is trusted as it stands. The models come from a copy
+        that can be a minute old, and checking a record against it would hide a
+        tonie made in that minute. A model deleted through this app takes its
+        record with it; one deleted in teddyCloud's own interface leaves the
+        marker behind, which costs a wrong label and nothing else.
+        """
+        done = {identifier: models[-1] for identifier, models in made(settings.data_dir).items()}
+        models = cached_models()
+        if models is None:
+            return done
+        recorded = set(done.values())
+        unrecorded = [model for model in models if str(model.get("model", "")) not in recorded]
+        for identifier, model_id in guess_made(albums, unrecorded).items():
+            done.setdefault(identifier, model_id)
+        return done
 
     @app.post("/upload")
     async def upload(files: List[UploadFile]):
@@ -193,14 +342,21 @@ def create_app(
         _forget_catalogue()
         return RedirectResponse(f"/album/{UPLOAD}{album_id(settings.upload_dir, folder)}", 303)
 
-    def _album_page(request: Request, identifier: str, album: Album, conflict: str = ""):
+    def _album_page(request: Request, identifier: str, album: Album, conflict: str = "",
+                    replace_value: str = ""):
         return templates.TemplateResponse(request, "album.html", {
             "id": identifier,
             "album": album,
             "suggested_target": _suggest_target(album),
             "conflict": conflict,
+            "replace_value": replace_value or conflict,
             "orderings": ORDERING_NAMES,
+            "most_chapters": MOST_CHAPTERS,
         })
+
+    # Which jobs belong to one album cut into parts. In memory like the jobs
+    # themselves: a restart loses both together.
+    groups: Dict[str, List[str]] = {}
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str):
@@ -237,6 +393,7 @@ def create_app(
         selected: List[int] = Form(default=[]),
         titles: List[str] = Form(default=[]),
         replace: str = Form(""),
+        parts: int = Form(1),
         cover_index: int = Form(0),
         cover_zoom: float = Form(1.0),
         cover_x: float = Form(0.0),
@@ -246,21 +403,35 @@ def create_app(
         chosen = _chosen_tracks(album, order, selected, titles)
         if not chosen:
             raise HTTPException(400, "No track selected.")
-
+        if parts < 1:
+            raise HTTPException(400, "Mindestens ein Teil.")
+        if parts > len(chosen):
+            raise HTTPException(
+                400, f"{len(chosen)} Tracks lassen sich nicht in {parts} Teile teilen; "
+                     f"jeder Teil braucht mindestens einen Track.")
+        if parts < fewest_parts(len(chosen)):
+            raise HTTPException(
+                400,
+                f"{len(chosen)} Tracks passen nicht in ein Taf: teddyCloud kann höchstens "
+                f"{MOST_CHAPTERS} Kapitel anspringen und hängt den Rest still an das letzte. "
+                f"Mindestens {fewest_parts(len(chosen))} Teile wählen.",
+            )
         try:
-            target = library_path(series, episode)
-        except EncodeError as error:
+            groups_of_tracks = split([track.duration for track, _name in chosen], parts)
+            targets = [library_path(series, part_name(episode, number, parts))
+                       for number in range(1, parts + 1)]
+        except (EncodeError, ValueError) as error:
             raise HTTPException(400, str(error)) from error
 
         # Asked here rather than inside the job: an occupied name is a question
         # to answer on the form, not a failure minutes later on a progress page.
-        overwrite = replace == target
-        if not overwrite and taf_exists(client(), target):
-            return _album_page(request, identifier, album, conflict=target)
-
-        paths = [track.path for track, _name in chosen]
-        names = [name for _track, name in chosen]
         connection = client()
+        occupied = [target for target in targets if taf_exists(connection, target)]
+        everything = "*"
+        overwrite = (replace == everything) or (len(targets) == 1 and replace == targets[0])
+        if occupied and not overwrite:
+            return _album_page(request, identifier, album, conflict=", ".join(occupied),
+                               replace_value=targets[0] if len(targets) == 1 else everything)
 
         # The cover is decided here, on the page that shows the album, and
         # carried to the model step as the picture it will actually be: a
@@ -268,32 +439,64 @@ def create_app(
         chosen_cover = (album.cover_candidates[cover_index]
                         if 0 <= cover_index < len(album.cover_candidates) else None)
         cover = str(chosen_cover) if chosen_cover else None
+        crop_settings = {"zoom": cover_zoom, "x": cover_x, "y": cover_y}
 
-        # The playing time turns the encode from a dead bar into a position;
-        # teddyCloud itself reports nothing while ffmpeg runs.
-        playing_time = sum(track.duration or 0 for track, _name in chosen) or None
+        def job_for(number: int, indices: List[int], target: str) -> Callable:
+            part = [chosen[index] for index in indices]
+            paths = [track.path for track, _name in part]
+            names = [name for _track, name in part]
+            # The playing time turns the encode from a dead bar into a
+            # position; teddyCloud itself reports nothing while ffmpeg runs.
+            playing_time = sum(track.duration or 0 for track, _name in part) or None
 
-        def work(progress):
-            result = encode_files(connection, paths, target, progress=progress,
-                                  replace=overwrite, total_seconds=playing_time)
-            # Carried along for the tag and model steps, which need the names a
-            # person approved rather than the ones that were guessed.
-            return {"encode": result, "series": series, "episode": episode,
-                    "tracks": names, "cover": cover,
-                    "crop": {"zoom": cover_zoom, "x": cover_x, "y": cover_y},
-                    # Both only for the printed text side; nothing plays
-                    # differently because of them.
-                    "year": album.year, "seconds": playing_time}
+            def work(progress):
+                result = encode_files(connection, paths, target, progress=progress,
+                                      replace=target in occupied, total_seconds=playing_time)
+                # Carried along for the tag and model steps, which need the
+                # names a person approved rather than the ones that were guessed.
+                return {"encode": result, "series": series,
+                        "episode": part_name(episode, number, parts),
+                        "tracks": names, "cover": cover, "crop": crop_settings,
+                        # Both only for the printed text side; nothing plays
+                        # differently because of them.
+                        "year": album.year, "seconds": playing_time,
+                        # So the album list can say this one is done.
+                        "album": identifier}
+            return work
 
-        return RedirectResponse(f"/job/{jobs.submit('encode', target, work)}", 303)
+        job_ids = [jobs.submit("encode", target, job_for(number, indices, target))
+                   for number, (indices, target)
+                   in enumerate(zip(groups_of_tracks, targets, strict=True), 1)]
+        if len(job_ids) == 1:
+            return RedirectResponse(f"/job/{job_ids[0]}", 303)
+        group = uuid.uuid4().hex[:12]
+        groups[group] = job_ids
+        return RedirectResponse(f"/parts/{group}", 303)
+
+    @app.get("/parts/{group}", response_class=HTMLResponse)
+    def parts_page(request: Request, group: str):
+        if group not in groups:
+            raise HTTPException(404, "Those parts are not known; the app may have restarted.")
+        return templates.TemplateResponse(request, "parts.html", {
+            "jobs": [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)],
+            "states": JOB_STATES,
+        })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
     def job_page(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "No such job.")
-        return templates.TemplateResponse(request, "job.html",
-                                          {"job": job, "states": JOB_STATES})
+        # A podcast refresh puts its taf on the sticker itself; only an album
+        # encode still has to be given to one.
+        podcast = job.kind == "podcast"
+        return templates.TemplateResponse(request, "job.html", {
+            "job": job,
+            "states": JOB_STATES,
+            "done_text": "Die neuen Folgen sind auf dem Sticker." if podcast else "Taf fertig.",
+            "next_href": "/podcasts" if podcast else f"/job/{job.id}/assign",
+            "next_label": "Zu den Podcasts" if podcast else "Auf einen Tonie legen",
+        })
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
     def assign_page(request: Request, job_id: str, new: str = ""):
@@ -342,6 +545,7 @@ def create_app(
         except TonieError as error:
             raise HTTPException(400, str(error)) from error
         remember(settings.data_dir, model_id, result.get("seconds"))
+        remember_made(settings.data_dir, result.get("album", ""), model_id)
         return RedirectResponse("/tonies", 303)
 
     @app.get("/tonies", response_class=HTMLResponse)
@@ -354,15 +558,25 @@ def create_app(
     @app.get("/tonies/{ruid}", response_class=HTMLResponse)
     def tonie_page(request: Request, ruid: str):
         connection = client()
-        tag = next((candidate for candidate in list_tags(connection)
-                    if candidate.ruid == ruid), None)
+        tags = list_tags(connection)
+        tag = next((candidate for candidate in tags if candidate.ruid == ruid), None)
         if tag is None:
             raise HTTPException(404, "teddyCloud does not know that tag.")
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
             "model": find_model(connection, tag.model) if tag.model else None,
             "categories": CATEGORIES,
+            # Where a copy could go, the empty stickers first.
+            "others": [other for other in tags if other.ruid != ruid],
         })
+
+    @app.post("/tonies/{ruid}/copy")
+    def copy_tonie(ruid: str, target: str = Form(...)):
+        try:
+            copy_tag(client(), ruid, target)
+        except TonieError as error:
+            raise HTTPException(400, str(error)) from error
+        return RedirectResponse("/tonies", 303)
 
     @app.post("/tonies/{ruid}")
     async def edit_tonie(
@@ -402,6 +616,7 @@ def create_app(
             raise HTTPException(404, "That tag has no model to remove.")
         remove_model(connection, tag.model, ruid=ruid)
         forget(settings.data_dir, tag.model)
+        forget_model(settings.data_dir, tag.model)
         return RedirectResponse("/tonies", 303)
 
     @app.get("/api/box")
@@ -432,6 +647,198 @@ def create_app(
             # against the box. The assignment page waits for this.
             "unknown_ruid": state.fresh_unknown,
             "unknown_since": state.unknown_since.isoformat() if state.unknown_since else None,
+        })
+
+    @app.get("/listening", response_class=HTMLResponse)
+    def listening_page(request: Request, period: str = "30"):
+        """Which tonies were heard, how much, and which have gone quiet.
+
+        Only tags that still play something are listed: a sticker that was
+        emptied has nothing to recommend or to miss.
+        """
+        if period not in LISTENING_PERIODS:
+            period = "30"
+        days = LISTENING_PERIODS[period]
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=days) if days else None
+
+        # The last bundle from the box is held back until it is complete;
+        # take it now, so what was just heard is on the page.
+        box.flush()
+        events = listening.events()
+        tags = list_tags(client())
+        # How long each tonie plays caps what one run of it can be credited.
+        times = playing_times(settings.data_dir)
+        content = {tag.ruid: timedelta(seconds=times[tag.model])
+                   for tag in tags if tag.model in times}
+        summary = summarise(events, now=now, since=since, content=content)
+        heard, quiet = [], []
+        for tag in tags:
+            if not tag.assigned:
+                continue
+            entry = summary.get(tag.ruid)
+            if entry is not None and (entry.placed or entry.on_box):
+                heard.append((tag, entry))
+            else:
+                quiet.append((tag, entry))
+
+        heard.sort(key=lambda pair: (pair[1].played, pair[1].on_box, pair[1].placed),
+                   reverse=True)
+        # Never heard first, then the longest silence: the top of the list is
+        # what has been forgotten longest.
+        quiet.sort(key=lambda pair: (pair[1] is not None and pair[1].last_placed is not None,
+                                     pair[1].last_placed if pair[1] and pair[1].last_placed
+                                     else now))
+        return templates.TemplateResponse(request, "listening.html", {
+            "heard": heard,
+            "quiet": quiet,
+            "period": period,
+            "days": days,
+            "recorded_since": events[0].at if events else None,
+        })
+
+    def work_in_progress() -> Dict:
+        """What the checkup must not call left over: tafs jobs made or are making.
+
+        Encode jobs are labelled with their target. A podcast refresh builds its
+        taf under a name only known once it runs, so while one is under way the
+        whole podcast folder is spared.
+        """
+        busy = {job.label for job in jobs.all() if job.kind == "encode"}
+        with podcasts_lock:
+            refreshing = bool(podcasts_in_flight)
+        return {"busy": busy, "busy_folders": {f"/{PODCAST_SERIES}"} if refreshing else set()}
+
+    @app.get("/checkup", response_class=HTMLResponse)
+    def checkup_page(request: Request, done: str = "", stale: str = ""):
+        findings = examine(client(), **work_in_progress())
+        return templates.TemplateResponse(request, "checkup.html", {
+            "findings": findings,
+            "done": done,
+            "stale": stale,
+        })
+
+    @app.post("/checkup/fix")
+    def checkup_fix(fix: str = Form(...), target: str = Form(...)):
+        """Apply one repair the checkup offered.
+
+        The checks run again first and the repair is only made if they still
+        find exactly this: a page left open for an hour must not delete a taf
+        that has since been given to a tonie.
+        """
+        connection = client()
+        current = next((finding for finding in examine(connection, **work_in_progress())
+                        if finding.fix == fix and finding.target == target), None)
+        if current is None:
+            return RedirectResponse("/checkup?stale=1", 303)
+
+        try:
+            _apply_fix(connection, settings, fix, target)
+        except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
+            raise HTTPException(400, str(error)) from error
+        log.info("checkup: %s applied to %s", fix, target)
+        return RedirectResponse(f"/checkup?done={fix}", 303)
+
+    @app.get("/podcasts", response_class=HTMLResponse)
+    def podcasts_page(request: Request):
+        tags = list_tags(client())
+        labels = {tag.ruid: tag.label for tag in tags}
+        return templates.TemplateResponse(request, "podcasts.html", {
+            "subscriptions": load_subscriptions(settings.data_dir),
+            "labels": labels,
+            "tags": tags,
+            "keep": DEFAULT_KEEP,
+        })
+
+    @app.post("/podcasts")
+    def subscribe(feed: str = Form(...), ruid: str = Form(...), keep: int = Form(DEFAULT_KEEP)):
+        """Check the feed now, so a wrong address is said on the form, then start."""
+        feed = feed.strip()
+        try:
+            parsed = parse_feed(fetch(feed, LARGEST_FEED))
+        except (FeedError, requests.RequestException) as error:
+            raise HTTPException(400, f"Dieser Feed lässt sich nicht lesen: {error}") from error
+        if not parsed.episodes:
+            raise HTTPException(400, "Der Feed enthält keine Folge mit Audio.")
+        if not any(tag.ruid == ruid for tag in list_tags(client())):
+            raise HTTPException(400, "Die Box kennt diesen Sticker nicht.")
+
+        subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
+                                    keep=max(1, min(keep, 20)), title=parsed.title)
+        add_subscription(settings.data_dir, subscription)
+        job_id = queue_podcast(subscription.id)
+        return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
+
+    @app.post("/podcasts/{subscription_id}/refresh")
+    def refresh_now(subscription_id: str):
+        job_id = queue_podcast(subscription_id)
+        return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
+
+    @app.post("/podcasts/{subscription_id}/delete")
+    def unsubscribe(subscription_id: str):
+        """Stop updating. The sticker keeps playing the episodes it has."""
+        remove_subscription(settings.data_dir, subscription_id)
+        return RedirectResponse("/podcasts", 303)
+
+    @app.get("/backup", response_class=HTMLResponse)
+    def backup_page(request: Request):
+        parts = describe_backup(client(), settings.data_dir)
+        return templates.TemplateResponse(request, "backup.html", {
+            "parts": parts,
+            "total": sum(part.size for part in parts),
+        })
+
+    @app.get("/backup/download")
+    def backup_download():
+        data = create_backup(client(), settings.data_dir)
+        name = f"tonie-studio-{datetime.now().strftime('%Y-%m-%d')}.zip"
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.post("/restore", response_class=HTMLResponse)
+    async def restore_preview(request: Request, file: UploadFile = File(...)):
+        """Show what a restore would do. Nothing is written until confirmed.
+
+        The upload is parked on the volume under a random name, so the
+        confirmation acts on exactly the file that was previewed.
+        """
+        # Read at most one byte past the limit: enough to know it is too big
+        # without holding all of it.
+        data = await file.read(LARGEST_BACKUP + 1)
+        try:
+            backup = read_backup(data)
+        except BackupError as error:
+            raise HTTPException(400, str(error)) from error
+
+        token = uuid.uuid4().hex
+        _restore_dir(settings).mkdir(parents=True, exist_ok=True)
+        (_restore_dir(settings) / f"{token}.zip").write_bytes(data)
+        return templates.TemplateResponse(request, "restore.html", {
+            "steps": plan_restore(client(), backup, settings.data_dir),
+            "manifest": backup.manifest,
+            "token": token,
+            "done": False,
+        })
+
+    @app.post("/restore/{token}", response_class=HTMLResponse)
+    def restore_apply(request: Request, token: str):
+        if not token.isalnum():
+            raise HTTPException(400, "Not a restore.")
+        parked = _restore_dir(settings) / f"{token}.zip"
+        if not parked.is_file():
+            raise HTTPException(404, "That restore is gone; upload the backup again.")
+        try:
+            backup = read_backup(parked.read_bytes())
+            steps = apply_restore(client(), backup, settings.data_dir)
+        except BackupError as error:
+            raise HTTPException(400, str(error)) from error
+        finally:
+            parked.unlink(missing_ok=True)
+        return templates.TemplateResponse(request, "restore.html", {
+            "steps": steps,
+            "manifest": backup.manifest,
+            "token": token,
+            "done": True,
         })
 
     @app.get("/cover/custom/{name}")
@@ -535,7 +942,7 @@ def create_app(
         return RedirectResponse("/library", 303)
 
     @app.get("/sheet", response_class=HTMLResponse)
-    def sheet_page(request: Request, model: str = ""):
+    def sheet_page(request: Request, model: str = "", calibrated: str = ""):
         """The sheet, optionally with one motif already asked for.
 
         Coming from a tonie that was just recorded, hunting for it again in
@@ -551,7 +958,56 @@ def create_app(
             "backs": _back_preview(models, playing_times(settings.data_dir)),
             "back_fade": BACK_FADE,
             "diameter_mm": DIAMETER_MM,
+            "shift": read_shift(settings.data_dir),
+            "expected": expected_first_centre(),
+            "calibrated": bool(calibrated),
         })
+
+    @app.get("/sheet/calibration")
+    def calibration_sheet():
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        target = settings.data_dir / f"calibration-{uuid.uuid4().hex[:8]}.pdf"
+        # Printed with the current correction, so measuring it shows what is
+        # still off rather than what was off before.
+        build_calibration(target, read_shift(settings.data_dir))
+        return FileResponse(
+            target,
+            media_type="application/pdf",
+            filename="kalibrierblatt.pdf",
+            background=BackgroundTask(target.unlink, missing_ok=True),
+        )
+
+    @app.post("/sheet/calibration")
+    def calibrate(left_mm: str = Form(...), top_mm: str = Form(...)):
+        try:
+            left, top = _millimetres(left_mm), _millimetres(top_mm)
+        except ValueError as error:
+            raise HTTPException(400, "Bitte zwei Zahlen in Millimetern eintragen.") from error
+        save_measurement(settings.data_dir, left, top)
+        return RedirectResponse("/sheet?calibrated=1#printer", 303)
+
+    @app.post("/sheet/calibration/reset")
+    def reset_calibration():
+        want_left, want_top = expected_first_centre()
+        # Measured exactly where it belongs, minus what is stored, is no shift.
+        right, down = read_shift(settings.data_dir)
+        save_measurement(settings.data_dir, want_left + right, want_top + down)
+        return RedirectResponse("/sheet#printer", 303)
+
+    @app.get("/sheet/overview")
+    def overview():
+        entries = _overview_entries(client(), playing_times(settings.data_dir))
+        if not entries:
+            raise HTTPException(400, "No tonie with a model to list yet.")
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        target = settings.data_dir / f"overview-{uuid.uuid4().hex[:8]}.pdf"
+        build_overview(entries, target)
+        return FileResponse(
+            target,
+            media_type="application/pdf",
+            filename="tonies-uebersicht.pdf",
+            background=BackgroundTask(target.unlink, missing_ok=True),
+        )
 
     @app.post("/sheet")
     def sheet(
@@ -600,7 +1056,7 @@ def create_app(
 
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         target = settings.data_dir / f"sheet-{uuid.uuid4().hex[:8]}.pdf"
-        skipped = build_sheet(stickers, target)
+        skipped = build_sheet(stickers, target, read_shift(settings.data_dir))
         if skipped:
             log.warning("left off the sheet: %s", ", ".join(skipped))
 
@@ -638,20 +1094,43 @@ def _printable_models(client: TeddyCloudClient) -> List[Dict]:
     A model without a picture, or one pointing at an image hosted elsewhere,
     has nothing this app can put on a sticker.
     """
-    printable = []
-    for model in client.custom_tonies():
-        picture = str(model.get("pic") or "")
-        if not picture.startswith(CUSTOM_IMG_PREFIX):
+    return [info for info in map(_model_info, client.custom_tonies()) if info["image"]]
+
+
+def _model_info(model: Dict) -> Dict:
+    """What the printing pages need of one model; ``image`` is empty without a cover here."""
+    picture = str(model.get("pic") or "")
+    return {
+        "model": model.get("model", ""),
+        "series": model.get("series", ""),
+        "episodes": model.get("episodes", ""),
+        "image": picture[len(CUSTOM_IMG_PREFIX):] if picture.startswith(CUSTOM_IMG_PREFIX) else "",
+        "tracks": [str(track) for track in model.get("tracks") or []],
+        "year": year_of(model),
+    }
+
+
+def _overview_entries(client: TeddyCloudClient, times: Dict[str, int]) -> List[Entry]:
+    """One entry per model that sits on a sticker, in shelf order.
+
+    A model no sticker names is not a tonie anyone can pick up, so it does not
+    belong on a list of what is in the tin.
+    """
+    on_stickers = {tag.model for tag in list_tags(client) if tag.model}
+    entries = []
+    for info in map(_model_info, client.custom_tonies()):
+        if info["model"] not in on_stickers:
             continue
-        printable.append({
-            "model": model.get("model", ""),
-            "series": model.get("series", ""),
-            "episodes": model.get("episodes", ""),
-            "image": picture[len(CUSTOM_IMG_PREFIX):],
-            "tracks": [str(track) for track in model.get("tracks") or []],
-            "year": year_of(model),
-        })
-    return printable
+        image = None
+        if info["image"]:
+            try:
+                image = client.fetch(f"{CUSTOM_IMG_PREFIX}{info['image']}")
+            except TeddyCloudError as error:
+                log.warning("overview: no cover for %s: %s", info["model"], error)
+        back = _back_of(info, times.get(info["model"]))
+        entries.append(Entry(image=image, title=back.title, series=back.series,
+                             facts=list(back.notes)))
+    return sorted(entries, key=lambda entry: (entry.series.casefold(), entry.title.casefold()))
 
 
 def _back_of(model: Dict, seconds: Optional[int] = None) -> Back:
@@ -825,6 +1304,91 @@ def _chosen_tracks(
 def _suggest_target(album: Album) -> Dict[str, str]:
     """What to prefill the series and episode fields with."""
     return {"series": album.artist or "", "episode": album.title}
+
+
+def _millimetres(text: str) -> float:
+    """A length as typed, with a decimal comma or point.
+
+    float() also reads "nan" and "inf", which are not lengths and would turn
+    into the largest allowed shift without anyone noticing.
+    """
+    value = float(text.strip().replace(",", ".").removesuffix("mm").strip())
+    if not math.isfinite(value):
+        raise ValueError(f"not a length: {text!r}")
+    return value
+
+
+def _restore_dir(settings: Settings) -> Path:
+    """Where an uploaded backup waits between preview and confirmation."""
+    return settings.data_dir / "restore"
+
+
+def _clear_parked_restores(settings: Settings, older_than: float = 86400.0) -> None:
+    """Drop backups uploaded for a preview that was never confirmed."""
+    folder = _restore_dir(settings)
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - older_than
+    for parked in folder.glob("*.zip"):
+        try:
+            if parked.stat().st_mtime < cutoff:
+                parked.unlink()
+        except OSError as error:
+            log.warning("cannot remove %s: %s", parked, error)
+
+
+def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: str) -> None:
+    """Make one checkup repair. The caller has just confirmed it is still due."""
+    if fix == "nocloud":
+        client.set_tag(target, nocloud=True)
+    elif fix == "repair_source":
+        entry = next((tag for tag in client.tags() if tag.get("ruid") == target), None)
+        fixed = repaired((entry or {}).get("source"))
+        if not fixed:
+            raise ValueError(f"nothing to repair on {target}")
+        client.set_tag(target, source=fixed)
+    elif fix == "repair_model":
+        model = find_model(client, target)
+        if model is None:
+            raise ValueError(f"there is no model {target}")
+        changes = model_repairs(model)
+        update_model(client, target, series=changes.get("series"),
+                     episode=changes.get("episodes"), tracks=changes.get("tracks"))
+    elif fix == "delete_taf":
+        delete_taf(client, target)
+    elif fix == "delete_model":
+        remove_model(client, target)
+        forget(settings.data_dir, target)
+        forget_model(settings.data_dir, target)
+    else:
+        raise ValueError(f"unknown repair {fix!r}")
+
+
+def _duration(value: Optional[timedelta]) -> str:
+    """A listening time as a person says it: "1 h 24 min", "24 min"."""
+    if not value:
+        return "-"
+    total = int(value.total_seconds() // 60)
+    if total < 1:
+        return "< 1 min"
+    hours, rest = divmod(total, 60)
+    return f"{hours} h {rest} min" if hours else f"{rest} min"
+
+
+def _filesize(value: int) -> str:
+    """A size as people read it, with a decimal comma: "1,2 MB", "340 KB"."""
+    if value >= 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB".replace(".", ",")
+    if value >= 1024:
+        return f"{round(value / 1024)} KB"
+    return f"{value} Byte"
+
+
+def _when(value: Optional[datetime]) -> str:
+    """A moment in the box's own time zone, which is the container's."""
+    if value is None:
+        return "-"
+    return value.astimezone().strftime("%d.%m.%Y %H:%M")
 
 
 def _is_audio_name(name: Optional[str]) -> bool:

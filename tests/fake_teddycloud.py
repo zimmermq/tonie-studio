@@ -144,6 +144,8 @@ class FakeTeddyCloud:
                 "type": "tag",
                 "valid": bool(entry["source"]),
                 "source": entry["source"],
+                "live": entry["live"],
+                "nocloud": entry["nocloud"],
                 "hide": entry["hide"],
                 "claimed": entry["claimed"],
                 "tonieInfo": {

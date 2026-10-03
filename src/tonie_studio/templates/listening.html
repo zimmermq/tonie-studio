@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Gehört - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Gehört</h1>
+<div id="live">
+<p class="sub">
+  {% if recorded_since %}
+  Aufgezeichnet seit {{ recorded_since | when }}. Was davor lief, weiß die App nicht.
+  {% else %}
+  Noch nichts aufgezeichnet. Sobald ein Tonie auf die Box kommt, steht er hier.
+  {% endif %}
+</p>
+
+</div>
+
+<p class="row" style="gap: 8px; flex-wrap: wrap">
+  {% for value, name in [("7", "7 Tage"), ("30", "30 Tage"), ("all", "alles")] %}
+  <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}">{{ name }}</a>
+  {% endfor %}
+</p>
+
+<div id="lists">
+<h2>Am meisten gehört</h2>
+<div class="list">
+{% for tag, entry in heard %}
+  <div class="album">
+    {% if tag.model %}
+    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% else %}
+    <span class="noart" aria-hidden="true"></span>
+    {% endif %}
+    <span class="grow truncate">
+      <strong class="truncate">{{ tag.label }}</strong>
+      <span class="muted truncate">
+        {{ entry.placed }}&times; aufgelegt &middot; {{ entry.played | duration }} gespielt
+        &middot; zuletzt {{ entry.last_placed | when }}
+      </span>
+    </span>
+  </div>
+{% else %}
+  <div class="album muted">
+    {% if days %}In den letzten {{ days }} Tagen lief nichts.{% else %}Noch nichts gehört.{% endif %}
+  </div>
+{% endfor %}
+</div>
+
+{% if quiet %}
+<h2>Lange nicht gehört</h2>
+<div class="list">
+{% for tag, entry in quiet %}
+  <div class="album">
+    {% if tag.model %}
+    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% else %}
+    <span class="noart" aria-hidden="true"></span>
+    {% endif %}
+    <span class="grow truncate">
+      <strong class="truncate">{{ tag.label }}</strong>
+      <span class="muted truncate">
+        {% if entry and entry.last_placed %}zuletzt {{ entry.last_placed | when }}
+        {% else %}seit Beginn der Aufzeichnung nie aufgelegt{% endif %}
+      </span>
+    </span>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+
+<p class="muted" style="font-size: 13px">
+  Aktualisiert sich von selbst. Die Box schickt ihr Protokoll manchmal gebündelt und erst
+  Minuten später; was sie noch nicht geschickt hat, kann hier noch nicht stehen.
+</p>
+
+<script>
+  // The page fetches its own next rendering and swaps in only the parts that
+  // changed. Reloading instead would throw the page back to the top every few
+  // seconds, and drawing the rows in script would be a second rendering to
+  // keep in step with the template.
+  (() => {
+    const parts = ['live', 'lists'];
+    async function refresh() {
+      if (document.hidden) return;
+      try {
+        const response = await fetch(window.location.href, {cache: 'no-store'});
+        if (!response.ok) return;
+        const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+        for (const id of parts) {
+          const here = document.getElementById(id);
+          const there = next.getElementById(id);
+          if (here && there && here.innerHTML !== there.innerHTML) here.innerHTML = there.innerHTML;
+        }
+      } catch (error) {
+        // A missed refresh is caught up by the next one.
+      }
+    }
+    setInterval(refresh, 5000);
+    document.addEventListener('visibilitychange', refresh);
+  })();
+</script>
+{% endblock %}

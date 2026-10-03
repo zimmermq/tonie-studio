@@ -9,7 +9,10 @@
   <span class="noart" aria-hidden="true"></span>
   {% endif %}
   <span class="grow truncate">
-    <strong class="truncate">{{ album.title or album.name }}</strong>
+    <strong class="truncate">{{ album.title or album.name }}
+      {%- if id in new %} <span class="pill new">neu</span>{% endif %}
+      {%- if id in done %} <span class="pill done" title="{{ done[id] }}">hat einen Tonie</span>{% endif -%}
+    </strong>
     <span class="muted truncate">
       {{- album.artist or "Verschiedene" }}{% if album.year %} &middot; {{ album.year }}{% endif %}
       &middot; {{ album.track_count }} Tracks
@@ -28,7 +31,7 @@
 <div class="card row">
   <div class="grow truncate">
     <a href="/job/{{ job.id }}">{{ job.label }}</a>
-    <div class="muted">{{ job.state.value }}{% if job.step %} - {{ job.step }} {{ job.done_count }}/{{ job.total }}{% endif %}</div>
+    <div class="muted">{{ states.get(job.state.value, job.state.value) }}{% if job.step %} - {{ job.step }} {{ job.done_count }}/{{ job.total }}{% endif %}</div>
   </div>
   {% if job.state.value == 'failed' %}<span class="state-failed">fehlgeschlagen</span>
   {% elif job.state.value == 'done' %}<span class="state-done">fertig</span>{% endif %}

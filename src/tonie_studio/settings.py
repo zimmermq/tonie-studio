@@ -2,7 +2,7 @@
 
 Everything here is environment configuration rather than a user preference:
 none of it can be changed without also changing a volume mount, so there is no
-settings screen and nothing is persisted.
+settings screen.
 """
 
 from __future__ import annotations
@@ -24,7 +24,8 @@ class Settings:
     teddycloud_url: str
     # Read-only mount of the audio archive the picker browses.
     archive_dir: Path
-    # Writable volume; uploaded files are spooled into "uploads" below it.
+    # Writable volume. Uploads are spooled into "uploads" below it, and the
+    # app's own records - playing times, the listening log - sit beside them.
     data_dir: Path
     overlay: Optional[str] = None
 

@@ -64,4 +64,29 @@
   </form>
 </div>
 {% endif %}
+
+{% if tag.source %}
+<h2>Auf einen weiteren Sticker</h2>
+<div class="card">
+  <p class="muted" style="margin-top: 0">
+    Ein zweiter Sticker, der dasselbe spielt: für die Großeltern, oder als Ersatz für einen
+    verlorenen. Er bekommt dasselbe Audio und denselben Namen, nichts wird neu encodiert.
+    Ein neuer Sticker taucht hier erst auf, wenn die Box ihn einmal gelesen hat.
+  </p>
+  {% if others %}
+  <form method="post" action="/tonies/{{ tag.ruid }}/copy" class="row" style="gap: 10px; flex-wrap: wrap">
+    <select name="target" style="font: inherit; padding: 7px 10px" required>
+      {% for other in others %}
+      <option value="{{ other.ruid }}">
+        {% if other.assigned %}{{ other.label }} (wird überschrieben){% else %}frei - {{ other.uid }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit">Bespielen</button>
+  </form>
+  {% else %}
+  <p class="muted">Die Box kennt noch keinen weiteren Sticker.</p>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

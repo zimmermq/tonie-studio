@@ -79,7 +79,8 @@
     <input type="hidden" name="order" id="order" value="{{ album.tracks | map(attribute='number') | join(',') }}">
     <ol class="tracks" id="tracks">
       {% for track in album.tracks %}
-      <li data-number="{{ track.number }}" data-extra="{{ 'yes' if track.extra else 'no' }}">
+      <li data-number="{{ track.number }}" data-extra="{{ 'yes' if track.extra else 'no' }}"
+          data-seconds="{{ track.duration or 0 }}">
         <input type="checkbox" name="selected" value="{{ track.number }}"
                {% if not track.extra %}checked{% endif %}>
         <span class="muted" style="width: 2em; text-align: right">{{ loop.index }}</span>
@@ -91,9 +92,18 @@
     </ol>
   </div>
 
+  <div class="card row" style="gap: 12px; flex-wrap: wrap; align-items: center" id="partsrow">
+    <label class="row" style="gap: 8px">
+      <span>In</span>
+      <input type="number" name="parts" id="parts" value="1" min="1" max="20" style="width: 4.5em">
+      <span>Teile</span>
+    </label>
+    <span class="muted grow" id="partshint"></span>
+  </div>
+
   <p><button class="primary" type="submit">Taf erzeugen</button>
      {% if conflict %}
-     <button type="submit" name="replace" value="{{ conflict }}">Vorhandenes ersetzen</button>
+     <button type="submit" name="replace" value="{{ replace_value }}">Vorhandenes ersetzen</button>
      {% endif %}
      <a href="/" style="margin-left:12px">Abbrechen</a></p>
 </form>
@@ -206,10 +216,30 @@
   const boxes = () => [...list.querySelectorAll('input[type=checkbox]')];
   const chosen = document.getElementById('chosen');
 
+  // A taf can be skipped through by at most this many chapters; teddyCloud
+  // writes anything beyond into the last one without a word.
+  const mostChapters = {{ most_chapters }};
+  const partsField = document.getElementById('parts');
+  const partsHint = document.getElementById('partshint');
+
   function recount() {
-    const n = boxes().filter(box => box.checked).length;
+    const picked = [...list.children].filter(item => item.querySelector('input[type=checkbox]').checked);
+    const n = picked.length;
     chosen.textContent = `${n} von ${boxes().length} ausgewählt`;
+
+    const needed = Math.max(1, Math.ceil(n / mostChapters));
+    partsField.min = needed;
+    if (+partsField.value < needed) partsField.value = needed;
+    const parts = Math.max(1, +partsField.value || 1);
+    const seconds = picked.reduce((sum, item) => sum + (+item.dataset.seconds || 0), 0);
+    const each = seconds && parts ? Math.round(seconds / parts / 60) : 0;
+
+    partsHint.textContent = parts === 1
+      ? (needed > 1 ? '' : 'Ein Tonie. Bei langen Hörbüchern lohnen sich Teile, die man einzeln auflegt.')
+      : `${parts} Tonies, jeder ein eigenes Taf${each ? `, je etwa ${each} Minuten` : ''}.`
+        + (needed > 1 ? ` Mehr als ${mostChapters} Tracks passen nicht in eines.` : '');
   }
+  partsField.addEventListener('input', recount);
 
   document.querySelectorAll('button[data-pick]').forEach(button => {
     button.addEventListener('click', () => {

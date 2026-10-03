@@ -1,0 +1,162 @@
+[
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 219626, \"sequence\": 623, \"field3\": 1, \"function_group\": 15, \"function\": 15482, \"field6\": \"0EEDC9A9E004035001000000\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 219626, \"sequence\": 624, \"field3\": 1, \"function_group\": 15, \"function\": 16065, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "TagValid",
+  "data": "{ \"type\":\"TagValid\", \"data\":\"E00403500EEDC9A9\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"starting\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 221976, \"sequence\": 661, \"field3\": 1, \"function_group\": 15, \"function\": 16067, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"stopped\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 224929, \"sequence\": 684, \"field3\": 1, \"function_group\": 15, \"function\": 15482, \"field6\": \"0EEDC9A9E004035001000000\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 224929, \"sequence\": 685, \"field3\": 1, \"function_group\": 15, \"function\": 16065, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "TagValid",
+  "data": "{ \"type\":\"TagValid\", \"data\":\"E00403500EEDC9A9\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"starting\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 228223, \"sequence\": 722, \"field3\": 1, \"function_group\": 15, \"function\": 16067, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"stopped\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 359368, \"sequence\": 747, \"field3\": 1, \"function_group\": 15, \"function\": 15482, \"field6\": \"0EEDC9A9E004035001000000\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 359368, \"sequence\": 748, \"field3\": 1, \"function_group\": 15, \"function\": 16065, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "TagValid",
+  "data": "{ \"type\":\"TagValid\", \"data\":\"E00403500EEDC9A9\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"starting\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 361961, \"sequence\": 785, \"field3\": 1, \"function_group\": 15, \"function\": 16067, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:07",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"stopped\" }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 365137, \"sequence\": 808, \"field3\": 1, \"function_group\": 15, \"function\": 15482, \"field6\": \"0EEDC9A9E004035001000000\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 365137, \"sequence\": 809, \"field3\": 1, \"function_group\": 15, \"function\": 16065, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "TagValid",
+  "data": "{ \"type\":\"TagValid\", \"data\":\"E00403500EEDC9A9\" }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"starting\" }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:10",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"started\" }"
+ },
+ {
+  "arrived": "20:08:14",
+  "event": "rtnl-raw-log2",
+  "data": "{ \"type\":\"rtnl-raw-log2\", \"data\":{\"uptime\": 369597, \"sequence\": 847, \"field3\": 1, \"function_group\": 15, \"function\": 16067, \"field6\": \"0EEDC9A9E0040350\",\"field8\": 0, \"field9\": \"\"} }"
+ },
+ {
+  "arrived": "20:08:14",
+  "event": "playback",
+  "data": "{ \"type\":\"playback\", \"data\":\"stopped\" }"
+ }
+]

@@ -14,10 +14,10 @@
 
 <div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>
   <p id="message" class="{% if job.state.value == 'failed' %}state-failed{% else %}state-done{% endif %}">
-    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}Taf fertig.{% endif -%}
+    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}{{ done_text }}{% endif -%}
   </p>
-  <a class="button" id="next" href="/job/{{ job.id }}/assign"
-     {% if job.state.value != 'done' %}hidden{% endif %}>Auf einen Tonie legen</a>
+  <a class="button" id="next" href="{{ next_href }}"
+     {% if job.state.value != 'done' %}hidden{% endif %}>{{ next_label }}</a>
   <a class="button" href="/">Zurück zur Übersicht</a>
 </div>
 
@@ -61,7 +61,7 @@
     if (data.state === 'done' || data.state === 'failed') {
       outcome.hidden = false;
       document.getElementById('next').hidden = data.state !== 'done';
-      message.textContent = data.error || 'Taf fertig.';
+      message.textContent = data.error || {{ done_text | tojson }};
       message.className = data.state === 'failed' ? 'state-failed' : 'state-done';
       return;
     }

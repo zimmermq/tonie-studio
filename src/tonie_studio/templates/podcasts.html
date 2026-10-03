@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Podcasts - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>Podcasts</h1>
+<p class="sub">
+  Ein Sticker, der immer die neuesten Folgen eines Podcasts hat. Zweimal am Tag wird nachgesehen;
+  gibt es etwas Neues, wird es heruntergeladen und auf den Sticker gelegt. Anders als ein
+  Radio-Tonie spielt er auch ohne Netz.
+</p>
+
+<div class="list">
+{% for entry in subscriptions %}
+  <div class="album">
+    <span class="grow truncate">
+      <strong class="truncate">{{ entry.title or entry.feed }}</strong>
+      <span class="muted truncate">
+        auf {{ labels.get(entry.ruid, entry.ruid) }} &middot; die {{ entry.keep }} neuesten Folgen
+        &middot; {% if entry.updated %}zuletzt neu am {{ entry.updated[:10] }}{% else %}noch nicht geladen{% endif %}
+      </span>
+      {% if entry.error %}
+      <span class="state-failed" style="display: block; white-space: normal">{{ entry.error }}</span>
+      {% endif %}
+    </span>
+    <form method="post" action="/podcasts/{{ entry.id }}/refresh">
+      <button type="submit" class="small">jetzt aktualisieren</button>
+    </form>
+    <form method="post" action="/podcasts/{{ entry.id }}/delete">
+      <button type="submit" class="small">abbestellen</button>
+    </form>
+  </div>
+{% else %}
+  <div class="album muted">Noch kein Podcast abonniert.</div>
+{% endfor %}
+</div>
+
+<h2>Abonnieren</h2>
+<form method="post" action="/podcasts" class="card">
+  <label class="field">
+    <span>Adresse des Feeds (RSS)</span>
+    <input type="url" name="feed" required placeholder="https://...">
+  </label>
+  <div class="row stackable" style="gap: 12px; flex-wrap: wrap; align-items: flex-end">
+    <label class="field grow" style="margin: 0">
+      <span>Auf welchen Sticker</span>
+      <select name="ruid" required style="font: inherit; padding: 7px 10px; width: 100%">
+        {% for tag in tags %}
+        <option value="{{ tag.ruid }}">
+          {% if tag.assigned %}{{ tag.label }} (wird überschrieben){% else %}frei - {{ tag.uid }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field" style="margin: 0">
+      <span>Folgen</span>
+      <input type="number" name="keep" value="{{ keep }}" min="1" max="20" style="width: 5em">
+    </label>
+    <button class="primary" type="submit">Abonnieren</button>
+  </div>
+  <p class="muted" style="margin-bottom: 0">
+    Die neueste Folge kommt zuerst. Abbestellen lässt den Sticker spielen, was er hat.
+  </p>
+</form>
+{% endblock %}

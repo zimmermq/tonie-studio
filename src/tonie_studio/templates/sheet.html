@@ -72,6 +72,12 @@
     <button type="button" class="small" id="fillsheet">Blatt voll machen</button>
   </p>
 
+  <h2>Übersicht für die Dose</h2>
+  <div class="card row" style="gap: 12px; flex-wrap: wrap">
+    <span class="muted grow">Alle Tonies auf einem A4-Blatt: Cover, Name, Jahr, Spieldauer.</span>
+    <a class="button" href="/sheet/overview">Übersicht als PDF</a>
+  </div>
+
   <h2>Rückseite</h2>
   <div class="card">
     <div class="row stackable" style="gap: 20px; align-items: flex-start">
@@ -79,7 +85,7 @@
         <p class="muted" style="margin-top: 0">
           Ein zweiter Aufkleber je Tonie, für die freie Rückseite. Er trägt den Namen statt
           des Bildes, damit du eine Figur auch ohne Box erkennst. Jahr und Spieldauer stehen
-          nicht dabei: teddyCloud speichert sie nicht.
+          dabei, wo die App sie kennt; bei Tonies von vor dieser Funktion fehlen sie.
         </p>
         <label class="row" style="gap: 8px; cursor: pointer; margin-bottom: 8px">
           <input type="checkbox" name="back" value="on" id="wantback">
@@ -118,6 +124,38 @@
   <p><button class="primary" type="submit">PDF erzeugen</button>
      <a href="/tonies" style="margin-left:12px">Zu den Tonies</a></p>
 </form>
+
+<h2 id="printer">Drucker ausrichten</h2>
+<div class="card">
+  {% if calibrated %}<p style="margin-top: 0"><strong>Gespeichert.</strong> Jedes Blatt wird ab jetzt entsprechend verschoben.</p>{% endif %}
+  <p class="muted" style="margin-top: 0">
+    Einmal das Kalibrierblatt drucken, mit dem Lineal die Mitte von Kreuz 1 nachmessen und hier
+    eintragen. Soll: {{ "%.1f" | format(expected[0]) }} mm vom linken,
+    {{ "%.1f" | format(expected[1]) }} mm vom oberen Rand.
+    {% if shift[0] or shift[1] %}
+    Zurzeit wird um {{ "%.1f" | format(shift[0]) }} mm nach rechts und
+    {{ "%.1f" | format(shift[1]) }} mm nach unten verschoben.
+    {% else %}Zurzeit wird nichts verschoben.{% endif %}
+  </p>
+  <form method="post" action="/sheet/calibration" class="row stackable" style="gap: 10px; flex-wrap: wrap; align-items: flex-end">
+    <a class="button" href="/sheet/calibration">Kalibrierblatt</a>
+    <label class="field" style="margin: 0">
+      <span>gemessen von links (mm)</span>
+      <input type="text" name="left_mm" inputmode="decimal" required style="width: 9em">
+    </label>
+    <label class="field" style="margin: 0">
+      <span>von oben (mm)</span>
+      <input type="text" name="top_mm" inputmode="decimal" required style="width: 9em">
+    </label>
+    <button type="submit">Speichern</button>
+  </form>
+  {% if shift[0] or shift[1] %}
+  <form method="post" action="/sheet/calibration/reset" style="margin-top: 10px">
+    <button type="submit" class="small">Verschiebung zurücksetzen</button>
+  </form>
+  {% endif %}
+</div>
+
 
 {% if models %}
 <script type="application/json" id="backdata">{{ backs | tojson }}</script>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Wiederherstellen - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{% if done %}Wiederhergestellt{% else %}Wiederherstellen?{% endif %}</h1>
+<p class="sub">
+  Sicherung vom {{ (manifest.get("created") or "unbekannten Datum")[:10] }},
+  {{ manifest.get("models", "?") }} Modelle, {{ manifest.get("tags", "?") }} Sticker.
+</p>
+
+{% set changing = steps | rejectattr("action", "equalto", "gleich") | list %}
+{% if not done %}
+<div class="{% if changing %}warn{% else %}card{% endif %}">
+  {% if changing %}
+  {{ changing | length }} Änderungen. Unten steht jede einzeln; bestätigen schreibt genau diese.
+  {% else %}
+  Die Sicherung entspricht dem jetzigen Stand. Es gibt nichts zu tun.
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="list">
+{% for step in steps %}
+  <div class="album">
+    <span class="muted" style="width: 6em">{{ step.what }}</span>
+    <span class="grow truncate">
+      <strong class="truncate">{{ step.name }}</strong>
+      {% if step.note %}<span class="muted" style="display: block; white-space: normal">{{ step.note }}</span>{% endif %}
+    </span>
+    <span class="{% if step.action == 'gleich' %}muted{% elif step.action in ('übersprungen', 'behalten', 'fehlgeschlagen') %}state-failed{% else %}state-done{% endif %}">
+      {{ step.action }}
+    </span>
+  </div>
+{% endfor %}
+</div>
+
+{% if not done and changing %}
+<form method="post" action="/restore/{{ token }}" style="margin-top: 14px">
+  <button class="primary" type="submit">Jetzt wiederherstellen</button>
+  <a href="/backup" style="margin-left: 12px">Abbrechen</a>
+</form>
+{% else %}
+<p><a class="button" href="/tonies">Zu den Tonies</a></p>
+{% endif %}
+{% endblock %}

@@ -72,11 +72,12 @@ class TestRemoving:
     def test_the_raw_log_reports_the_tonie_being_lifted(self, watcher):
         # teddyCloud emits no named event for this: tbs_tag_removed is the one
         # state change that never reaches SSE by name. It is only in the raw
-        # RTNL log, as function group 15, function 16067.
+        # RTNL log, as function group 15, function 16067, with the tag id's
+        # halves swapped the way a real box sends it.
         _frames(watcher,
                 ("TagValid", "E00403500EEDC9A9"),
                 ("rtnl-raw-log2",
-                 '{"function_group":15,"function":16067,"field6":"E00403500EEDC9A9"}'))
+                 '{"function_group":15,"function":16067,"field6":"0EEDC9A9E0040350"}'))
 
         assert watcher.state.on_box is False
         assert watcher.state.ruid == "a9c9ed0e500304e0"
@@ -85,7 +86,7 @@ class TestRemoving:
         _frames(watcher,
                 ("TagValid", "E00403500EEDC9A9"),
                 ("rtnl-raw-log2",
-                 '{"function_group":15,"function":8630,"field6":"E00403500EEDC9A9"}'))
+                 '{"function_group":15,"function":8630,"field6":"0EEDC9A9E0040350"}'))
 
         assert watcher.state.on_box is False
 
@@ -177,3 +178,165 @@ class TestUnknownTagAges:
 
     def test_nothing_seen_is_nothing_reported(self, watcher):
         assert watcher.state.fresh_unknown is None
+
+
+class TestReportingChanges:
+    """What the listening log is told: changes, never repeats."""
+
+    @pytest.fixture
+    def heard(self):
+        return []
+
+    @pytest.fixture
+    def reporting(self, heard):
+        watcher = BoxWatcher("http://teddycloud.test",
+                             on_change=lambda kind, ruid, at: heard.append((kind, ruid)))
+        return watcher
+
+    def test_a_tonie_going_on_is_reported(self, reporting, heard):
+        reporting.handle("TagValid", "E00403500EEDC9A9")
+
+        reporting.flush()
+
+        assert heard == [("placed", "a9c9ed0e500304e0")]
+
+    def test_the_same_tonie_reported_twice_is_one_placement(self, reporting, heard):
+        # The box repeats TagValid for a tonie that stays put; counting each
+        # would credit one evening as a dozen listens.
+        reporting.handle("TagValid", "E00403500EEDC9A9")
+        reporting.handle("TagValid", "E00403500EEDC9A9")
+
+        reporting.flush()
+
+        assert heard == [("placed", "a9c9ed0e500304e0")]
+
+    def test_a_tonie_coming_off_is_reported(self, reporting, heard):
+        reporting.handle("TagValid", "E00403500EEDC9A9")
+        reporting.handle("rtnl-raw-log2",
+                         '{"function_group":15,"function":16067,"field6":"0EEDC9A9E0040350"}')
+
+        reporting.flush()
+
+        assert heard[-1] == ("removed", "a9c9ed0e500304e0")
+
+    def test_playback_is_reported_against_the_tonie_on_the_box(self, reporting, heard):
+        reporting.handle("TagValid", "E00403500EEDC9A9")
+        reporting.handle("playback", "started")
+        reporting.handle("playback", "started")
+        reporting.handle("playback", "stopped")
+
+        reporting.flush()
+
+        assert heard[1:] == [("started", "a9c9ed0e500304e0"),
+                             ("stopped", "a9c9ed0e500304e0")]
+
+    def test_a_listener_that_fails_does_not_end_the_stream(self, heard):
+        def broken(kind, ruid, at):
+            raise OSError("disk full")
+
+        watcher = BoxWatcher("http://teddycloud.test", on_change=broken)
+        watcher.handle("TagValid", "E00403500EEDC9A9")
+
+        assert watcher.state.on_box is True
+
+
+# --- what the real box sends ----------------------------------------------
+#
+# Everything above was written from teddyCloud's source. What follows replays
+# frames recorded from a real box on 03.10.2026 (tests/fixtures), with the
+# second each one arrived in. They showed two things the source reading had
+# missed: the tag id in a raw log entry has its two 4-byte halves swapped, and
+# the box sends its log in bundles, minutes after the fact.
+
+import json as _json
+from pathlib import Path as _Path
+
+from tonie_studio.boxstate import uid_from_field6
+
+FIXTURE = _Path(__file__).parent / "fixtures" / "box-sse-2026-10-03.json"
+TIERE_RUID = "a9c9ed0e500304e0"
+
+
+def _replay(watcher, clock):
+    """Feed the recorded frames, moving the clock to each one's arrival."""
+    for frame in _json.loads(FIXTURE.read_text()):
+        hours, minutes, seconds = map(int, frame["arrived"].split(":"))
+        clock.now = datetime(2026, 10, 3, hours, minutes, seconds, tzinfo=timezone.utc)
+        watcher.feed(f"event: {frame['event']}")
+        watcher.feed(f"data: {frame['data']}")
+        watcher.feed("")
+
+
+class _Clock:
+    def __init__(self):
+        self.now = datetime(2026, 10, 3, 20, 0, tzinfo=timezone.utc)
+
+    def __call__(self):
+        return self.now
+
+
+class TestRealBox:
+    def test_reads_the_tag_id_the_way_teddycloud_does(self):
+        # teddyCloud reads the first four bytes as the low word and the next
+        # four as the high one (read_big_endian64 in handler_rtnl.c).
+        assert uid_from_field6("0EEDC9A9E0040350") == "E00403500EEDC9A9"
+
+    def test_ignores_what_follows_the_tag_id(self):
+        assert uid_from_field6("0EEDC9A9E004035001000000") == "E00403500EEDC9A9"
+
+    def test_refuses_something_too_short_to_be_a_tag(self):
+        assert uid_from_field6("DE0E0000") is None
+
+    def test_on_off_on_with_the_same_tonie_is_three_changes(self):
+        heard = []
+        clock = _Clock()
+        watcher = BoxWatcher("http://teddycloud.test", clock=clock,
+                             on_change=lambda kind, ruid, at: heard.append((kind, ruid)))
+
+        _replay(watcher, clock)
+        watcher.flush()
+
+        kinds = [kind for kind, ruid in heard if kind in ("placed", "removed")]
+        assert kinds == ["placed", "removed"] * 4
+        assert all(ruid == TIERE_RUID for _kind, ruid in heard)
+
+    def test_times_come_from_the_box_not_from_when_the_bundle_arrived(self):
+        # The first two rounds arrived together with the third, in the same
+        # second, two minutes after they happened.
+        heard = []
+        clock = _Clock()
+        watcher = BoxWatcher("http://teddycloud.test", clock=clock,
+                             on_change=lambda kind, ruid, at: heard.append((kind, at)))
+
+        _replay(watcher, clock)
+        watcher.flush()
+
+        tag_times = [at for kind, at in heard if kind in ("placed", "removed")]
+        first_on, first_off = tag_times[0], tag_times[1]
+        assert (first_off - first_on).total_seconds() == pytest.approx(2.35, abs=0.01)
+        third_on = tag_times[4]
+        assert (third_on - first_on).total_seconds() == pytest.approx(139.7, abs=0.1)
+
+    def test_the_bundle_is_placed_where_the_box_said_it_happened(self):
+        # The freshest frame of the last bundle ties the box's clock to the
+        # wall: its own uptime arrived at 20:08:14.
+        heard = []
+        clock = _Clock()
+        watcher = BoxWatcher("http://teddycloud.test", clock=clock,
+                             on_change=lambda kind, ruid, at: heard.append((kind, at)))
+
+        _replay(watcher, clock)
+        watcher.flush()
+
+        first_on = next(at for kind, at in heard if kind == "placed")
+        assert first_on < datetime(2026, 10, 3, 20, 6, 0, tzinfo=timezone.utc)
+
+    def test_the_page_state_follows_at_once(self):
+        # Only the record waits for the bundle to be complete; what the page
+        # shows as on the box must not.
+        clock = _Clock()
+        watcher = BoxWatcher("http://teddycloud.test", clock=clock)
+
+        _replay(watcher, clock)
+
+        assert watcher.state.on_box is False

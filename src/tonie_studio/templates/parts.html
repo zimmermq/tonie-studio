@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Teile - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>In Teilen</h1>
+<p class="sub">
+  Jeder Teil wird ein eigenes Taf und ein eigener Tonie. Sie laufen nacheinander; ist einer
+  fertig, kann er schon bespielt werden, während der nächste noch encodiert wird.
+</p>
+
+<div class="list">
+{% for job in jobs %}
+  <div class="album" data-job="{{ job.id }}">
+    <span class="grow truncate">
+      <strong class="truncate">{{ job.result.episode if job.result else job.label }}</strong>
+      <span class="muted truncate state">{{ states.get(job.state.value, job.state.value) }}</span>
+    </span>
+    <a class="button small assign" href="/job/{{ job.id }}/assign"
+       {% if job.state.value != 'done' %}hidden{% endif %}>bespielen</a>
+    <a class="small" href="/job/{{ job.id }}">Details</a>
+  </div>
+{% endfor %}
+</div>
+
+<script>
+  // Updated in place rather than by reloading the page, which would throw it
+  // back to the top every few seconds.
+  const states = {{ states | tojson }};
+  async function poll() {
+    let running = false;
+    for (const row of document.querySelectorAll('[data-job]')) {
+      try {
+        const job = await (await fetch(`/api/job/${row.dataset.job}`)).json();
+        const text = states[job.state] || job.state;
+        row.querySelector('.state').textContent =
+          job.percent != null && job.state === 'running' ? `${text}, ${job.percent} %` : text;
+        row.querySelector('.assign').hidden = job.state !== 'done';
+        if (job.state === 'queued' || job.state === 'running') running = true;
+      } catch (error) {
+        running = true;
+      }
+    }
+    if (running) setTimeout(poll, 3000);
+  }
+  poll();
+</script>
+{% endblock %}

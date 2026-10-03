@@ -146,6 +146,13 @@ def publish(
 
     if cover is not None:
         model["pic"] = _upload_cover(client, model_id, cover, cover_name)
+    else:
+        # The model is replaced whole on every write, so a picture not carried
+        # over is a picture lost: publishing new audio under the same model
+        # must not strip its cover.
+        existing = find_model(client, model_id)
+        if existing and existing.get("pic"):
+            model["pic"] = existing["pic"]
 
     client.upsert_custom_tonie(model)
     client.set_tag(ruid, source=encoded.source, tonie_model=model_id, nocloud=True)
@@ -274,6 +281,38 @@ def update_model(
     client.upsert_custom_tonie(model)
     log.info("model %s updated", model["model"])
     return model
+
+
+def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
+    """Make a second sticker play what the first one plays.
+
+    Both point at the same taf and name the same model. A second model for
+    the same audio would carry the same audio identity and fight the first
+    over which name teddyCloud shows; one model on two stickers has nothing to
+    fight about. Whatever the second sticker played before is replaced.
+    """
+    if from_ruid == to_ruid:
+        raise TonieError("a sticker cannot be copied onto itself")
+    entries = {entry.get("ruid"): entry for entry in client.tags()}
+    original = entries.get(from_ruid)
+    if original is None or not original.get("source"):
+        raise TonieError(f"the tag {from_ruid} plays nothing to copy")
+    if to_ruid not in entries or to_ruid == SYSTEM_RUID:
+        raise TonieError(
+            f"teddyCloud does not know the tag {to_ruid}; hold it against the box once first"
+        )
+
+    info = original.get("tonieInfo") or {}
+    client.set_tag(
+        to_ruid,
+        source=original["source"],
+        tonie_model=info.get("model") or "",
+        live=bool(original.get("live")),
+        # A library tag asking the cloud for content it will never have is
+        # the one thing a copy must not inherit.
+        nocloud=True if not original.get("live") else bool(original.get("nocloud")),
+    )
+    log.info("tag %s now plays what %s plays", to_ruid, from_ruid)
 
 
 def remove_model(client: TeddyCloudClient, model_id: str, ruid: Optional[str] = None) -> None:

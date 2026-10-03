@@ -42,8 +42,8 @@
     /* A link styled as a button must not keep a link's underline. */
     text-decoration: none; display: inline-block;
   }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.small { padding: 2px 8px; font-size: 13px; line-height: 1.4; }
+  button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.small, .button.small { padding: 2px 8px; font-size: 13px; line-height: 1.4; }
   input[type=text], input[type=url], input[type=search], input[type=number] {
     font: inherit; padding: 7px 10px; border: 1px solid var(--line);
     border-radius: 7px; background: #fff; color: var(--ink);
@@ -64,6 +64,25 @@
   .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
   .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
   .state-done { color: var(--ok); }
+  table.sizes { border-collapse: collapse; margin: 0 0 14px; min-width: 18em; }
+  table.sizes td { padding: 3px 14px 3px 0; }
+  table.sizes td.number { text-align: right; font-variant-numeric: tabular-nums; }
+  table.sizes tfoot td { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 500; }
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 500; line-height: 1.6;
+    padding: 0 7px; border-radius: 99px; vertical-align: 2px; white-space: nowrap;
+  }
+  .pill.new { background: var(--accent); color: var(--card); }
+  .pill.done { background: var(--line); color: var(--muted); }
+  /* A finding's severity as a stripe, so a long list sorts itself by eye. */
+  .checkup { border-left: 4px solid transparent; align-items: flex-start; }
+  .checkup.fehler { border-left-color: var(--bad); }
+  .checkup.warnung { border-left-color: var(--accent); }
+  .checkup.hinweis { border-left-color: var(--line); }
+  .preview-text {
+    display: block; margin-top: 4px; font-size: 12px; color: var(--muted);
+    white-space: normal; word-break: break-all;
+  }
   .state-failed { color: var(--bad); }
   img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; }
 
@@ -210,7 +229,7 @@
       --bg: #17150f; --card: #211e18; --ink: #ece7dd; --muted: #a09889;
       --line: #35302a; --accent: #fb923c;
     }
-    button.primary { color: #17150f; }
+    button.primary, .button.primary { color: #17150f; }
     input[type=text], input[type=url], input[type=search], input[type=number] {
       background: #17150f;
     }
@@ -224,7 +243,11 @@
   <a href="/tonies">Tonies</a>
   <a href="/library">Library</a>
   <a href="/radio">Radio</a>
+  <a href="/podcasts">Podcasts</a>
   <a href="/sheet">Blatt</a>
+  <a href="/listening">Gehört</a>
+  <a href="/checkup">Hausmeister</a>
+  <a href="/backup">Sicherung</a>
   <span class="boxnow muted grow truncate" id="boxnow" hidden></span>
 </header>
 <main>

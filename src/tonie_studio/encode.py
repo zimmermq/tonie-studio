@@ -24,7 +24,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from tonie_studio.teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -87,16 +87,23 @@ def library_path(series: str, episode: str) -> str:
     return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
 
 
-def list_tafs(client: TeddyCloudClient, path: str = "/") -> List[dict]:
+def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -> List[dict]:
     """Every taf in the library, with its path, size and audio identity.
 
     Walks the tree because the library is organised by series, and a flat list
     is what a person cleaning up wants to look at.
+
+    By default a folder that cannot be listed is skipped, which suits a page
+    showing what is there. Anything that concludes from the list what is *not*
+    there has to pass ``strict``: a skipped folder would make every taf in it
+    look missing, and the obvious next step is deleting the tag or the model.
     """
     found: List[dict] = []
     try:
         entries = client.list_dir(path, special="library")
     except TeddyCloudError as error:
+        if strict:
+            raise
         log.warning("cannot list %s: %s", path, error)
         return found
 
@@ -106,7 +113,7 @@ def list_tafs(client: TeddyCloudClient, path: str = "/") -> List[dict]:
             continue
         full = f"{path.rstrip('/')}/{name}"
         if entry.get("isDir"):
-            found.extend(list_tafs(client, full))
+            found.extend(list_tafs(client, full, strict=strict))
         elif name.lower().endswith(TAF_SUFFIX):
             header = entry.get("tafHeader") or {}
             found.append({

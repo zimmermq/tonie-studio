@@ -7,6 +7,7 @@ from tonie_studio.encode import EncodeResult
 from tonie_studio.tonie import (
     MODEL_PREFIX,
     TonieError,
+    copy_tag,
     find_model,
     find_model_by_audio,
     list_tags,
@@ -381,3 +382,63 @@ class TestReleaseYear:
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"])
 
         assert year_of(find_model(teddycloud, "TS-0001")) is None
+
+
+class TestCopyTag:
+    """A second sticker playing what the first one plays: for grandma's house,
+    or to replace one that got lost."""
+
+    @pytest.fixture
+    def published(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Lichterkinder",
+                episode="Halloween", tracks=["Eins"])
+        return teddycloud
+
+    def test_plays_the_same_audio_under_the_same_model(self, published):
+        copy_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        original = published.tag_entries["7ab4ed0e500304e0"]
+        copy = published.tag_entries["deb4ed0e500304e0"]
+        assert copy["source"] == original["source"]
+        assert copy["tonie_model"] == original["tonie_model"]
+
+    def test_makes_no_second_model(self, published):
+        # Two models with the same audio identity would fight over which name
+        # teddyCloud shows; one model on two stickers has no such problem.
+        before = len(published.custom_models)
+
+        copy_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert len(published.custom_models) == before
+
+    def test_keeps_the_copy_off_the_cloud(self, published):
+        copy_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert published.tag_entries["deb4ed0e500304e0"]["nocloud"] is True
+
+    def test_refuses_to_copy_a_sticker_onto_itself(self, published):
+        with pytest.raises(TonieError):
+            copy_tag(published, "7ab4ed0e500304e0", "7ab4ed0e500304e0")
+
+    def test_refuses_to_copy_from_a_sticker_that_plays_nothing(self, teddycloud):
+        with pytest.raises(TonieError):
+            copy_tag(teddycloud, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+    def test_refuses_a_sticker_the_box_has_never_read(self, published):
+        with pytest.raises(TonieError):
+            copy_tag(published, "7ab4ed0e500304e0", "ffffffffffffffff")
+
+
+class TestRepublishing:
+    def test_publishing_again_without_a_picture_keeps_the_old_one(self, teddycloud, encoded):
+        # A model is replaced whole on every write; without carrying the
+        # picture over, refreshing a tonie's audio would strip its cover.
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                           tracks=["Eins"], cover=b"\xff\xd8\xffcover")
+
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                tracks=["Zwei"], model_id=model_id)
+
+        model = find_model(teddycloud, model_id)
+        assert model["pic"] == f"/custom_img/{model_id}.jpg"
+        assert model["tracks"] == ["Zwei"]
