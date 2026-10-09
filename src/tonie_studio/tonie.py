@@ -24,7 +24,7 @@ from __future__ import annotations
 import io
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Union
@@ -86,11 +86,6 @@ def label(series: Optional[str], episode: Optional[str]) -> str:
     return " - ".join(part for part in (series or "", episode or "") if part)
 
 
-def model_label(model: Dict[str, Any]) -> str:
-    """How a custom model is named in a list."""
-    return label(model.get("series"), model.get("episodes"))
-
-
 def is_real_tag(entry: Dict[str, Any]) -> bool:
     """False for teddyCloud's placeholder entries in the tag index, which no sticker has."""
     return entry.get("ruid") != SYSTEM_RUID and entry.get("type") != "system"
@@ -138,13 +133,103 @@ def _tag(entry: Dict[str, Any]) -> TonieTag:
     )
 
 
+@dataclass
+class Model:
+    """One custom model in teddyCloud: what a tonie is called and shows.
+
+    teddyCloud replaces a model whole on every write. A model read from it
+    therefore keeps every field it came with: the ones this app has no use
+    for travel in ``other`` and are written back unchanged.
+    """
+
+    id: str
+    series: str = ""
+    episode: str = ""
+    tracks: List[str] = field(default_factory=list)
+    language: str = DEFAULT_LANGUAGE
+    category: str = DEFAULT_CATEGORY
+    # The cover as teddyCloud serves it, such as /custom_img/TS-0001.jpg.
+    picture: str = ""
+    # The release year as seconds since 1970, the catalogue's form; see _released.
+    release: str = ""
+    # What lets teddyCloud recognise a taf as this model's audio on its own:
+    # it matches a taf's header against these in every known model.
+    audio_ids: List[Any] = field(default_factory=list)
+    hashes: List[str] = field(default_factory=list)
+    other: Dict[str, Any] = field(default_factory=dict)
+
+    _FIELDS = ("model", "series", "episodes", "tracks", "language", "category", "pic", "release",
+               "audio_id", "hash")
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> "Model":
+        return cls(
+            id=str(data.get("model") or ""),
+            series=str(data.get("series") or ""),
+            episode=str(data.get("episodes") or ""),
+            tracks=[str(track) for track in data.get("tracks") or []],
+            language=str(data.get("language") or ""),
+            category=str(data.get("category") or ""),
+            picture=str(data.get("pic") or ""),
+            release=str(data.get("release") or ""),
+            audio_ids=list(data.get("audio_id") or []),
+            hashes=[str(entry) for entry in data.get("hash") or []],
+            other={key: value for key, value in data.items() if key not in cls._FIELDS},
+        )
+
+    def to_json(self) -> Dict[str, Any]:
+        """The model as teddyCloud's tonies.custom.json holds it."""
+        data = dict(self.other)
+        data.update({"model": self.id, "series": self.series, "episodes": self.episode,
+                     "tracks": list(self.tracks)})
+        for key, value in (("language", self.language), ("category", self.category),
+                           ("pic", self.picture), ("release", self.release),
+                           ("audio_id", self.audio_ids), ("hash", self.hashes)):
+            if value:
+                data[key] = value if isinstance(value, str) else list(value)
+        return data
+
+    @property
+    def label(self) -> str:
+        """How the model is named in a list."""
+        return label(self.series, self.episode)
+
+    @property
+    def cover(self) -> Optional[str]:
+        """The file name of the cover in custom_img, or None.
+
+        None as well for a picture hosted elsewhere, or a name with a path in
+        it: neither is a file this app can fetch, back up or print.
+        """
+        if not self.picture.startswith(CUSTOM_IMG):
+            return None
+        name = self.picture[len(CUSTOM_IMG):]
+        return name if name and "/" not in name else None
+
+    @property
+    def year(self) -> Optional[int]:
+        """The release year, or None when the model carries no date."""
+        try:
+            return datetime.fromtimestamp(int(self.release.strip()), timezone.utc).year
+        except (ValueError, OverflowError, OSError):
+            return None
+
+
+def list_models(client: TeddyCloudClient) -> List[Model]:
+    """Every custom model teddyCloud holds."""
+    return [Model.from_json(entry) for entry in client.custom_tonies()]
+
+
+def find_model(client: TeddyCloudClient, model_id: str) -> Optional[Model]:
+    """One custom model by its id, or None."""
+    return next((model for model in list_models(client)
+                 if model.id.lower() == model_id.lower()), None)
+
+
 def next_model_id(client: TeddyCloudClient) -> str:
     """The lowest unused id in this app's namespace."""
-    used = set()
-    for model in client.custom_tonies():
-        name = str(model.get("model", ""))
-        if name.startswith(MODEL_PREFIX) and name[len(MODEL_PREFIX):].isdigit():
-            used.add(int(name[len(MODEL_PREFIX):]))
+    used = {int(model.id[len(MODEL_PREFIX):]) for model in list_models(client)
+            if model.id.startswith(MODEL_PREFIX) and model.id[len(MODEL_PREFIX):].isdigit()}
     return f"{MODEL_PREFIX}{max(used, default=0) + 1:04d}"
 
 
@@ -176,30 +261,25 @@ def publish(
     require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
-    model = _model(model_id, series, episode, tracks, encoded, language, category, year)
+    model = _new_model(model_id, series, episode, tracks, language, category)
+    model.release = _released(year) or ""
+    if encoded.audio_id is not None and encoded.sha1:
+        model.audio_ids, model.hashes = [encoded.audio_id], [encoded.sha1.upper()]
 
     if cover is not None:
-        model["pic"] = _upload_cover(client, model_id, cover, cover_name)
+        model.picture = _upload_cover(client, model_id, cover, cover_name)
     else:
         # The model is replaced whole on every write, so a picture not carried
         # over is a picture lost: publishing new audio under the same model
         # must not strip its cover.
         existing = find_model(client, model_id)
-        if existing and existing.get("pic"):
-            model["pic"] = existing["pic"]
+        if existing:
+            model.picture = existing.picture
 
-    client.upsert_custom_tonie(model)
+    client.upsert_custom_tonie(model.to_json())
     client.set_tag(ruid, source=encoded.source, tonie_model=model_id, nocloud=True)
     log.info("tag %s now plays %s as %s", ruid, encoded.source, model_id)
     return model_id
-
-
-def find_model(client: TeddyCloudClient, model_id: str) -> Optional[Dict[str, Any]]:
-    """One custom model by its id, or None."""
-    for model in client.custom_tonies():
-        if str(model.get("model", "")).lower() == model_id.lower():
-            return model
-    return None
 
 
 def publish_stream(
@@ -238,11 +318,11 @@ def publish_stream(
     require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
-    model = _described(model_id, series, episode, (), language, category)
+    model = _new_model(model_id, series, episode, (), language, category)
     if cover is not None:
-        model["pic"] = _upload_cover(client, model_id, cover, cover_name)
+        model.picture = _upload_cover(client, model_id, cover, cover_name)
 
-    client.upsert_custom_tonie(model)
+    client.upsert_custom_tonie(model.to_json())
     client.set_tag(ruid, source=url, tonie_model=model_id, live=True, nocloud=True)
     log.info("tag %s now streams %s as %s", ruid, url, model_id)
     return model_id
@@ -252,7 +332,7 @@ def find_model_by_audio(
     client: TeddyCloudClient,
     audio_id: Optional[int],
     sha1: Optional[str],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Model]:
     """The model that already carries this exact audio, if there is one.
 
     teddyCloud identifies a taf by `audio_id` plus `hash`, so two models
@@ -264,10 +344,9 @@ def find_model_by_audio(
     if audio_id is None or not sha1:
         return None
     wanted = sha1.upper()
-    for model in client.custom_tonies():
-        ids = [str(entry) for entry in (model.get("audio_id") or [])]
-        hashes = [str(entry).upper() for entry in (model.get("hash") or [])]
-        if str(audio_id) in ids and wanted in hashes:
+    for model in list_models(client):
+        if (str(audio_id) in [str(entry) for entry in model.audio_ids]
+                and wanted in [entry.upper() for entry in model.hashes]):
             return model
     return None
 
@@ -281,7 +360,7 @@ def update_model(
     tracks: Optional[Sequence[str]] = None,
     cover: Optional[Union[Path, bytes]] = None,
     cover_name: str = "jpg",
-) -> Dict[str, Any]:
+) -> Model:
     """Change a model's description without touching the audio it points at.
 
     `audio_id` and `hash` are carried over untouched: they are what lets
@@ -292,18 +371,18 @@ def update_model(
         raise TonieError(f"there is no model {model_id}")
 
     if series is not None:
-        model["series"] = _series(series, model_id)
+        model.series = _series(series, model.id)
     if episode is not None:
-        model["episodes"] = episode.strip()
+        model.episode = episode.strip()
     if tracks is not None:
-        model["tracks"] = _tracks(tracks)
+        model.tracks = _tracks(tracks)
     if category is not None:
-        model["category"] = _category(category)
+        model.category = _category(category)
     if cover is not None:
-        model["pic"] = _upload_cover(client, model["model"], cover, cover_name)
+        model.picture = _upload_cover(client, model.id, cover, cover_name)
 
-    client.upsert_custom_tonie(model)
-    log.info("model %s updated", model["model"])
+    client.upsert_custom_tonie(model.to_json())
+    log.info("model %s updated", model.id)
     return model
 
 
@@ -346,49 +425,16 @@ def remove_model(client: TeddyCloudClient, model_id: str, ruid: Optional[str] = 
     log.info("model %s removed", model_id)
 
 
-def _model(
-    model_id: str,
-    series: str,
-    episode: str,
-    tracks: Sequence[str],
-    encoded: EncodeResult,
-    language: str,
-    category: str,
-    year: Optional[Union[int, str]] = None,
-) -> Dict[str, Any]:
-    """The tonies.custom.json entry for this taf."""
-    model = _described(model_id, series, episode, tracks, language, category)
-
-    released = _released(year)
-    if released:
-        model["release"] = released
-
-    # These two are what lets teddyCloud recognise the audio on its own: it
-    # matches a taf's header against every known model, so a tag playing this
-    # taf picks the model up even if nobody set tonie_model on it.
-    if encoded.audio_id is not None and encoded.sha1:
-        model["audio_id"] = [encoded.audio_id]
-        model["hash"] = [encoded.sha1.upper()]
-
-    return model
-
-
-def _described(model_id: str, series: str, episode: str, tracks: Sequence[str],
-               language: str, category: str) -> Dict[str, Any]:
-    """What every model says about itself, whether it plays a taf or a stream."""
-    return {
-        "model": model_id,
-        "series": _series(series, model_id),
-        "episodes": episode.strip(),
-        "tracks": _tracks(tracks),
-        "language": language,
-        "category": _category(category),
-    }
+def _new_model(model_id: str, series: str, episode: str, tracks: Sequence[str],
+               language: str, category: str) -> Model:
+    """A model as this app makes one, whether it plays a taf or a stream."""
+    return Model(id=model_id, series=_series(series, model_id), episode=episode.strip(),
+                 tracks=_tracks(tracks), language=language, category=_category(category))
 
 
 def _series(series: str, model_id: str) -> str:
-    # Without a series the model is listed under its own id, so every model
-    # has a name it can be told apart by.
+    # teddyCloud's model format needs a series (the client refuses a model
+    # without one), so a model nobody named is listed under its own id.
     return series.strip() or model_id
 
 
@@ -420,18 +466,6 @@ def _released(year: Optional[Union[int, str]]) -> Optional[str]:
     return str(int(datetime(found, 1, 1, tzinfo=timezone.utc).timestamp()))
 
 
-def year_of(model: Dict[str, Any]) -> Optional[int]:
-    """The release year of a model, or None when it carries no date."""
-    try:
-        stamp = int(str(model.get("release") or "").strip())
-    except ValueError:
-        return None
-    try:
-        return datetime.fromtimestamp(stamp, timezone.utc).year
-    except (OverflowError, OSError, ValueError):
-        return None
-
-
 def _upload_cover(
     client: TeddyCloudClient,
     model_id: str,
@@ -455,19 +489,6 @@ def _upload_cover(
     with cover.open("rb") as stream:
         client.upload(stream, name, path="/", special="custom_img")
     return f"{CUSTOM_IMG}{name}"
-
-
-def cover_name(model: Dict[str, Any]) -> Optional[str]:
-    """The file name of a model's cover in custom_img, or None.
-
-    None as well for a picture hosted elsewhere, or a name with a path in it:
-    neither is a file this app can fetch, back up or print.
-    """
-    picture = str(model.get("pic") or "")
-    if not picture.startswith(CUSTOM_IMG):
-        return None
-    name = picture[len(CUSTOM_IMG):]
-    return name if name and "/" not in name else None
 
 
 def fetch_cover(client: TeddyCloudClient, name: str) -> bytes:

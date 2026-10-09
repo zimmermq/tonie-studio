@@ -23,12 +23,12 @@
 
   <div class="list">
     {% for model in models %}
-    <div class="album sticker" data-src="/cover/custom/{{ model.image }}">
-      <input type="checkbox" class="want" {% if model.model in preset %}checked{% endif %}
+    <div class="album sticker" data-src="/cover/custom/{{ model.cover }}">
+      <input type="checkbox" class="want" {% if model.id in preset %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
       <span class="grow truncate">
         <strong class="truncate">{{ model.series }}</strong>
-        <span class="muted truncate">{{ model.episodes }} &middot; {{ model.model }}</span>
+        <span class="muted truncate">{{ model.episode }} &middot; {{ model.id }}</span>
       </span>
 
       <!-- The two circles are the choice, not a preview of it. In the space a
@@ -49,7 +49,7 @@
         </label>
       </span>
 
-      <input type="hidden" name="models" value="{{ model.model }}">
+      <input type="hidden" name="models" value="{{ model.id }}">
       <input type="hidden" name="modes" value="{{ fill }}">
       <!-- One sticker per ticked tonie is what almost everyone wants. The
            number only appears once something is ticked, for the rarer case of
@@ -59,7 +59,7 @@
         <span class="count">1</span>&times;
         <button type="button" class="small" data-step="1">+</button>
       </span>
-      <input type="hidden" name="counts" value="{{ 1 if model.model in preset else 0 }}">
+      <input type="hidden" name="counts" value="{{ 1 if model.id in preset else 0 }}">
     </div>
     {% else %}
     <div class="album muted">

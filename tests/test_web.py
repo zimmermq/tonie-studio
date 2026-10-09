@@ -1787,9 +1787,11 @@ class TestPrintedLanguage:
     def test_the_back_side_speaks_the_readers_language(self):
         from tonie_studio.i18n import Translator
         from tonie_studio.pages.printing import _back_of
+        from tonie_studio.tonie import Model
 
-        model = {"model": "TS-0001", "series": "S", "episodes": "E", "year": 2019,
-                 "tracks": ["a", "b"]}
+        # The release is 2019-01-01 in the catalogue's seconds-since-1970 form.
+        model = Model(id="TS-0001", series="S", episode="E", release="1546300800",
+                      tracks=["a", "b"])
 
         assert _back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
         assert _back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"

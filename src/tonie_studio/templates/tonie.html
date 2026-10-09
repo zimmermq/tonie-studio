@@ -24,7 +24,7 @@
       </label>
       <label class="field">
         <span>{{ t("field.episode") }}</span>
-        <input type="text" name="episode" value="{{ model.episodes }}">
+        <input type="text" name="episode" value="{{ model.episode }}">
       </label>
       <label class="field">
         <span>{{ t("field.category") }}</span>
@@ -58,7 +58,7 @@
     {{ t("tonie.remove_hint") }} <strong>{{ t("tonie.keeps_playing") }}</strong> {{ t("tonie.audio_on_tag") }}
   </p>
   <form method="post" action="/tonies/{{ tag.ruid }}/delete">
-    <button type="submit">{{ t("tonie.delete_model", model=model.model) }}</button>
+    <button type="submit">{{ t("tonie.delete_model", model=model.id) }}</button>
   </form>
 </div>
 {% endif %}

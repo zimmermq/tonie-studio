@@ -4,8 +4,15 @@ already became a tonie."""
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from tonie_studio.albumnotes import (NEW_FOR, first_sightings, forget_model, guess_made, made,
-                                     remember_made)
+from tonie_studio.albumnotes import (
+    NEW_FOR,
+    first_sightings,
+    forget_model,
+    guess_made,
+    made,
+    remember_made,
+)
+from tonie_studio.tonie import Model
 
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -66,7 +73,7 @@ class TestGuessing:
         albums = [album("a1", "Tierische Tierlieder", "Lichterkinder")]
         models = [{"model": "TS-0001", "series": "Lichterkinder", "episodes": "Tierische Tierlieder"}]
 
-        assert guess_made(albums, models) == {"a1": "TS-0001"}
+        assert guess_made(albums, [Model.from_json(model) for model in models]) == {"a1": "TS-0001"}
 
     def test_matches_a_series_named_in_the_title(self):
         albums = [album("a2", "Bobo Siebenschläfer feiert Weihnachten: Geschichten",
@@ -74,23 +81,23 @@ class TestGuessing:
         models = [{"model": "TS-0002", "series": "Bobo Siebenschläfer",
                    "episodes": "Feiert Weihnachten"}]
 
-        assert guess_made(albums, models) == {"a2": "TS-0002"}
+        assert guess_made(albums, [Model.from_json(model) for model in models]) == {"a2": "TS-0002"}
 
     def test_two_possible_albums_means_no_guess(self):
         albums = [album("a1", "Unter Meinem Bett", "VA"), album("a2", "Unter Meinem Bett 2", "VA")]
         models = [{"model": "TS-0004", "series": "Unter meinem Bett", "episodes": "Bett"}]
 
-        assert guess_made(albums, models) == {}
+        assert guess_made(albums, [Model.from_json(model) for model in models]) == {}
 
     def test_a_renamed_episode_is_not_guessed(self):
         albums = [album("a1", "Unter Meinem Bett", "VA")]
         models = [{"model": "TS-0004", "series": "Unter meinem Bett", "episodes": "Folge 1"}]
 
-        assert guess_made(albums, models) == {}
+        assert guess_made(albums, [Model.from_json(model) for model in models]) == {}
 
     def test_spelling_of_umlauts_does_not_matter(self):
         # Archive names are decomposed, typed names are not.
         albums = [album("a1", "Bärenlied", "Lichterkinder")]
         models = [{"model": "TS-0009", "series": "Lichterkinder", "episodes": "Bärenlied"}]
 
-        assert guess_made(albums, models) == {"a1": "TS-0009"}
+        assert guess_made(albums, [Model.from_json(model) for model in models]) == {"a1": "TS-0009"}

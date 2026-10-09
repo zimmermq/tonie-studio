@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from .store import LOCK, read_json, write_json
+from .tonie import Model
 
 SEEN_FILE = "albums-seen.json"
 MADE_FILE = "albums-made.json"
@@ -101,7 +102,7 @@ def made(data_dir: Path) -> Dict[str, List[str]]:
     return records if isinstance(records, dict) else {}
 
 
-def guess_made(albums: Sequence[tuple], models: Sequence[dict]) -> Dict[str, str]:
+def guess_made(albums: Sequence[tuple], models: Sequence[Model]) -> Dict[str, str]:
     """Album id to model id, for models whose album can only be one.
 
     A model matches an album when its episode is part of the album's title and
@@ -110,8 +111,8 @@ def guess_made(albums: Sequence[tuple], models: Sequence[dict]) -> Dict[str, str
     """
     guesses: Dict[str, str] = {}
     for model in models:
-        episode = _fold(model.get("episodes"))
-        series = _fold(model.get("series"))
+        episode = _fold(model.episode)
+        series = _fold(model.series)
         if not episode:
             continue
         candidates = []
@@ -120,7 +121,7 @@ def guess_made(albums: Sequence[tuple], models: Sequence[dict]) -> Dict[str, str
             if episode in title and (series == _fold(summary.artist) or (series and series in title)):
                 candidates.append(identifier)
         if len(candidates) == 1:
-            guesses.setdefault(candidates[0], str(model.get("model", "")))
+            guesses.setdefault(candidates[0], model.id)
     return guesses
 
 
@@ -128,7 +129,7 @@ def guess_made(albums: Sequence[tuple], models: Sequence[dict]) -> Dict[str, str
 _GENERIC_TITLE = re.compile(r"^(kapitel|chapter|track|titel|teil|part|folge)\s*\d+$")
 
 
-def match_by_tracks(titles: Sequence[str], models: Sequence[dict]) -> Optional[str]:
+def match_by_tracks(titles: Sequence[str], models: Sequence[Model]) -> Optional[str]:
     """The model whose track list is this album's, or None.
 
     Stronger than the name, which a person may have typed differently: a
@@ -143,10 +144,10 @@ def match_by_tracks(titles: Sequence[str], models: Sequence[dict]) -> Optional[s
         return None
     found = []
     for model in models:
-        theirs = _distinctive(model.get("tracks") or [])
+        theirs = _distinctive(model.tracks)
         shared = len(mine & theirs)
         if len(theirs) >= 2 and shared >= 2 and shared >= 0.75 * max(len(mine), len(theirs)):
-            found.append(str(model.get("model", "")))
+            found.append(model.id)
     return min(found) if found else None
 
 

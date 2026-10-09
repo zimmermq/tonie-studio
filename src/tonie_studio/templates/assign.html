@@ -12,8 +12,8 @@
 {% if duplicate %}
 <div class="warn">
   <strong>{{ t("assign.duplicate") }}</strong>
-  {{ duplicate.series }}{% if duplicate.episodes %} - {{ duplicate.episodes }}{% endif %}
-  ({{ duplicate.model }}).<br>
+  {{ duplicate.label }}
+  ({{ duplicate.id }}).<br>
   {{ t("assign.duplicate_hint") }}
 </div>
 {% endif %}

@@ -77,6 +77,28 @@ class EncodeResult:
     sha1: Optional[str] = None
 
 
+@dataclass
+class Taf:
+    """One taf in the library, as its folder listing describes it."""
+
+    path: str
+    size: int = 0
+    audio_id: Optional[int] = None
+    chapters: int = 0
+    # False for a file teddyCloud could not read a taf header from.
+    valid: bool = False
+
+    @property
+    def name(self) -> str:
+        """The file name without its folder and extension: what a person calls it."""
+        return self.path.rsplit("/", 1)[-1][:-len(TAF_SUFFIX)]
+
+    @property
+    def source(self) -> str:
+        """The source a tag uses to play this taf."""
+        return source_of(self.path)
+
+
 def library_path(series: str, episode: str) -> str:
     """Build the library path a taf goes to, from the names a person typed.
 
@@ -91,7 +113,7 @@ def library_path(series: str, episode: str) -> str:
     return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
 
 
-def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -> List[dict]:
+def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -> List[Taf]:
     """Every taf in the library, with its path, size and audio identity.
 
     Walks the tree because the library is organised by series, and a flat list
@@ -102,7 +124,7 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
     there has to pass ``strict``: a skipped folder would make every taf in it
     look missing, and the obvious next step is deleting the tag or the model.
     """
-    found: List[dict] = []
+    found: List[Taf] = []
     try:
         entries = client.list_dir(path, special="library")
     except TeddyCloudError as error:
@@ -120,16 +142,14 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
             found.extend(list_tafs(client, full, strict=strict))
         elif name.lower().endswith(TAF_SUFFIX):
             header = entry.get("tafHeader") or {}
-            found.append({
-                "path": full,
-                "source": source_of(full),
-                "name": name[:-len(TAF_SUFFIX)],
-                "size": entry.get("size") or 0,
-                "audio_id": header.get("audioId"),
-                "chapters": len(header.get("trackSeconds") or []),
-                "valid": bool(header.get("valid")),
-            })
-    return sorted(found, key=lambda taf: taf["path"].lower())
+            found.append(Taf(
+                path=full,
+                size=entry.get("size") or 0,
+                audio_id=header.get("audioId"),
+                chapters=len(header.get("trackSeconds") or []),
+                valid=bool(header.get("valid")),
+            ))
+    return sorted(found, key=lambda taf: taf.path.lower())
 
 
 def delete_taf(client: TeddyCloudClient, path: str) -> None:

@@ -16,7 +16,6 @@ from tonie_studio.tonie import (
     publish_stream,
     remove_model,
     update_model,
-    year_of,
 )
 
 
@@ -201,7 +200,7 @@ class TestUpdateModel:
         update_model(teddycloud, model_id, series="Neu", episode="Neue Folge")
 
         model = find_model(teddycloud, model_id)
-        assert (model["series"], model["episodes"]) == ("Neu", "Neue Folge")
+        assert (model.series, model.episode) == ("Neu", "Neue Folge")
 
     def test_keeps_the_audio_identity(self, teddycloud, encoded):
         # audio_id and hash are what lets teddyCloud recognise the taf.
@@ -212,8 +211,8 @@ class TestUpdateModel:
         update_model(teddycloud, model_id, series="Neu")
 
         model = find_model(teddycloud, model_id)
-        assert model["audio_id"] == [448533926]
-        assert model["hash"] == ["0573B07756E60D8431E19C2C1194572E5F428B37"]
+        assert model.audio_ids == [448533926]
+        assert model.hashes == ["0573B07756E60D8431E19C2C1194572E5F428B37"]
 
     def test_replaces_the_cover(self, teddycloud, encoded):
         model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
@@ -222,7 +221,7 @@ class TestUpdateModel:
         update_model(teddycloud, model_id, cover=b"neues-bild")
 
         assert teddycloud.images[f"{model_id}.jpg"] == b"neues-bild"
-        assert find_model(teddycloud, model_id)["pic"] == f"/custom_img/{model_id}.jpg"
+        assert find_model(teddycloud, model_id).picture == f"/custom_img/{model_id}.jpg"
 
     def test_leaves_untouched_what_was_not_named(self, teddycloud, encoded):
         model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
@@ -230,7 +229,7 @@ class TestUpdateModel:
 
         update_model(teddycloud, model_id, series="Neu")
 
-        assert find_model(teddycloud, model_id)["tracks"] == ["Eins", "Zwei"]
+        assert find_model(teddycloud, model_id).tracks == ["Eins", "Zwei"]
 
     def test_refuses_a_model_that_is_not_there(self, teddycloud):
         with pytest.raises(TonieError):
@@ -264,7 +263,7 @@ class TestFindModelByAudio:
 
         found = find_model_by_audio(teddycloud, encoded.audio_id, encoded.sha1)
 
-        assert found["model"] == model_id
+        assert found.id == model_id
 
     def test_matches_whatever_case_the_hash_is_written_in(self, teddycloud, encoded):
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H", tracks=[])
@@ -305,8 +304,8 @@ class TestPublishStream:
                                   series="Kinderradio", episode="rund um die Uhr")
 
         model = find_model(teddycloud, model_id)
-        assert (model["series"], model["episodes"]) == ("Kinderradio", "rund um die Uhr")
-        assert "audio_id" not in model and "hash" not in model
+        assert (model.series, model.episode) == ("Kinderradio", "rund um die Uhr")
+        assert "audio_id" not in model.to_json() and "hash" not in model.to_json()
 
     def test_takes_a_cover(self, teddycloud):
         model_id = publish_stream(teddycloud, "7ab4ed0e500304e0",
@@ -363,25 +362,25 @@ class TestReleaseYear:
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Lichterkinder", episode="Schlaflieder",
                 tracks=["Eins"], year="2021")
 
-        assert year_of(find_model(teddycloud, "TS-0001")) == 2021
+        assert find_model(teddycloud, "TS-0001").year == 2021
 
     def test_reads_a_year_out_of_a_full_date(self, teddycloud, encoded):
         # An audio tag's date field is often a whole date, not just a year.
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"],
                 year="2019-03-01")
 
-        assert year_of(find_model(teddycloud, "TS-0001")) == 2019
+        assert find_model(teddycloud, "TS-0001").year == 2019
 
     def test_leaves_the_field_out_when_the_year_makes_no_sense(self, teddycloud, encoded):
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"],
                 year="unbekannt")
 
-        assert "release" not in find_model(teddycloud, "TS-0001")
+        assert find_model(teddycloud, "TS-0001").release == ""
 
     def test_a_model_without_a_date_has_no_year(self, teddycloud, encoded):
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["Eins"])
 
-        assert year_of(find_model(teddycloud, "TS-0001")) is None
+        assert find_model(teddycloud, "TS-0001").year is None
 
 
 class TestCopyTag:
@@ -440,5 +439,5 @@ class TestRepublishing:
                 tracks=["Zwei"], model_id=model_id)
 
         model = find_model(teddycloud, model_id)
-        assert model["pic"] == f"/custom_img/{model_id}.jpg"
-        assert model["tracks"] == ["Zwei"]
+        assert model.picture == f"/custom_img/{model_id}.jpg"
+        assert model.tracks == ["Zwei"]

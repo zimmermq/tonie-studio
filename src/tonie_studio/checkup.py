@@ -26,10 +26,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
-from .encode import list_tafs
+from .encode import Taf, list_tafs
 from .library import is_library, played, same
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import MODEL_PREFIX, TonieTag, list_tags, model_label
+from .tonie import MODEL_PREFIX, Model, TonieTag, list_models, list_tags
 
 log = logging.getLogger(__name__)
 
@@ -92,9 +92,9 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     the same as left over.
     """
     tags = list_tags(client)
-    models = client.custom_tonies()
+    models = list_models(client)
     try:
-        tafs: Optional[List[dict]] = list_tafs(client, strict=True)
+        tafs: Optional[List[Taf]] = list_tafs(client, strict=True)
     except TeddyCloudError as error:
         log.warning("checkup could not read the whole library: %s", error)
         tafs = None
@@ -115,9 +115,9 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     return sorted(findings, key=lambda finding: SEVERITIES.index(finding.severity))
 
 
-def _tag_findings(tags: List[TonieTag], tafs: Optional[List[dict]]) -> List[Finding]:
+def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Finding]:
     findings = []
-    present = played(taf["source"] for taf in tafs) if tafs is not None else None
+    present = played(taf.source for taf in tafs) if tafs is not None else None
 
     for tag in tags:
         source = tag.source
@@ -160,11 +160,10 @@ def _model_findings(models: List[dict]) -> List[Finding]:
         changes = _model_repairs(model)
         if not changes:
             continue
-        model_id = str(model.get("model", ""))
         findings.append(Finding(
             kind="garbled_model", severity=ERROR,
-            subject=repaired(model.get("series")) or model.get("series") or model_id,
-            target=model_id,
+            subject=repaired(model.series) or model.series or model.id,
+            target=model.id,
             detail="checkup.garbled_model",
             fix="repair_model",
             preview="; ".join(f"{name}: {before} \u2192 {after}"
@@ -173,58 +172,58 @@ def _model_findings(models: List[dict]) -> List[Finding]:
     return findings
 
 
-def model_repairs(model: dict) -> Dict[str, object]:
-    """The fields of a model as they should read, only those that change."""
+def model_repairs(model: Model) -> Dict[str, object]:
+    """The fields of a model as they should read, only those that change.
+
+    The keys name the model's fields: series, episode and tracks.
+    """
     repairs: Dict[str, object] = {}
-    for name in ("series", "episodes"):
-        fixed = repaired(model.get(name))
+    for name in ("series", "episode"):
+        fixed = repaired(getattr(model, name))
         if fixed:
             repairs[name] = fixed
-    tracks = [str(track) for track in model.get("tracks") or []]
-    fixed_tracks = [repaired(track) or track for track in tracks]
-    if fixed_tracks != tracks:
+    fixed_tracks = [repaired(track) or track for track in model.tracks]
+    if fixed_tracks != model.tracks:
         repairs["tracks"] = fixed_tracks
     return repairs
 
 
-def _model_repairs(model: dict) -> List[tuple]:
+def _model_repairs(model: Model) -> List[tuple]:
     changes = []
     for name, after in model_repairs(model).items():
         if name == "tracks":
-            before_tracks = [str(track) for track in model.get("tracks") or []]
-            for before, fixed in zip(before_tracks, after, strict=True):
+            for before, fixed in zip(model.tracks, after, strict=True):
                 if before != fixed:
                     changes.append(("track", before, fixed))
         else:
-            changes.append((name, model.get(name), after))
+            changes.append((name, getattr(model, name), after))
     return changes
 
 
-def _leftovers(tags: List[TonieTag], models: List[dict], tafs: Optional[List[dict]],
+def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Taf]],
                busy: set, busy_folders: tuple) -> List[Finding]:
     findings = []
     playing = played(tag.source for tag in tags)
     named = {tag.model.lower() for tag in tags}
 
     for taf in tafs or []:
-        path = _same(taf["path"])
-        if _same(taf["source"]) in playing or path in busy or path.startswith(busy_folders):
+        path = _same(taf.path)
+        if _same(taf.source) in playing or path in busy or path.startswith(busy_folders):
             continue
         findings.append(Finding(
-            kind="orphan_taf", severity=NOTE, subject=taf["name"], target=taf["path"],
-            detail="checkup.orphan_taf", params={"size": taf.get("size", 0), "path": taf["path"]},
+            kind="orphan_taf", severity=NOTE, subject=taf.name, target=taf.path,
+            detail="checkup.orphan_taf", params={"size": taf.size, "path": taf.path},
             fix="delete_taf", preview_key="checkup.deletes_taf",
         ))
 
     for model in models:
-        model_id = str(model.get("model", ""))
-        if not model_id.upper().startswith(MODEL_PREFIX) or model_id.lower() in named:
+        if not model.id.upper().startswith(MODEL_PREFIX) or model.id.lower() in named:
             continue
         findings.append(Finding(
             kind="orphan_model", severity=NOTE,
-            subject=model_label(model),
-            target=model_id,
-            detail="checkup.orphan_model", params={"model": model_id},
+            subject=model.label,
+            target=model.id,
+            detail="checkup.orphan_model", params={"model": model.id},
             fix="delete_model", preview_key="checkup.deletes_model",
         ))
     return findings

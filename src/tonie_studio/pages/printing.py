@@ -20,7 +20,7 @@ from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
                      build_sheet)
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import cover_name, fetch_cover, list_tags, year_of
+from ..tonie import Model, fetch_cover, list_models, list_tags
 from .common import Context, Refused, _is_image_name, translator
 
 log = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         # same shape the album page uses for its tracks.
         connection = client()
         stickers = []
-        described = {entry["model"]: entry for entry in _printable_models(connection)}
+        described = {model.id: model for model in _printable_models(connection)}
         times = playing_times(settings.data_dir)
 
         for position, model in enumerate(models):
@@ -173,25 +173,13 @@ def register(app: FastAPI, ctx: Context) -> None:
 # --- helpers --------------------------------------------------------------
 
 
-def _printable_models(client: TeddyCloudClient) -> List[Dict]:
+def _printable_models(client: TeddyCloudClient) -> List[Model]:
     """The custom models that have a cover of their own to print.
 
     A model without a picture, or one pointing at an image hosted elsewhere,
     has nothing this app can put on a sticker.
     """
-    return [info for info in map(_model_info, client.custom_tonies()) if info["image"]]
-
-
-def _model_info(model: Dict) -> Dict:
-    """What the printing pages need of one model; ``image`` is empty without a cover here."""
-    return {
-        "model": model.get("model", ""),
-        "series": model.get("series", ""),
-        "episodes": model.get("episodes", ""),
-        "image": cover_name(model) or "",
-        "tracks": [str(track) for track in model.get("tracks") or []],
-        "year": year_of(model),
-    }
+    return [model for model in list_models(client) if model.cover]
 
 
 def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
@@ -203,22 +191,22 @@ def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
     """
     on_stickers = {tag.model for tag in list_tags(client) if tag.model}
     entries = []
-    for info in map(_model_info, client.custom_tonies()):
-        if info["model"] not in on_stickers:
+    for model in list_models(client):
+        if model.id not in on_stickers:
             continue
         image = None
-        if info["image"]:
+        if model.cover:
             try:
-                image = fetch_cover(client, info["image"])
+                image = fetch_cover(client, model.cover)
             except TeddyCloudError as error:
-                log.warning("overview: no cover for %s: %s", info["model"], error)
-        back = _back_of(info, times.get(info["model"]), translate)
+                log.warning("overview: no cover for %s: %s", model.id, error)
+        back = _back_of(model, times.get(model.id), translate)
         entries.append(Entry(image=image, title=back.title, series=back.series,
                              facts=list(back.notes)))
     return sorted(entries, key=lambda entry: (entry.series.casefold(), entry.title.casefold()))
 
 
-def _back_of(model: Dict, seconds: Optional[int] = None,
+def _back_of(model: Model, seconds: Optional[int] = None,
              translate: Optional[Translator] = None) -> Back:
     """What the text side of one model says.
 
@@ -228,23 +216,22 @@ def _back_of(model: Dict, seconds: Optional[int] = None,
     tonie recorded before the app stored them simply says less.
     """
     translate = translate or Translator(DEFAULT_LANGUAGE)
-    tracks = model.get("tracks") or []
     facts = [
-        str(model.get("year") or ""),
-        translate("pdf.tracks", count=len(tracks)) if tracks else "",
+        str(model.year or ""),
+        translate("pdf.tracks", count=len(model.tracks)) if model.tracks else "",
         translate("pdf.minutes", count=minutes(seconds)) if minutes(seconds) else "",
     ]
-    notes = [" - ".join(fact for fact in facts if fact), model.get("model", "")]
+    notes = [" - ".join(fact for fact in facts if fact), model.id]
     return Back(
-        title=model.get("episodes") or model.get("series") or model.get("model", ""),
-        series=model.get("series", ""),
+        title=model.episode or model.series or model.id,
+        series=model.series,
         notes=[note for note in notes if note],
-        tracks=tracks,
+        tracks=list(model.tracks),
         language=translate.lang,
     )
 
 
-def _back_preview(models: Sequence[Dict], times: Dict[str, int],
+def _back_preview(models: Sequence[Model], times: Dict[str, int],
                   translate: Optional[Translator] = None) -> Dict[str, Dict[str, List[Dict]]]:
     """The laid-out text side of every model, for the page to draw.
 
@@ -253,8 +240,8 @@ def _back_preview(models: Sequence[Dict], times: Dict[str, int],
     """
     preview = {}
     for model in models:
-        back = _back_of(model, times.get(model["model"]), translate)
-        preview[model["model"]] = {
+        back = _back_of(model, times.get(model.id), translate)
+        preview[model.id] = {
             variant: [{"text": line.text, "size": line.size, "bold": line.bold}
                       for line in back_lines(back, with_tracks=with_tracks)]
             for variant, with_tracks in (("tracks", True), ("plain", False))
@@ -265,9 +252,9 @@ def _back_preview(models: Sequence[Dict], times: Dict[str, int],
 def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:
     """The cover bytes for one model, or None when it cannot be read."""
     for model in _printable_models(client):
-        if model["model"] == model_id:
+        if model.id == model_id:
             try:
-                return fetch_cover(client, model["image"])
+                return fetch_cover(client, model.cover)
             except TeddyCloudError as error:
                 log.warning("cannot read the cover of %s: %s", model_id, error)
                 return None

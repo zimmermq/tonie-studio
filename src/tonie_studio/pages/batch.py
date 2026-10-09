@@ -20,7 +20,7 @@ from ..parts import fewest_parts, part_name, split
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..thumbnails import DEFAULT_SIZE
-from ..tonie import TonieError, list_tags
+from ..tonie import Model, TonieError, list_models, list_tags
 from .common import (Catalogue, Context, Refused, _encode_job, _free_tags, _publish_result,
                      translator)
 
@@ -48,7 +48,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not ids:
             raise Refused(400, "error.no_album")
         connection = client()
-        models = connection.custom_tonies()
+        models = list_models(connection)
         rows = _plan_batch(connection, settings, catalogue, ids, models=models,
                            tonies=_albums_with_tonies(catalogue.albums(), models))
         # Whoever always hands out stickers the same way should not have to
@@ -81,7 +81,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not ids:
             raise Refused(400, "error.no_album")
         connection = client()
-        models = connection.custom_tonies()
+        models = list_models(connection)
         rows = _plan_batch(connection, settings, catalogue, ids, dict(zip(ids, series, strict=False)),
                            dict(zip(ids, episodes, strict=False)), models=models,
                            tonies=_albums_with_tonies(catalogue.albums(), models))
@@ -272,7 +272,7 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, catalogue: Cat
                 ids: Sequence[str],
                 series: Optional[Dict[str, str]] = None, episodes: Optional[Dict[str, str]] = None,
                 tonies: Optional[Dict[str, str]] = None,
-                models: Sequence[Dict] = ()) -> List[BatchRow]:
+                models: Sequence[Model] = ()) -> List[BatchRow]:
     """Each album with its default tracks, its taf paths and its stickers.
 
     Every album takes what its own page would offer untouched: the tracks

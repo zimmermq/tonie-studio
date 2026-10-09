@@ -35,7 +35,7 @@ from .listening import FILE_NAME as LISTENING_FILE
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import TonieTag, cover_name, fetch_cover, list_tags, model_label
+from .tonie import Model, TonieTag, fetch_cover, list_tags
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def describe_backup(client: TeddyCloudClient, data_dir: Path) -> List[Part]:
     """
     models = client.custom_tonies()
     tags = [_tag_record(tag) for tag in list_tags(client)]
-    wanted = {cover_name(model) for model in models} - {None}
+    wanted = {Model.from_json(model).cover for model in models} - {None}
     listed = {entry.get("name"): int(entry.get("size") or 0)
               for entry in client.list_dir("/", special="custom_img")
               if not entry.get("isDir")}
@@ -167,7 +167,7 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
         archive.writestr("models.json", _json(models))
         archive.writestr("tags.json", _json(tags))
 
-        for name in sorted({cover_name(model) for model in models} - {None}):
+        for name in sorted({Model.from_json(model).cover for model in models} - {None}):
             try:
                 archive.writestr(f"covers/{name}", fetch_cover(client, name))
             except TeddyCloudError as error:
@@ -350,7 +350,7 @@ def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step
 
 def _library_sources(client: TeddyCloudClient) -> Optional[set]:
     try:
-        return played(taf["source"] for taf in list_tafs(client, strict=True))
+        return played(taf.source for taf in list_tafs(client, strict=True))
     except TeddyCloudError:
         return None
 
@@ -378,7 +378,8 @@ def _tag_record(tag: TonieTag) -> Dict:
 
 
 def _model_label(model: Dict) -> str:
-    return f"{model.get('model')}: {model_label(model)}"
+    described = Model.from_json(model)
+    return f"{described.id}: {described.label}"
 
 
 def _json(value) -> str:

@@ -36,6 +36,7 @@ from .podcast import SERIES as PODCAST_SERIES
 from .podcast import Fetch, download, load_subscriptions, refresh, update_subscription
 from .settings import Settings
 from .teddycloud import TeddyCloudClient, TeddyCloudError
+from .tonie import Model, list_models
 from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
@@ -235,7 +236,7 @@ def create_app(
     def load_models() -> None:
         models = None
         try:
-            models = client().custom_tonies()
+            models = list_models(client())
         except Exception as error:
             log.info("album list goes without the models this time: %s", error)
         finally:
@@ -247,7 +248,7 @@ def create_app(
                 model_cache["at"] = time.monotonic()
                 model_cache["loading"] = False
 
-    def _albums_with_tonies(albums, models: Optional[List[Dict]] = None) -> Dict[str, str]:
+    def _albums_with_tonies(albums, models: Optional[List[Model]] = None) -> Dict[str, str]:
         """Album id to the tonie made from it, recorded or matched by name.
 
         What was recorded is trusted as it stands. The models come from a copy
@@ -266,7 +267,7 @@ def create_app(
         if models is None:
             return done
         recorded = set(done.values())
-        unrecorded = [model for model in models if str(model.get("model", "")) not in recorded]
+        unrecorded = [model for model in models if model.id not in recorded]
         for identifier, model_id in guess_made(albums, unrecorded).items():
             done.setdefault(identifier, model_id)
         return done

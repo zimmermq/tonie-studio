@@ -335,7 +335,7 @@ class TestLibraryListing:
         encode_files(teddycloud, sources, "/Lichterkinder/Eins.taf")
         encode_files(teddycloud, sources, "/Zwei.taf")
 
-        found = [taf["path"] for taf in list_tafs(teddycloud)]
+        found = [taf.path for taf in list_tafs(teddycloud)]
 
         assert found == ["/Lichterkinder/Eins.taf", "/Zwei.taf"]
 
@@ -344,17 +344,17 @@ class TestLibraryListing:
 
         taf = list_tafs(teddycloud)[0]
 
-        assert taf["source"] == "lib://Eins.taf"
-        assert taf["name"] == "Eins"
-        assert taf["chapters"] == 3
-        assert taf["size"] > 0
+        assert taf.source == "lib://Eins.taf"
+        assert taf.name == "Eins"
+        assert taf.chapters == 3
+        assert taf.size > 0
 
     def test_leaves_the_staging_area_out_of_it(self, teddycloud, sources):
         teddycloud.create_dir(STAGING_ROOT)
         teddycloud.files[f"{STAGING_ROOT}/leftover.taf"] = b"x"
         encode_files(teddycloud, sources, "/Echt.taf")
 
-        assert [taf["name"] for taf in list_tafs(teddycloud)] == ["Echt"]
+        assert [taf.name for taf in list_tafs(teddycloud)] == ["Echt"]
 
     def test_deletes_one(self, teddycloud, sources):
         encode_files(teddycloud, sources, "/Weg.taf")

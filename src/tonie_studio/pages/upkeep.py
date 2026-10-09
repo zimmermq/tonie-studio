@@ -167,7 +167,7 @@ def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: s
             raise ValueError(f"there is no model {target}")
         changes = model_repairs(model)
         update_model(client, target, series=changes.get("series"),
-                     episode=changes.get("episodes"), tracks=changes.get("tracks"))
+                     episode=changes.get("episode"), tracks=changes.get("tracks"))
     elif fix == "delete_taf":
         delete_taf(client, target)
     elif fix == "delete_model":

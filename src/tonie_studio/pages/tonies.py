@@ -213,11 +213,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         for tag in list_tags(connection):
             if tag.source:
                 users.setdefault(same(tag.source), []).append(tag)
-        for taf in tafs:
-            taf["used_by"] = users.get(same(taf["source"]), [])
         return templates.TemplateResponse(request, "library.html", {
-            "tafs": tafs,
-            "total": sum(taf["size"] for taf in tafs),
+            "tafs": [(taf, users.get(same(taf.source), [])) for taf in tafs],
+            "total": sum(taf.size for taf in tafs),
         })
 
 

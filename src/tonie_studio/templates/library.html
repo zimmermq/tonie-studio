@@ -9,7 +9,7 @@
 </p>
 
 <div class="list">
-{% for taf in tafs %}
+{% for taf, used_by in tafs %}
   <div class="album">
     <span class="grow truncate">
       <strong class="truncate">{{ taf.name }}</strong>
@@ -19,14 +19,14 @@
         {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}
       </span>
     </span>
-    {% if taf.used_by %}
+    {% if used_by %}
     <span class="muted truncate" style="max-width: 14em; text-align: right">
       {{ t("library.played_by") }}<br>
-      {% for tag in taf.used_by %}{{ tag.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+      {% for tag in used_by %}{{ tag.label }}{% if not loop.last %}, {% endif %}{% endfor %}
     </span>
     {% endif %}
     <form method="post" action="/library/delete"
-          {% if taf.used_by %}data-used="{{ taf.used_by | map(attribute='label') | join(', ') }}"{% endif %}>
+          {% if used_by %}data-used="{{ used_by | map(attribute='label') | join(', ') }}"{% endif %}>
       <input type="hidden" name="path" value="{{ taf.path }}">
       <button type="submit" class="small">{{ t("common.delete") }}</button>
     </form>
