@@ -36,12 +36,6 @@
   </form>
 </div>
 
-<script>
-  const words = {{ t.strings("common.nothing_chosen") | tojson }};
-  const picker = document.getElementById('restorefile');
-  picker.addEventListener('change', () => {
-    document.getElementById('restorepicked').textContent =
-      picker.files.length ? picker.files[0].name : words['common.nothing_chosen'];
-  });
-</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("common.nothing_chosen")} | tojson }}</script>
+<script src="{{ asset('backup.js') }}"></script>
 {% endblock %}

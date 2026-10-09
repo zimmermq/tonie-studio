@@ -180,3 +180,9 @@ def checked_ruid(page):
         if "checked" in match.group(0):
             return match.group(1)
     return None
+
+
+def page_script(page, name):
+    """The address a page loads its own script ``name`` from."""
+    start = page.index(f'src="/static/{name}?v=') + len('src="')
+    return page[start:page.index('"', start)]

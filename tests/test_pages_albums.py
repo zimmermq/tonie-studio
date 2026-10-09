@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from web_helpers import (album_page_after_upload, encode_and_assign_page, finish_job,
-                         first_album_id, publish_album, write_jpeg)
+                         first_album_id, page_script, publish_album, write_jpeg)
 
 from tonie_studio.album import TrackTags
 from tonie_studio.jobs import JobState
@@ -501,7 +501,7 @@ class TestAssignDoesNotLoop:
 
         page = client.get(f"/job/{job.id}/assign?new=ffffed0e500304e0").text
 
-        assert "alreadyTried" in page
+        assert "alreadyTried" in client.get(page_script(page, "assign.js")).text
         assert "kennt ihn nicht" in page
 
 
