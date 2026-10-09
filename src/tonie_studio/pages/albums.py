@@ -7,7 +7,7 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -16,14 +16,16 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from ..album import Album, album_id, cover_candidates, read_album
 from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
-from ..encode import EncodeError, library_path, taf_exists
-from ..i18n import Translator
+from ..encode import taf_exists
+from ..i18n import Problem, Translator
 from ..jobs import Job, JobRunner, JobState
-from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
+from ..parts import MOST_CHAPTERS
+from ..planning import chosen_tracks, plan_parts
 from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
-from .common import UPLOAD, Context, Refused, is_audio_name, is_image_name, translator
+from .common import (UPLOAD, Context, Refused, is_audio_name, is_image_name, refused,
+                     translator)
 
 log = logging.getLogger(__name__)
 
@@ -143,22 +145,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         cover_y: float = Form(0.0),
     ):
         album = read_album(catalogue.resolve(identifier))
-        chosen = _chosen_tracks(album, order, selected, titles)
-        if not chosen:
-            raise Refused(400, "error.no_track")
-        if parts < 1:
-            raise Refused(400, "error.no_parts")
-        if parts > len(chosen):
-            raise Refused(400, "error.too_many_parts", tracks=len(chosen), parts=parts)
-        if parts < fewest_parts(len(chosen)):
-            raise Refused(400, "error.too_few_parts", tracks=len(chosen), chapters=MOST_CHAPTERS,
-                          fewest=fewest_parts(len(chosen)))
         try:
-            groups_of_tracks = split([track.duration for track, _name in chosen], parts)
-            targets = [library_path(series, part_name(episode, number, parts))
-                       for number in range(1, parts + 1)]
-        except (EncodeError, ValueError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
+            parts_planned = plan_parts(chosen_tracks(album, order, selected, titles),
+                                       series, episode, parts)
+        except Problem as problem:
+            raise refused(problem) from problem
+        targets = [part.target for part in parts_planned]
 
         # Asked here rather than inside the job: an occupied name is a question
         # to answer on the form, not a failure minutes later on a progress page.
@@ -179,13 +171,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         cut = Crop(zoom=cover_zoom, x=cover_x, y=cover_y)
 
         job_ids = [
-            jobs.submit("encode", target, encode_job(
-                connection, [chosen[index] for index in indices], target,
-                Details(series=series, episode=part_name(episode, number, parts), cover=cover,
-                        crop=cut, year=album.year, album=identifier),
-                replace=target in occupied))
-            for number, (indices, target)
-            in enumerate(zip(groups_of_tracks, targets, strict=True), 1)
+            jobs.submit("encode", part.target, encode_job(
+                connection, part.tracks, part.target,
+                Details(series=series, episode=part.episode, cover=cover, crop=cut,
+                        year=album.year, album=identifier),
+                replace=part.target in occupied))
+            for part in parts_planned
         ]
         if len(job_ids) == 1:
             return RedirectResponse(f"/job/{job_ids[0]}", 303)
@@ -372,32 +363,6 @@ def _base_name(name: Optional[str]) -> str:
     """
     base = PurePosixPath((name or "").replace("\\", "/")).name
     return "" if base in (".", "..") else base
-
-
-def _chosen_tracks(
-    album: Album, order: str, selected: List[int], titles: List[str],
-) -> List[Tuple[object, str]]:
-    """The tracks to encode with their names, in the order the page put them in.
-
-    ``order`` carries the track numbers as the list was arranged and is what
-    the titles are aligned to: both are submitted in the order the rows sit in,
-    so the nth title belongs to the nth number. Reading a title by its track
-    number instead would hand the wrong name to every reordered track.
-    """
-    by_number = {track.number: track for track in album.tracks}
-    numbers = [int(part) for part in order.split(",") if part.strip().isdigit()]
-    if not numbers:
-        numbers = list(by_number)
-
-    keep = set(selected)
-    chosen = []
-    for position, number in enumerate(numbers):
-        track = by_number.get(number)
-        if track is None or number not in keep:
-            continue
-        name = titles[position].strip() if position < len(titles) else ""
-        chosen.append((track, name or track.title))
-    return chosen
 
 
 def _suggest_target(album: Album) -> Dict[str, str]:

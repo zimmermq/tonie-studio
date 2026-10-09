@@ -144,6 +144,11 @@ class Refused(Problem):
         self.status = status
 
 
+def refused(problem: Problem, status: int = 400) -> Refused:
+    """A problem the services raised, as the answer a request gets."""
+    return Refused(status, problem.key, **problem.params)
+
+
 def translator(request: Request) -> Translator:
     """The translator for whoever sent ``request``."""
     return Translator(negotiate(request.cookies.get(LANG_COOKIE),
