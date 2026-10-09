@@ -13,13 +13,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
-from ..models import (CATEGORIES, DEFAULT_CATEGORY, fetch_cover, find_model, remove_model,
-                      update_model)
+from ..models import (CATEGORIES, DEFAULT_CATEGORY, fetch_cover, find_model, update_model)
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, list_tags
 from ..teddycloud import TeddyCloudError
-from ..tonie import copy_tag, publish_stream
+from ..tonie import copy_tag, drop_model, publish_stream
 from .common import Context, Refused, is_image_name
 
 log = logging.getLogger(__name__)
@@ -101,14 +100,13 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.post("/tonies/{ruid}/delete")
     def delete_tonie(ruid: str):
         """Drop the model. The tag keeps its audio and goes on playing."""
-        connection = client()
-        tag = next((candidate for candidate in list_tags(connection)
-                    if candidate.ruid == ruid), None)
-        if tag is None or not tag.model:
-            raise Refused(404, "error.no_model")
-        remove_model(connection, tag.model, ruid=ruid)
-        forget(settings.data_dir, tag.model)
-        forget_model(settings.data_dir, tag.model)
+        try:
+            deleted = drop_model(client(), ruid)
+        except TonieError as error:
+            raise Refused(404, "error.no_model") from error
+        if deleted:
+            forget(settings.data_dir, deleted)
+            forget_model(settings.data_dir, deleted)
         return RedirectResponse("/tonies", 303)
 
 

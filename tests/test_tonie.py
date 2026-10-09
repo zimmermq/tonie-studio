@@ -432,3 +432,30 @@ class TestRepublishing:
         model = find_model(teddycloud, model_id)
         assert model.picture == f"/custom_img/{model_id}.jpg"
         assert model.tracks == ["Zwei"]
+
+
+class TestPublishingAtOnce:
+    def test_two_publishes_at_the_same_time_make_two_models(self, teddycloud, encoded, cover):
+        # Placing a sticker while a batch encode publishes is two threads; with
+        # the id picked before a slow cover upload both took TS-0001.
+        import threading
+        import time
+
+        original = teddycloud.upload
+
+        def slow_upload(*args, **kwargs):
+            time.sleep(0.2)
+            return original(*args, **kwargs)
+
+        teddycloud.upload = slow_upload
+        ids = []
+        threads = [threading.Thread(target=lambda ruid=ruid: ids.append(
+            publish(teddycloud, ruid, encoded, series="S", episode=ruid, tracks=["a"], cover=cover)))
+            for ruid in ("7ab4ed0e500304e0", "deb4ed0e500304e0")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+
+        assert len(set(ids)) == 2
+        assert len(teddycloud.custom_tonies()) == 2

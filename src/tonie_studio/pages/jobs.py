@@ -28,16 +28,15 @@ def register(app: FastAPI, ctx: Context) -> None:
     jobs = ctx.jobs
     client = ctx.client
     groups = ctx.groups
-    batches = ctx.batches
-    placings = ctx.placings
 
     @app.get("/parts/{group}", response_class=HTMLResponse)
     def parts_page(request: Request, group: str):
-        if group not in groups:
+        found = groups.get(group)
+        if found is None:
             raise Refused(404, "error.parts_gone")
-        batch = group in batches
-        by_hand = group in placings and placings[group].by_hand
-        members = [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)]
+        batch = found.batch
+        by_hand = bool(found.placing and found.placing.by_hand)
+        members = [jobs.get(job_id) for job_id in found.jobs if jobs.get(job_id)]
         made_models = [job.result.model for job in members
                        if isinstance(job.result, Outcome) and job.result.model]
         return templates.TemplateResponse(request, "parts.html", {
@@ -53,7 +52,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                           else "batch.progress_intro" if batch else "parts.intro"),
             "placing": by_hand,
             "group": group,
-            "next_episode": placings[group].next_episode() if group in placings else "",
+            "next_episode": found.placing.next_episode() if found.placing else "",
         })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -130,10 +129,11 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/api/group/{group}")
     def group_status(request: Request, group: str):
         """Every job of a group in one answer, for the progress page."""
-        if group not in groups:
+        found = groups.get(group)
+        if found is None:
             raise Refused(404, "error.parts_gone")
         translate = translator(request)
-        members = [jobs.get(job_id) for job_id in groups[group]]
+        members = [jobs.get(job_id) for job_id in found.jobs]
         return JSONResponse({"jobs": [_job_json(job, translate) for job in members if job]})
 
 

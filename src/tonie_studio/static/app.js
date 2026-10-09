@@ -39,8 +39,12 @@ window.showPicked = (input, slot, describe) => {
 
 // A form that cannot be taken back carries its question in data-confirm,
 // already in the reader's language; it is sent only once that is answered.
+// A choice inside the form can carry one too, asked only when it is chosen:
+// an occupied sticker among free ones.
 document.addEventListener('submit', event => {
-  const question = event.target.dataset.confirm;
+  const form = event.target;
+  const chosen = form.querySelector('input:checked[data-confirm], option:checked[data-confirm]');
+  const question = form.dataset.confirm || (chosen && chosen.dataset.confirm);
   if (question && !window.confirm(question)) event.preventDefault();
 });
 

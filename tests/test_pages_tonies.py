@@ -246,3 +246,23 @@ class TestCopyTonie:
         page = client.get(f"/tonies/{played}").text
 
         assert "Auf einen weiteren Sticker" in page and "frei - " in page
+
+
+class TestDeletingASharedModel:
+    def test_deleting_the_model_of_a_copy_keeps_it_for_the_original(self, client, runner, teddycloud,
+                                                                    settings):
+        from tonie_studio.runtimes import playing_times, remember
+
+        publish_album(client, runner, teddycloud)
+        original, copy = sorted(teddycloud.tag_entries,
+                                key=lambda ruid: not teddycloud.tag_entries[ruid]["source"])
+        model = teddycloud.tag_entries[original]["tonie_model"]
+        remember(settings.data_dir, model, 1500)
+        client.post(f"/tonies/{original}/copy", data={"target": copy}, follow_redirects=False)
+
+        client.post(f"/tonies/{copy}/delete", follow_redirects=False)
+
+        assert [entry["model"] for entry in teddycloud.custom_tonies()] == [model]
+        assert teddycloud.tag_entries[original]["tonie_model"] == model
+        assert teddycloud.tag_entries[copy]["tonie_model"] == ""
+        assert model in playing_times(settings.data_dir)

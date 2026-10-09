@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from web_helpers import (album_page_after_upload, encode_and_assign_page, finish_job,
+from web_helpers import (album_page_after_upload, checked_ruid, encode_and_assign_page, finish_job,
                          first_album_id, page_script, publish_album, write_jpeg)
 
 from tonie_studio.album import TrackTags
@@ -679,3 +679,24 @@ class TestGroupStatus:
 
     def test_an_unknown_group_is_refused(self, client):
         assert client.get("/api/group/nope").status_code == 404
+
+
+class TestAssignNeverPicksAnOccupiedSticker:
+    def test_with_no_free_sticker_nothing_is_preselected(self, client, runner, teddycloud):
+        for entry in teddycloud.tag_entries.values():
+            entry["source"] = "lib://Andere/Folge.taf"
+        job, _page = encode_and_assign_page(client, runner)
+
+        page = client.get(f"/job/{job.id}/assign").text
+
+        assert checked_ruid(page) is None
+
+    def test_an_occupied_sticker_asks_before_it_is_overwritten(self, client, runner, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+        job, _page = encode_and_assign_page(client, runner)
+
+        page = client.get(f"/job/{job.id}/assign").text
+        radio = page[page.index('value="7ab4ed0e500304e0"'):]
+        radio = radio[:radio.index(">")]
+
+        assert "data-confirm=" in radio

@@ -74,7 +74,8 @@
   <form method="post" action="/tonies/{{ tag.ruid }}/copy" class="row wrap gap-10">
     <select name="target" required>
       {% for other in others %}
-      <option value="{{ other.ruid }}">
+      <option value="{{ other.ruid }}"
+              {% if other.assigned %}data-confirm="{{ t('assign.confirm_replace', label=other.label) }}"{% endif %}>
         {% if other.assigned %}{{ t("tag.replaced", label=other.label) }}{% else %}{{ t("tag.free_uid", uid=other.uid) }}{% endif %}
       </option>
       {% endfor %}

@@ -19,9 +19,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
 
 from .i18n import Problem
+
+if TYPE_CHECKING:
+    from .batch import Placing
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +101,8 @@ class JobRunner:
         self._order: List[str] = []
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="job")
+        # Jobs a group still needs; see Groups.
+        self._kept: set = set()
 
     def submit(self, kind: str, label: str, work: Callable[[Callable], Any],
                job_id: Optional[str] = None) -> str:
@@ -153,12 +158,69 @@ class JobRunner:
         job.done_count = done
         job.total = total
 
+    def keep(self, job_ids: Sequence[str]) -> None:
+        """Hold on to these jobs past the cap until ``release``; see Groups."""
+        with self._lock:
+            self._kept.update(job_ids)
+
+    def release(self, job_ids: Sequence[str]) -> None:
+        with self._lock:
+            self._kept.difference_update(job_ids)
+            self._forget_old()
+
     def _forget_old(self) -> None:
         """Drop finished jobs beyond the cap, oldest first. Called under the lock."""
         finished = [
             job_id for job_id in self._order
             if self._jobs[job_id].state in (JobState.DONE, JobState.FAILED)
+            and job_id not in self._kept
         ]
         for job_id in finished[:max(0, len(finished) - KEEP_FINISHED)]:
             self._jobs.pop(job_id, None)
             self._order.remove(job_id)
+
+
+# How many groups are kept, newest first; older ones let their jobs go.
+KEEP_GROUPS = 20
+
+
+@dataclass
+class Group:
+    """Encodes that belong together: the parts of one album, or the albums of a batch."""
+
+    jobs: List[str]
+    batch: bool = False
+    # How a batch hands out its stickers; None for the parts of one album.
+    placing: Optional["Placing"] = None
+
+
+class Groups:
+    """Every group still shown, by id, holding its jobs for as long as it is kept.
+
+    A batch can wait for its stickers long after its encodes finished, and
+    the runner forgets finished jobs beyond its cap; a group therefore pins
+    its jobs until it is itself dropped, which happens to the oldest once
+    there are more than ``keep``.
+    """
+
+    def __init__(self, runner: JobRunner, keep: int = KEEP_GROUPS):
+        self.runner = runner
+        self.keep = keep
+        self._groups: Dict[str, Group] = {}
+        self._lock = threading.Lock()
+
+    def add(self, job_ids: Sequence[str], batch: bool = False,
+            placing: Optional["Placing"] = None) -> str:
+        group_id = new_id()
+        self.runner.keep(job_ids)
+        with self._lock:
+            self._groups[group_id] = Group(jobs=list(job_ids), batch=batch, placing=placing)
+            dropped = list(self._groups)[:max(0, len(self._groups) - self.keep)]
+            released = [self._groups.pop(old) for old in dropped]
+        for group in released:
+            self.runner.release(group.jobs)
+        return group_id
+
+    def get(self, group_id: str) -> Optional[Group]:
+        with self._lock:
+            return self._groups.get(group_id)

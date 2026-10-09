@@ -305,3 +305,22 @@ class TestStoringSafely:
             thread.join()
 
         assert len(load_subscriptions(tmp_path)) == 20
+
+
+class TestStickerTakenDuringARefresh:
+    def test_a_sticker_given_something_else_meanwhile_is_left_alone(self, cloud, subscription,
+                                                                     tmp_path):
+        # The check before the download is minutes before the write; someone
+        # may give the sticker other audio in between.
+        refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
+
+        class Meanwhile(FakeWeb):
+            def __call__(self, url, limit=None):
+                if not url.endswith(("feed.xml", "cover.jpg")):
+                    cloud.tag_entries[RUID]["source"] = "lib://Andere/Folge.taf"
+                return super().__call__(url, limit)
+
+        with pytest.raises(FeedError):
+            refresh(cloud, subscription, tmp_path, now=NOW.replace(day=10), fetch=Meanwhile(newer()))
+
+        assert cloud.tag_entries[RUID]["source"] == "lib://Andere/Folge.taf"

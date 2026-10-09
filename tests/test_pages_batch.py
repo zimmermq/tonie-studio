@@ -547,3 +547,19 @@ class TestSpellingsOfAPath:
 
         assert page.count("schon encodiert und auf einem Sticker") == 1
         assert page.count("schon encodiert, bekommt nur noch einen Sticker") == 1
+
+
+class TestALongBatchKeepsItsJobs:
+    def test_episodes_finished_long_ago_still_get_their_sticker(self, client, runner, teddycloud):
+        # The runner forgets finished jobs beyond a cap; a batch still waiting
+        # for its stickers must not lose its episodes to that.
+        group = start_placing(client, runner, episodes=2)
+        for job in runner.all():
+            assert job.done.wait(5)
+        for _ in range(60):
+            other = runner.submit("encode", "/other.taf", lambda progress: None)
+            assert runner.get(other).done.wait(5)
+
+        answer = place_sticker(client, group, "deb4ed0e500304e0")
+
+        assert answer["status"] == "assigned" and answer["episode"] == "Folge 1"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Callable, List
 
 from fastapi import FastAPI, Form, Query, Request
@@ -37,8 +36,6 @@ def register(app: FastAPI, ctx: Context) -> None:
     jobs = ctx.jobs
     client = ctx.client
     groups = ctx.groups
-    batches = ctx.batches
-    placings = ctx.placings
 
     def _plan(connection, ids, series=None, episodes=None, models=()):
         """The batch for these album ids, or the reason it cannot be made."""
@@ -116,10 +113,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                     after=_on_sticker_when_known(connection, settings, placing, job_id))))
         if not job_ids:
             raise Refused(400, "error.batch_nothing_new")
-        group = uuid.uuid4().hex[:12]
-        groups[group] = job_ids
-        batches.add(group)
-        placings[group] = placing
+        group = groups.add(job_ids, batch=True, placing=placing)
         response = RedirectResponse(f"/parts/{group}", 303)
         response.set_cookie(HOW_COOKIE, PLACE if placing_wanted else AUTO,
                             max_age=365 * 24 * 3600, samesite="lax")
@@ -135,7 +129,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         and one teddyCloud has not filed yet is answered "unknown" so the page
         asks again.
         """
-        placing = placings.get(group)
+        found = groups.get(group)
+        placing = found.placing if found else None
         if placing is None:
             raise Refused(404, "error.parts_gone")
         translate = translator(request)

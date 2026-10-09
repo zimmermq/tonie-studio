@@ -174,8 +174,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         ]
         if len(job_ids) == 1:
             return RedirectResponse(f"/job/{job_ids[0]}", 303)
-        group = uuid.uuid4().hex[:12]
-        groups[group] = job_ids
+        group = groups.add(job_ids)
         return RedirectResponse(f"/parts/{group}", 303)
 
 

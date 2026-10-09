@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from .boxstate import BoxWatcher
 from .encode import remove_orphaned_staging
-from .jobs import JobRunner
+from .jobs import Groups, JobRunner
 from .listening import ListeningLog
 from .models import ModelCache
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
@@ -46,6 +46,7 @@ def create_app(
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)
+    groups = Groups(jobs)
     listening = ListeningLog(settings.data_dir)
     box = watcher if watcher is not None else BoxWatcher(settings.teddycloud_url, settings.overlay)
     # Whoever built the watcher decides how it connects; where its changes go
@@ -87,6 +88,7 @@ def create_app(
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
+        groups=groups,
     )
     for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing):
         part.register(app, ctx)

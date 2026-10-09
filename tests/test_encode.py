@@ -364,3 +364,41 @@ class TestLibraryListing:
             delete_taf(teddycloud, "/wichtig.json")
 
         assert "/wichtig.json" in teddycloud.files
+
+
+class TestReplacingKeepsTheOldUntilTheNewIsThere:
+    def test_a_failed_encode_leaves_the_old_taf(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.encode_fails = "ffmpeg died"
+
+        with pytest.raises(TeddyCloudError):
+            encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.files["/a.taf"] == b"older"
+
+    def test_nothing_is_left_beside_it_afterwards(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert [path for path in teddycloud.files if path.endswith(".taf")] == ["/a.taf"]
+
+    def test_if_only_the_final_encode_fails_the_stickers_play_the_new_one(self, teddycloud, sources):
+        # Old taf already gone, new one under its temporary name: a sticker
+        # that played the old one would otherwise play nothing.
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag("7ab4ed0e500304e0", source="lib://a.taf")
+        original = teddycloud.encode
+
+        def final_fails(target, sources, special="library"):
+            if target == "/a.taf":
+                raise TeddyCloudError("ffmpeg died")
+            return original(target, sources, special)
+
+        teddycloud.encode = final_fails
+
+        with pytest.raises(EncodeError):
+            encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        kept = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+        assert kept != "lib://a.taf" and taf_exists(teddycloud, "/" + kept[len("lib://"):])

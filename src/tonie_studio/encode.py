@@ -27,6 +27,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .i18n import Problem
 from .library import same, source_of
+from .tags import list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
@@ -192,19 +193,17 @@ def encode_files(
     reports a position by watching the taf grow; without it the bar simply
     waits.
 
-    ``replace`` deletes an existing taf at the target first. Any tag pointing at
-    it plays nothing until the new one is written, so this is only ever done
-    because someone asked for it.
+    ``replace`` puts the new audio where a taf already is, and the old one is
+    only given up once the new one exists; see ``_replace``. Without it an
+    existing taf is refused.
     """
     sources = list(sources)
     _check(sources, target)
 
     _ensure_parents(client, target)
-    if _find_entry(client, target):
-        if not replace:
-            raise EncodeError("encode.exists", target=target)
-        log.info("replacing the taf at %s", target)
-        client.delete(target, special="library")
+    replacing = _find_entry(client, target) is not None
+    if replacing and not replace:
+        raise EncodeError("encode.exists", target=target)
 
     job = uuid.uuid4().hex[:12]
     staging = f"{STAGING_ROOT}/{job}"
@@ -220,27 +219,62 @@ def encode_files(
             staged.append(f"{staging}/{name}")
             _report(progress, UPLOAD, index, len(sources))
 
-        # teddyCloud blocks for the whole encode and says nothing. Watching
-        # the target grow is the only way to show that something is happening;
-        # for a sixty track album that is minutes of otherwise dead screen.
-        stop = threading.Event()
-        if progress and total_seconds:
-            threading.Thread(
-                target=_watch_growth,
-                args=(client, target, float(total_seconds), progress, stop),
-                name="encode-progress", daemon=True,
-            ).start()
-        try:
-            client.encode(target, staged, special="library")
-        finally:
-            stop.set()
-        _report(progress, ENCODE, int(total_seconds or len(sources)),
-                int(total_seconds or len(sources)))
+        if replacing:
+            _replace(client, staged, target, progress, total_seconds)
+        else:
+            _encode(client, staged, target, progress, total_seconds)
     finally:
         _remove_tree(client, staging)
 
     header = (_find_entry(client, target) or {}).get("tafHeader") or {}
     return _result(target, header, tracks=len(sources))
+
+
+def _encode(client: TeddyCloudClient, staged: Sequence[str], target: str,
+            progress: Optional[Progress], total_seconds: Optional[float]) -> None:
+    # teddyCloud blocks for the whole encode and says nothing. Watching the
+    # target grow is the only way to show that something is happening; for a
+    # sixty track album that is minutes of otherwise dead screen.
+    stop = threading.Event()
+    if progress and total_seconds:
+        threading.Thread(
+            target=_watch_growth,
+            args=(client, target, float(total_seconds), progress, stop),
+            name="encode-progress", daemon=True,
+        ).start()
+    try:
+        client.encode(target, staged, special="library")
+    finally:
+        stop.set()
+    _report(progress, ENCODE, int(total_seconds or len(staged)), int(total_seconds or len(staged)))
+
+
+def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
+             progress: Optional[Progress], total_seconds: Optional[float]) -> None:
+    """Put new audio where a taf is, never leaving a moment with neither.
+
+    teddyCloud cannot rename a file, so the new audio is first encoded beside
+    the old taf. Only once that worked is the old one deleted and the same
+    staged files encoded again under its name - the price is a second encode,
+    paid only when replacing. Should that one fail, every tag that played the
+    old taf is pointed at the one beside it, so nothing that played before
+    plays nothing now, and the error says where the audio is.
+    """
+    aside = f"{target[:-len(TAF_SUFFIX)]}.new{TAF_SUFFIX}"
+    if _find_entry(client, aside) is not None:
+        _delete(client, aside)
+    _encode(client, staged, aside, progress, total_seconds)
+
+    log.info("replacing the taf at %s", target)
+    client.delete(target, special="library")
+    try:
+        client.encode(target, staged, special="library")
+    except TeddyCloudError as error:
+        for tag in list_tags(client):
+            if same(tag.source) == same(source_of(target)):
+                client.set_tag(tag.ruid, source=source_of(aside))
+        raise EncodeError("encode.replace_kept", target=target, kept=aside) from error
+    _delete(client, aside)
 
 
 def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult]:

@@ -52,6 +52,7 @@
   "other": "{count} Tracks"
  },
  "albums.various": "Verschiedene",
+ "assign.confirm_replace": "{label} spielt schon etwas. Ersetzen?",
  "assign.duplicate": "Dieses Audio gibt es schon:",
  "assign.duplicate_hint": "Ein zweites Modell mit derselben Audio-Kennung streitet sich mit dem ersten darum, welchen Namen teddyCloud einem Sticker von selbst zuordnet. Wenn du denselben Inhalt auf einen zweiten Tonie legen willst, ist das in Ordnung - dann bekommt er eben zwei Modelle.",
  "assign.heading": "Auf welchen Tonie?",
@@ -184,6 +185,7 @@
  "encode.no_name": "Das Taf braucht einen Namen.",
  "encode.no_tracks": "Bitte mindestens einen Track auswählen.",
  "encode.not_a_taf": "Das ist keine .taf-Datei: {path}",
+ "encode.replace_kept": "Das neue Audio liegt unter {kept}, nicht unter {target}; die Sticker spielen es dort.",
  "encode.target_not_taf": "Das Ziel muss eine .taf-Datei sein, nicht {target}.",
  "encode.unreadable": "Nicht lesbar: {files}",
  "error.album_gone": "Dieses Album ist nicht mehr da.",

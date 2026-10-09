@@ -219,8 +219,10 @@ class TestConfirmations:
     def test_one_handler_asks_for_every_form_that_wants_it(self, client):
         page = client.get("/").text
 
+        shared = client.get(_script_of(page)).text
+
         assert "dataset.confirm" not in page
-        assert client.get(_script_of(page)).text.count("dataset.confirm") == 1
+        assert shared.count("addEventListener('submit'") == 1 and "dataset.confirm" in shared
 
     def test_deleting_a_model_asks_first(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

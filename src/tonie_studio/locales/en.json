@@ -52,6 +52,7 @@
   "other": "{count} tracks"
  },
  "albums.various": "Various",
+ "assign.confirm_replace": "{label} already plays something. Replace it?",
  "assign.duplicate": "This audio exists already:",
  "assign.duplicate_hint": "A second model with the same audio id competes with the first over which name teddyCloud gives a sticker on its own. If you want the same content on a second tonie, that is fine - it simply gets two models.",
  "assign.heading": "Which tonie?",
@@ -184,6 +185,7 @@
  "encode.no_name": "The taf needs a name.",
  "encode.no_tracks": "Select at least one track.",
  "encode.not_a_taf": "That is not a .taf file: {path}",
+ "encode.replace_kept": "The new audio is at {kept}, not at {target}; the stickers play it from there.",
  "encode.target_not_taf": "The target has to be a .taf file, not {target}.",
  "encode.unreadable": "Cannot read: {files}",
  "error.album_gone": "That album is not there any more.",

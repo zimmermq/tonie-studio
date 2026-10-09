@@ -22,8 +22,11 @@
   <div class="card">
     {% for tag in tags %}
     <label class="row" style="padding: 8px 0; border-bottom: 1px solid var(--line)">
+      {#- Only a free sticker is ever chosen for the reader; one that plays
+          something asks before it is overwritten. #}
       <input type="radio" name="ruid" value="{{ tag.ruid }}" required
-             {% if (preselect and tag.ruid == preselect) or (not preselect and loop.first) %}checked{% endif %}>
+             {% if tag.assigned %}data-confirm="{{ t('assign.confirm_replace', label=tag.label) }}"{% endif %}
+             {% if (preselect and tag.ruid == preselect) or (not preselect and loop.first and not tag.assigned) %}checked{% endif %}>
       <div class="grow truncate">
         {% if preselect and tag.ruid == preselect %}<span class="onbox">{{ t("assign.just_placed") }}</span> {% endif %}
         {% if tag.assigned %}

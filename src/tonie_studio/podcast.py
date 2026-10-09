@@ -272,6 +272,9 @@ def refresh(
         shutil.rmtree(folder, ignore_errors=True)
 
     try:
+        # Again, right before writing: the download and the encode took
+        # minutes, and the sticker may have been given something else since.
+        _check_sticker(client, subscription)
         cover = _cover(client, subscription, feed, fetch)
         model_id = publish(
             client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,

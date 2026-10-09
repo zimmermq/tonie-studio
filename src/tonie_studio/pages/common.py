@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
@@ -21,11 +21,10 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from ..album import AUDIO_EXTENSIONS, AlbumSummary, list_albums
-from ..batch import Placing
 from ..boxstate import BoxWatcher
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
-from ..jobs import JobRunner
+from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
 from ..models import ModelCache
 from ..podcast import Fetch, PodcastUpdater
@@ -69,13 +68,7 @@ class Context:
     fetch: Fetch
     models: ModelCache
     podcasts: PodcastUpdater
-    # Encodes that belong together, by group id: the parts of one album or
-    # the albums of a batch.
-    groups: Dict[str, List[str]] = field(default_factory=dict)
-    # The groups that are several albums rather than one album in parts.
-    batches: set = field(default_factory=set)
-    # Batches whose stickers are handed out as they are placed on the box.
-    placings: Dict[str, Placing] = field(default_factory=dict)
+    groups: Groups
 
 
 class Catalogue:
