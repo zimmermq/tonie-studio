@@ -69,3 +69,30 @@ class TestRemoveOldUploads:
 
         assert remove_old_uploads(tmp_path, keep_days=7)[0] == 1
         assert not (tmp_path / "fine").exists()
+
+
+class TestHousekeepingRepeats:
+    """The volume is tidied while the app runs, not only when it starts."""
+
+    def test_old_uploads_go_on_every_round_and_staging_only_at_startup(self, settings,
+                                                                      monkeypatch):
+        import threading
+
+        from tonie_studio import web
+
+        rounds, staging = [], []
+        stop = threading.Event()
+
+        def tidy(_upload_dir, _keep_days):
+            rounds.append(1)
+            if len(rounds) == 3:
+                stop.set()
+            return 0, 0
+
+        monkeypatch.setattr(web, "remove_old_uploads", tidy)
+        monkeypatch.setattr(web, "remove_orphaned_staging", lambda _client: staging.append(1) or 0)
+        monkeypatch.setattr(web, "HOUSEKEEPING_EVERY", 0.01)
+
+        web._housekeeping(settings, lambda: None, stop)
+
+        assert len(rounds) == 3 and len(staging) == 1

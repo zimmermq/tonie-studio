@@ -349,3 +349,16 @@ class TestRequest:
             client.tags()
 
         assert request.call_args.args == ("GET", "http://teddycloud.test/api/getTagIndex")
+
+
+class TestRetries:
+    @pytest.mark.parametrize("scheme", ["http://", "https://"])
+    def test_reads_are_retried_whichever_scheme_teddycloud_is_reached_by(self, client, scheme):
+        retries = client.session.get_adapter(scheme + "teddycloud.test").max_retries
+
+        assert retries.total == 2 and "GET" in retries.allowed_methods
+
+    def test_writes_are_never_retried(self, client):
+        retries = client.session.get_adapter("https://teddycloud.test").max_retries
+
+        assert "POST" not in retries.allowed_methods

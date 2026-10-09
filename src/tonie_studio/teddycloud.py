@@ -73,13 +73,12 @@ class TeddyCloudClient:
         self.session = requests.Session()
         # Only idempotent verbs are retried: a repeated fileEncode would write
         # a second taf, and a repeated upload a second copy.
-        self.session.mount(
-            "http://",
-            HTTPAdapter(max_retries=Retry(
-                total=2, backoff_factor=1, status_forcelist=[502, 503, 504],
-                allowed_methods=["GET"],
-            )),
-        )
+        retrying = HTTPAdapter(max_retries=Retry(
+            total=2, backoff_factor=1, status_forcelist=[502, 503, 504],
+            allowed_methods=["GET"],
+        ))
+        self.session.mount("http://", retrying)
+        self.session.mount("https://", retrying)
 
     @classmethod
     def from_env(cls) -> "TeddyCloudClient":

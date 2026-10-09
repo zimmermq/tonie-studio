@@ -36,6 +36,21 @@ class TestCoverZoom:
         assert "2.5" not in script
 
 
+class TestFilePickersTakeTheKeyboard:
+    """A file input behind a styled label must still be reachable with Tab."""
+
+    def test_no_file_input_is_taken_out_of_the_page(self):
+        for template in TEMPLATES:
+            for tag in re.findall(r"<input[^>]*type=\"file\"[^>]*>", template.read_text()):
+                assert not re.search(r"\shidden[\s>]", tag), (template.name, tag)
+
+    def test_the_label_shows_where_the_keyboard_is(self):
+        css = (ROOT / "static" / "app.css").read_text()
+
+        assert "label.button:focus-within" in css
+        assert "label.button > input[type=file]" in css
+
+
 def _node():
     import os
     import shutil

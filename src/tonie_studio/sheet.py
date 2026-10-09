@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, Union
 
-from PIL import Image, ImageFilter, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
@@ -37,6 +37,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
+from .thumbnails import centre_square, inset
 
 log = logging.getLogger(__name__)
 
@@ -88,11 +89,10 @@ CUT_LINE_WIDTH = 0.25
 
 @dataclass
 class Back:
-    """What the text side of a tonie says.
+    """What the text side of a tonie says: its name, short notes and its tracks.
 
-    Only what a published model actually holds: it knows its series, its
-    episode and its track names, and nothing about the year the album came out
-    or how long it runs.
+    The text arrives already written; this module lays it out and adds only
+    the count of tracks that did not fit.
     """
 
     title: str
@@ -309,17 +309,9 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
         image.load()
         picture = image.convert("RGB")
 
-    edge = min(picture.size)
-    width, height = picture.size
-    picture = picture.crop((
-        (width - edge) // 2,
-        (height - edge) // 2,
-        (width - edge) // 2 + edge,
-        (height - edge) // 2 + edge,
-    )).resize((size, size), Image.LANCZOS)
-
+    picture = centre_square(picture, size)
     if mode == FIT:
-        picture = _inset(picture)
+        picture = inset(picture, FIT_FACTOR)
 
     if fade:
         picture = Image.blend(picture, Image.new("RGB", picture.size, (255, 255, 255)),
@@ -333,23 +325,6 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
 def _square(source: Union[bytes, Path], mode: str = FILL, fade: float = 0.0) -> ImageReader:
     """Render a cover into the square the circle is drawn over."""
     return ImageReader(io.BytesIO(render_square(source, mode, fade=fade)))
-
-
-def _inset(picture: Image.Image) -> Image.Image:
-    """Shrink the cover until all of it is inside the circle, on a blurred copy.
-
-    Filling the circle cuts whatever sits along the edges of the artwork, which
-    on an album cover is usually the lettering. This keeps every corner of the
-    cover and hides the ring it leaves behind under an enlarged, blurred copy,
-    so the sticker still reads as one picture rather than a badge.
-    """
-    edge = picture.size[0]
-    background = picture.filter(ImageFilter.GaussianBlur(max(1, edge // 25)))
-    inset = round(edge * FIT_FACTOR)
-    foreground = picture.resize((inset, inset), Image.LANCZOS)
-    offset = (edge - inset) // 2
-    background.paste(foreground, (offset, offset))
-    return background
 
 
 def _draw(images: Sequence[Tuple[ImageReader, Sequence[TextLine]]], target: Path,

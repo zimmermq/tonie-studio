@@ -26,8 +26,6 @@ import mutagen
 
 log = logging.getLogger(__name__)
 
-# What teddyCloud's ffmpeg build accepts as encoder input. Offering anything
-# else only produces a failure minutes into an encode.
 # How the tracks were put in order, as ``Album.ordering`` reports it. The page
 # names each one in the reader's language under ``ordering.<value>``.
 BY_FILE_NUMBER = "file_number"
@@ -42,6 +40,8 @@ WARN_NO_TITLES = "album.warn.no_titles"
 WARN_NO_COVER = "album.warn.no_cover"
 WARN_ARTEFACT_COVER = "album.warn.artefact_cover"
 
+# What teddyCloud's ffmpeg build accepts as encoder input. Offering anything
+# else only produces a failure minutes into an encode.
 AUDIO_EXTENSIONS = frozenset({
     ".mp3", ".aac", ".m4a", ".wav", ".flac", ".ogg", ".opus",
     ".aiff", ".aif", ".wma", ".ac3", ".dts", ".mp4",

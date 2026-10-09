@@ -29,7 +29,7 @@
   <p class="muted mt-0">{{ t("backup.restore_hint") }}</p>
   <form method="post" action="/restore" enctype="multipart/form-data" class="row wrap gap-10">
     <label class="button">{{ t("backup.choose") }}
-      <input type="file" name="file" accept=".zip,application/zip" required hidden id="restorefile">
+      <input type="file" name="file" accept=".zip,application/zip" required id="restorefile">
     </label>
     <span class="muted grow truncate" id="restorepicked">{{ t("common.nothing_chosen") }}</span>
     <button type="submit">{{ t("backup.preview") }}</button>

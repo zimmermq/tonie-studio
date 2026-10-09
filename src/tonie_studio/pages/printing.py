@@ -139,7 +139,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             count = max(0, min(MOST_COPIES, counts[position])) if position < len(counts) else 0
             if count < 1:
                 continue
-            picture = _model_picture(connection, model)
+            picture = _cover_bytes(connection, described.get(model))
             if picture is None:
                 continue
             mode = modes[position] if position < len(modes) else FILL
@@ -260,16 +260,15 @@ def _back_preview(models: Sequence[Model], times: Dict[str, int],
     return preview
 
 
-def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:
-    """The cover bytes for one model, or None when it cannot be read."""
-    for model in _printable_models(client):
-        if model.id == model_id:
-            try:
-                return fetch_cover(client, model.cover)
-            except TeddyCloudError as error:
-                log.warning("cannot read the cover of %s: %s", model_id, error)
-                return None
-    return None
+def _cover_bytes(client: TeddyCloudClient, model: Optional[Model]) -> Optional[bytes]:
+    """The cover of a printable model, or None when there is none to be read."""
+    if model is None or not model.cover:
+        return None
+    try:
+        return fetch_cover(client, model.cover)
+    except TeddyCloudError as error:
+        log.warning("cannot read the cover of %s: %s", model.id, error)
+        return None
 
 
 def _millimetres(text: str) -> float:

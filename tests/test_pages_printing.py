@@ -319,3 +319,17 @@ class TestSheetRefusesWhatItCannotPrint:
             client.post("/sheet", data={"models": [model], "counts": ["100000000"]})
 
         assert asked and max(asked) <= 99
+
+
+class TestSheetReadsTheModelsOnce:
+    def test_a_sheet_of_several_tonies_asks_for_the_models_once(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        model = teddycloud.custom_tonies()[0]["model"]
+        original = teddycloud.custom_tonies
+        asked = []
+        teddycloud.custom_tonies = lambda: asked.append(1) or original()
+
+        with captured_sheet():
+            client.post("/sheet", data={"models": [model, model, model], "counts": ["1", "1", "1"]})
+
+        assert len(asked) == 1

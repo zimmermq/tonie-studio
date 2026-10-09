@@ -3,7 +3,7 @@
 The routes live in ``pages``, one module per area. This module builds what
 they share - the teddyCloud client, the job runner, the box watcher, the
 cached models and the podcast updater - hands it to every page as a
-``Context``, and runs the housekeeping at startup. Nothing here talks to
+``Context``, and runs the housekeeping. Nothing here talks to
 teddyCloud directly; it goes through the client and the encode module, so the
 rules about staging and cleanup hold no matter which page started the work.
 """
@@ -35,6 +35,10 @@ from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
 
+# How often, in seconds, old uploads and unconfirmed restores are cleared
+# while the app runs. They age in days, so once a day loses nothing.
+HOUSEKEEPING_EVERY = 86400.0
+
 def create_app(
     settings: Settings,
     client_factory: Optional[Callable[[], TeddyCloudClient]] = None,
@@ -55,29 +59,33 @@ def create_app(
         box.on_change = listening.record
 
     def client() -> TeddyCloudClient:
+        # A fresh client, and so a fresh requests.Session, per use: requests
+        # does not promise a Session is safe across threads, and the request
+        # handlers, the job runner and the podcast updater all run on their own.
+        # The connection set-up this costs is small next to teddyCloud's answers.
         if client_factory:
             return client_factory()
         return TeddyCloudClient(settings.teddycloud_url, overlay=settings.overlay)
 
     models = ModelCache(client)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
-    stop_podcasts = threading.Event()
+    stopping = threading.Event()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # Off the startup path on purpose. An unreachable teddyCloud answers
         # only after DNS timeouts and retries, and blocking here would hold the
         # readiness probe down for a service outage this app can survive.
-        threading.Thread(target=_housekeeping, args=(settings, client),
+        threading.Thread(target=_housekeeping, args=(settings, client, stopping),
                          name="housekeeping", daemon=True).start()
         box.start()
-        threading.Thread(target=podcasts.run, args=(stop_podcasts,),
+        threading.Thread(target=podcasts.run, args=(stopping,),
                          name="podcasts", daemon=True).start()
         try:
             yield
         finally:
             box.stop()
-            stop_podcasts.set()
+            stopping.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -95,12 +103,12 @@ def create_app(
     return app
 
 
-def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient]) -> None:
-    """What an earlier run left lying about, in teddyCloud and on the volume."""
-    remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
-    clear_parked_restores(settings)
+def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
+                  stop: threading.Event) -> None:
+    """Clear what an earlier run left lying about, then keep the volume tidy until ``stop``."""
     # Whatever was mid-encode when the process died is nobody's job now, and
-    # it is holding hundreds of megabytes in teddyCloud's library.
+    # it is holding hundreds of megabytes in teddyCloud's library. Only at
+    # startup: once jobs run, a staging folder is usually one of theirs.
     try:
         removed = remove_orphaned_staging(client())
         if removed:
@@ -109,3 +117,8 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient]) ->
         # teddyCloud being down is no reason for this app not to start; the
         # pages that need it will say so themselves.
         log.warning("could not reach teddyCloud at startup: %s", error)
+    while True:
+        remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
+        clear_parked_restores(settings)
+        if stop.wait(HOUSEKEEPING_EVERY):
+            return

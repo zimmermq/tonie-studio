@@ -69,14 +69,14 @@
   </p>
   <form method="post" action="/upload" enctype="multipart/form-data" id="upload">
     <div class="row wrap gap-10">
-      <!-- A file input cannot be styled, so it is hidden behind a label that
-           can be. webkitdirectory picks a whole album folder at once; a 60
+      <!-- A file input cannot be styled, so it sits invisibly inside a label
+           that can be. webkitdirectory picks a whole album folder at once; a 60
            track release is otherwise 60 clicks in the dialog. -->
       <label class="button">{{ t("upload.folder") }}
-        <input type="file" name="files" webkitdirectory directory multiple hidden>
+        <input type="file" name="files" webkitdirectory directory multiple>
       </label>
       <label class="button">{{ t("upload.files") }}
-        <input type="file" name="files" multiple hidden>
+        <input type="file" name="files" multiple>
       </label>
       <span class="muted grow truncate" id="picked">{{ t("common.nothing_chosen") }}</span>
       <button class="primary" type="submit" id="send" disabled>{{ t("upload.send") }}</button>

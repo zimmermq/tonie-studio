@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -26,6 +27,10 @@ log = logging.getLogger(__name__)
 # A picture is served as the type its name says and nothing else; a browser
 # that guessed from the content could run a file as a page.
 NO_SNIFFING = {"X-Content-Type-Options": "nosniff"}
+
+# How long the name of the tonie on the box is reused, in seconds. A tonie
+# renamed or given a new sticker shows its new name this much later in the header.
+LABEL_TTL = 10.0
 
 # Offered as a starting point, not as an endorsement: a stream URL is hard to
 # find and easy to get wrong, and a wrong one fails silently at the box.
@@ -114,6 +119,27 @@ def register(app: FastAPI, ctx: Context) -> None:
         return RedirectResponse("/tonies", 303)
 
 
+    labels: Dict[str, Tuple[float, str]] = {}
+
+    def box_label(ruid: str) -> str:
+        """The name of the tonie on the box, read from the tag index at most every LABEL_TTL.
+
+        Every open page polls the box every few seconds; reading the whole tag
+        index for each poll would put teddyCloud under constant load for a
+        name that rarely changes.
+        """
+        now = time.monotonic()
+        cached = labels.get(ruid)
+        if cached and now - cached[0] < LABEL_TTL:
+            return cached[1]
+        try:
+            label = next((tag.label for tag in list_tags(client()) if tag.ruid == ruid), "")
+        except TeddyCloudError:
+            return ""
+        labels.clear()
+        labels[ruid] = (now, label)
+        return label
+
     @app.get("/api/box")
     def box_state():
         """What is on the box, for the page to poll.
@@ -123,15 +149,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         to read the tag index.
         """
         state = box.state
-        label = ""
-        if state.known and state.on_box:
-            try:
-                label = next((tag.label for tag in list_tags(client())
-                              if tag.ruid == state.ruid), "")
-            except TeddyCloudError:
-                label = ""
         return JSONResponse({
-            "label": label,
+            "label": box_label(state.ruid) if state.known and state.on_box else "",
             "ruid": state.ruid if state.known else None,
             "on_box": state.on_box and state.known,
             "playing": state.playing and state.known,

@@ -36,6 +36,18 @@ class TestBoxMarker:
         assert state["ruid"] == "a9c9ed0e500304e0"
         assert state["on_box"] is True
 
+    def test_names_the_tonie_without_reading_the_tag_index_on_every_poll(self, client, box,
+                                                                          teddycloud):
+        box.handle("TagValid", "E00403500EEDC9A9")
+        original = teddycloud.tags
+        asked = []
+        teddycloud.tags = lambda: asked.append(1) or original()
+
+        for _poll in range(5):
+            client.get("/api/box")
+
+        assert len(asked) == 1
+
     def test_clears_it_once_the_tonie_is_lifted(self, client, box):
         box.handle("TagValid", "E00403500EEDC9A9")
         box.handle("rtnl-raw-log2",

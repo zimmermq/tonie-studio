@@ -273,8 +273,15 @@ input[type=range] { accent-color: var(--accent); }
 a.album strong, a.album .muted { display: block; font-weight: 600; }
 a.album .muted { font-weight: 400; }
 
-/* A file input cannot be styled, so the label is the button. */
-label.button { display: inline-block; }
+/* A file input cannot be styled, so the label is the button. The input stays
+   in the page, invisible but focusable, so Tab reaches it and Space opens the
+   dialog; the label shows where the keyboard is. */
+label.button { display: inline-block; position: relative; }
+label.button > input[type=file] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; pointer-events: none;
+}
+label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* On a phone a two column card leaves both columns too narrow to use. */
 @media (max-width: 640px) {
   .stackable { flex-direction: column; align-items: stretch !important; }

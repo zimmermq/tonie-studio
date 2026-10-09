@@ -119,15 +119,15 @@ def crop(
     )).resize((size, size), Image.LANCZOS)
 
     if zoom < 1.0:
-        picture = _inset(picture, zoom)
+        picture = inset(picture, zoom)
 
     buffer = io.BytesIO()
     picture.save(buffer, format="JPEG", quality=90)
     return buffer.getvalue()
 
 
-def _inset(square: Image.Image, zoom: float) -> Image.Image:
-    """Shrink the cover inside its square, over a blurred copy of itself.
+def inset(square: Image.Image, share: float) -> Image.Image:
+    """Shrink a square picture to ``share`` of its edge, over a blurred copy of itself.
 
     A cover placed whole inside the circle leaves a ring, and a flat colour
     there reads as a mistake. The blurred copy carries the cover's own colours
@@ -135,9 +135,9 @@ def _inset(square: Image.Image, zoom: float) -> Image.Image:
     """
     size = square.size[0]
     background = square.filter(ImageFilter.GaussianBlur(max(1, size // 25)))
-    inset = max(1, round(size * zoom))
-    foreground = square.resize((inset, inset), Image.LANCZOS)
-    background.paste(foreground, ((size - inset) // 2, (size - inset) // 2))
+    shrunk = max(1, round(size * share))
+    foreground = square.resize((shrunk, shrunk), Image.LANCZOS)
+    background.paste(foreground, ((size - shrunk) // 2, (size - shrunk) // 2))
     return background
 
 
@@ -145,20 +145,19 @@ def _clamp(value: float) -> float:
     return max(-1.0, min(float(value), 1.0))
 
 
+def centre_square(picture: Image.Image, size: int) -> Image.Image:
+    """The largest centred square of ``picture``, scaled to ``size`` pixels."""
+    edge = min(picture.size)
+    width, height = picture.size
+    left, top = (width - edge) // 2, (height - edge) // 2
+    return picture.crop((left, top, left + edge, top + edge)).resize((size, size), Image.LANCZOS)
+
+
 def _render(path: Path, size: int) -> bytes:
     with Image.open(path) as image:
         image.load()
         picture = image.convert("RGB")
 
-    edge = min(picture.size)
-    width, height = picture.size
-    picture = picture.crop((
-        (width - edge) // 2,
-        (height - edge) // 2,
-        (width - edge) // 2 + edge,
-        (height - edge) // 2 + edge,
-    )).resize((size, size), Image.LANCZOS)
-
     buffer = io.BytesIO()
-    picture.save(buffer, format="JPEG", quality=82)
+    centre_square(picture, size).save(buffer, format="JPEG", quality=82)
     return buffer.getvalue()
