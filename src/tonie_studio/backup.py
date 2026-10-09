@@ -32,7 +32,7 @@ from .encode import list_tafs
 from .i18n import Problem
 from .library import is_library, played, same
 from .listening import FILE_NAME as LISTENING_FILE
-from .models import Model, fetch_cover
+from .models import Model, fetch_cover, is_cover_name
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
 from .tags import TonieTag, list_tags
@@ -45,6 +45,9 @@ FORMAT = 1
 # Far above any real backup - a few hundred kilobytes of covers per tonie -
 # and far below what would hurt the process holding it in memory.
 LARGEST_BACKUP = 64 * 1024 * 1024
+# The same for the backup unpacked; its covers do not shrink when packed, so
+# a real one is hardly larger than its file.
+LARGEST_UNPACKED = 256 * 1024 * 1024
 
 # What a restore step does, and what it does it to. The values name texts in
 # the language files (restore.action.*, restore.what.*); changing one means
@@ -192,6 +195,10 @@ def read_backup(data: bytes) -> Backup:
         raise BackupError("backup.not_zip") from error
 
     with archive:
+        # Refused before anything is read: the size limit above is on the
+        # packed file, and a small zip can unpack to gigabytes in memory.
+        if sum(info.file_size for info in archive.infolist()) > LARGEST_UNPACKED:
+            raise BackupError("backup.too_large")
         names = set(archive.namelist())
         if "manifest.json" not in names:
             raise BackupError("backup.not_ours")
@@ -209,6 +216,8 @@ def read_backup(data: bytes) -> Backup:
             if not name.startswith("covers/"):
                 continue
             base = name[len("covers/"):]
+            if not is_cover_name(base):
+                continue
             # A name with a path in it would write somewhere other than
             # custom_img; a backup has no reason to contain one.
             if not base or "/" in base or "\\" in base or base.startswith("."):

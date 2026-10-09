@@ -266,3 +266,18 @@ class TestDeletingASharedModel:
         assert teddycloud.tag_entries[original]["tonie_model"] == model
         assert teddycloud.tag_entries[copy]["tonie_model"] == ""
         assert model in playing_times(settings.data_dir)
+
+
+class TestCoverRouteServesPicturesOnly:
+    def test_a_name_that_is_not_a_picture_is_refused(self, client, teddycloud):
+        teddycloud.images["x.html"] = b"<script>alert(1)</script>"
+
+        assert client.get("/cover/custom/x.html").status_code == 400
+
+    def test_a_picture_comes_with_its_type_and_no_guessing(self, client, teddycloud):
+        teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
+
+        response = client.get("/cover/custom/TS-0001.jpg")
+
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.headers["x-content-type-options"] == "nosniff"

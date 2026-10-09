@@ -38,6 +38,18 @@ DEFAULT_LANGUAGE = "de-de"
 DEFAULT_CATEGORY = "music"
 
 
+# The pictures a cover may be, with the type they are served as. Anything
+# else in custom_img - a restored backup can bring any name - is not served
+# or written back, because a browser would take an .html "cover" for a page.
+COVER_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+               ".webp": "image/webp"}
+
+
+def is_cover_name(name: Optional[str]) -> bool:
+    """Whether ``name`` is a picture file a cover may be."""
+    return bool(name) and Path(name).suffix.lower() in COVER_TYPES
+
+
 # What tonies.json uses, offered so a model is not filed under an invented one.
 CATEGORIES = ("music", "audio-book", "audio-play", "audio-play-songs", "audio-book-songs")
 

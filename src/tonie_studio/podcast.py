@@ -45,7 +45,7 @@ from .encode import EncodeError, delete_taf, encode_files, library_path
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
-from .models import find_model
+from .models import COVER_TYPES, find_model
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
 from .tags import find_tag, list_tags
@@ -79,7 +79,7 @@ MOST_REDIRECTS = 5
 # after the title - must never be the part that is cut off.
 TITLE_IN_NAME = 80
 
-PICTURE_SUFFIXES = frozenset({"jpg", "jpeg", "png", "webp"})
+PICTURE_SUFFIXES = frozenset(suffix.lstrip(".") for suffix in COVER_TYPES)
 
 ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 

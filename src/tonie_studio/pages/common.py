@@ -26,7 +26,7 @@ from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
-from ..models import ModelCache
+from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
@@ -174,4 +174,5 @@ def is_audio_name(name: Optional[str]) -> bool:
 
 
 def is_image_name(name: Optional[str]) -> bool:
-    return bool(name) and Path(name).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+    """Whether an uploaded file is a picture that can become a cover."""
+    return is_cover_name(name)

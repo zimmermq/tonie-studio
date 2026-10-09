@@ -290,3 +290,32 @@ class TestRestoreSharesTheRecords:
         worker.join(5)
 
         assert playing_times(tmp_path) == {"TS-0001": 60}
+
+
+class TestRestoringAHostileFile:
+    def _backup_with(self, cloud, data_dir, name, content):
+        import io
+        import zipfile
+
+        buffer = io.BytesIO(create_backup(cloud, data_dir))
+        with zipfile.ZipFile(buffer, "a", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(name, content)
+        return buffer.getvalue()
+
+    def test_refuses_a_backup_that_unpacks_to_far_more_than_any_backup(self, cloud, data_dir,
+                                                                       monkeypatch):
+        # A small zip can unpack to gigabytes; it is refused before a byte of
+        # it is read, not after.
+        import tonie_studio.backup as backup
+
+        monkeypatch.setattr(backup, "LARGEST_UNPACKED", 1_000_000)
+        data = self._backup_with(cloud, data_dir, "covers/big.jpg", b"\0" * 5_000_000)
+
+        assert len(data) < 1_000_000
+        with pytest.raises(BackupError):
+            read_backup(data)
+
+    def test_brings_back_only_pictures_as_covers(self, cloud, data_dir):
+        data = self._backup_with(cloud, data_dir, "covers/x.html", b"<script>alert(1)</script>")
+
+        assert "x.html" not in read_backup(data).covers

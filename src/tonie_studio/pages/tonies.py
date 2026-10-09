@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import mimetypes
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -13,7 +12,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
-from ..models import (CATEGORIES, DEFAULT_CATEGORY, fetch_cover, find_model, update_model)
+from ..models import (CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, fetch_cover, find_model,
+                      is_cover_name, update_model)
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, list_tags
@@ -22,6 +22,10 @@ from ..tonie import copy_tag, drop_model, publish_stream
 from .common import Context, Refused, is_image_name
 
 log = logging.getLogger(__name__)
+
+# A picture is served as the type its name says and nothing else; a browser
+# that guessed from the content could run a file as a page.
+NO_SNIFFING = {"X-Content-Type-Options": "nosniff"}
 
 # Offered as a starting point, not as an endorsement: a stream URL is hard to
 # find and easy to get wrong, and a wrong one fails silently at the box.
@@ -153,7 +157,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         in that mode, so a preview on screen and the sticker in hand are the
         same rendering rather than two that merely resemble each other.
         """
-        if "/" in name or ".." in name:
+        if "/" in name or ".." in name or not is_cover_name(name):
             raise Refused(400, "error.not_an_image")
         try:
             data = fetch_cover(client(), name)
@@ -168,8 +172,8 @@ def register(app: FastAPI, ctx: Context) -> None:
                 # reach the page; the untouched bytes may well render there.
                 log.debug("cannot render %s as a sticker: %s", name, error)
             else:
-                return Response(data, media_type="image/jpeg")
-        return Response(data, media_type=mimetypes.guess_type(name)[0] or "image/jpeg")
+                return Response(data, media_type="image/jpeg", headers=NO_SNIFFING)
+        return Response(data, media_type=COVER_TYPES[Path(name).suffix.lower()], headers=NO_SNIFFING)
 
 
     @app.get("/radio", response_class=HTMLResponse)
