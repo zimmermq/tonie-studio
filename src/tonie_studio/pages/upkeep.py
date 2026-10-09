@@ -137,7 +137,7 @@ def _restore_dir(settings: Settings) -> Path:
     return settings.data_dir / "restore"
 
 
-def _clear_parked_restores(settings: Settings, older_than: float = 86400.0) -> None:
+def clear_parked_restores(settings: Settings, older_than: float = 86400.0) -> None:
     """Drop backups uploaded for a preview that was never confirmed."""
     folder = _restore_dir(settings)
     if not folder.is_dir():

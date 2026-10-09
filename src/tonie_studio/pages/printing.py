@@ -21,7 +21,7 @@ from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker,
                      build_sheet)
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..tonie import Model, fetch_cover, list_models, list_tags
-from .common import Context, Refused, _is_image_name, translator
+from .common import Context, Refused, is_image_name, translator
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                                         back=description))
 
         for upload_file in files:
-            if _is_image_name(upload_file.filename):
+            if is_image_name(upload_file.filename):
                 stickers.append(Sticker(image=upload_file.file.read(),
                                         label=upload_file.filename or "upload",
                                         mode=FIT if upload_mode == FIT else FILL))

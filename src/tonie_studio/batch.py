@@ -69,12 +69,17 @@ class Placing:
     Free stickers look alike, so the order they are placed in is the only
     way to know which one carries which episode. A sticker can be placed
     before its episode is encoded; it is reserved and filled when the
-    encode finishes. All state changes happen under ``lock``, because the
-    encode thread and the request placing a sticker meet on ``settled``.
+    encode finishes. A batch that hands its stickers out automatically is
+    the same thing with every sticker reserved from the start. All state
+    changes happen under ``lock``, because the encode thread and the
+    request placing a sticker meet on ``settled``.
     """
 
-    def __init__(self, slots: Sequence[Slot]):
+    def __init__(self, slots: Sequence[Slot], by_hand: bool = True):
         self.slots = list(slots)
+        # Whether stickers are placed on the box one by one; otherwise every
+        # slot had its sticker reserved when the batch started.
+        self.by_hand = by_hand
         self.lock = threading.Lock()
 
     def add(self, slot: Slot) -> None:
@@ -109,6 +114,11 @@ class Placing:
                     slot.settled = True
                     return slot.ruid
         return None
+
+    def next_episode(self) -> str:
+        """The episode the next sticker put on the box will get, for the page."""
+        waiting = self.waiting(lambda job_id: False)
+        return waiting.episode if waiting else ""
 
     def waiting(self, failed: Callable[[str], bool]) -> Optional[Slot]:
         """The next encode still without a sticker."""

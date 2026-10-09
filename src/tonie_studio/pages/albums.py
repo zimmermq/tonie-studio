@@ -17,12 +17,12 @@ from ..album import Album, album_id, cover_candidates, read_album
 from ..albumnotes import first_sightings, is_new
 from ..batch import episode_order
 from ..encode import EncodeError, library_path, taf_exists
-from ..jobs import JobState
+from ..jobs import JobRunner, JobState
+from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
 from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
-from .common import (UPLOAD, Context, Refused, _encode_job, _finished_result, _is_audio_name,
-                     _is_image_name, _next_to_place, _publish_result, translator)
+from .common import (UPLOAD, Context, Refused, is_audio_name, is_image_name, translator)
 
 log = logging.getLogger(__name__)
 
@@ -176,15 +176,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         chosen_cover = (album.cover_candidates[cover_index]
                         if 0 <= cover_index < len(album.cover_candidates) else None)
         cover = str(chosen_cover) if chosen_cover else None
-        crop_settings = {"zoom": cover_zoom, "x": cover_x, "y": cover_y}
+        cut = Crop(zoom=cover_zoom, x=cover_x, y=cover_y)
 
         job_ids = [
-            jobs.submit("encode", target, _encode_job(
+            jobs.submit("encode", target, encode_job(
                 connection, [chosen[index] for index in indices], target,
-                replace=target in occupied,
-                carried={"series": series, "episode": part_name(episode, number, parts),
-                         "cover": cover, "crop": crop_settings, "year": album.year,
-                         "album": identifier}))
+                Details(series=series, episode=part_name(episode, number, parts), cover=cover,
+                        crop=cut, year=album.year, album=identifier),
+                replace=target in occupied))
             for number, (indices, target)
             in enumerate(zip(groups_of_tracks, targets, strict=True), 1)
         ]
@@ -200,9 +199,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         if group not in groups:
             raise Refused(404, "error.parts_gone")
         batch = group in batches
+        by_hand = group in placings and placings[group].by_hand
         members = [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)]
-        made_models = [job.result["model"] for job in members
-                       if isinstance(job.result, dict) and job.result.get("model")]
+        made_models = [job.result.model for job in members
+                       if isinstance(job.result, Outcome) and job.result.model]
         return templates.TemplateResponse(request, "parts.html", {
             "jobs": members,
             "batch": batch,
@@ -212,11 +212,11 @@ def register(app: FastAPI, ctx: Context) -> None:
             if made_models else "",
             "title_key": "batch.progress_title" if batch else "parts.title",
             "heading_key": "batch.progress_title" if batch else "parts.heading",
-            "intro_key": ("batch.progress_intro_place" if group in placings
+            "intro_key": ("batch.progress_intro_place" if by_hand
                           else "batch.progress_intro" if batch else "parts.intro"),
-            "placing": group in placings,
+            "placing": by_hand,
             "group": group,
-            "next_episode": _next_to_place(placings.get(group)),
+            "next_episode": placings[group].next_episode() if group in placings else "",
         })
 
 
@@ -228,7 +228,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         # A podcast refresh puts its taf on the sticker itself; only an album
         # encode still has to be given to one.
         podcast = job.kind == "podcast"
-        published = bool(job.result and job.result.get("model"))
+        published = isinstance(job.result, Outcome) and bool(job.result.model)
         if podcast:
             done_key, next_href, next_key = "job.podcast_done", "/podcasts", "job.to_podcasts"
         elif published:
@@ -242,10 +242,10 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
     def assign_page(request: Request, job_id: str, new: str = ""):
-        result = _finished_result(jobs, job_id)
+        outcome = _finished_outcome(jobs, job_id)
         connection = client()
         tags = list_tags(connection)
-        encoded = result["encode"]
+        encoded = outcome.encoded
         # Two models holding the same audio_id and hash describe the same
         # recording, and they would fight each other for teddyCloud's automatic
         # matching. Worth saying before a second one is made.
@@ -262,7 +262,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             preselect = state.ruid
         return templates.TemplateResponse(request, "assign.html", {
             "job_id": job_id,
-            "result": result,
+            "result": outcome,
             "tags": tags,
             "categories": CATEGORIES,
             "preselect": preselect,
@@ -278,9 +278,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         episode: str = Form(...),
         category: str = Form(DEFAULT_CATEGORY),
     ):
-        result = _finished_result(jobs, job_id)
+        outcome = _finished_outcome(jobs, job_id)
         try:
-            _publish_result(client(), settings, ruid, result, series, episode, category)
+            publish_outcome(client(), settings.data_dir, ruid, outcome, series, episode, category)
         except TonieError as error:
             raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
@@ -304,7 +304,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         job = jobs.get(job_id)
         if job is None:
             raise Refused(404, "error.no_job")
-        result = job.result if isinstance(job.result, dict) else {}
+        outcome = job.result if isinstance(job.result, Outcome) else None
         return JSONResponse({
             "state": job.state.value,
             "step": job.step,
@@ -313,13 +313,12 @@ def register(app: FastAPI, ctx: Context) -> None:
             "percent": job.percent,
             "error": job.error,
             "target": job.label,
-            "assigned": bool(result.get("model")),
-            "model": result.get("model") or None,
+            "assigned": bool(outcome and outcome.model),
+            "model": (outcome and outcome.model) or None,
             # Why a batch encode did not get its sticker, for the reader.
-            "note": translator(request)(result["assign_error"]) if result.get("assign_error") else "",
+            "note": (translator(request)(outcome.assign_error)
+                     if outcome and outcome.assign_error else ""),
         })
-
-    return app
 
 
 # --- helpers --------------------------------------------------------------
@@ -335,12 +334,12 @@ def _upload_folders(files: Sequence[UploadFile]) -> Dict[str, List[UploadFile]]:
     """
     folders: Dict[str, List[UploadFile]] = {}
     for file in files:
-        if not (_is_audio_name(file.filename) or _is_image_name(file.filename)):
+        if not (is_audio_name(file.filename) or is_image_name(file.filename)):
             continue
         folder = str(PurePosixPath((file.filename or "").replace("\\", "/")).parent)
         folders.setdefault(folder, []).append(file)
     return {folder: members for folder, members in folders.items()
-            if any(_is_audio_name(member.filename) for member in members)}
+            if any(is_audio_name(member.filename) for member in members)}
 
 
 def _subfolders(root: Path, folders: Dict[str, List[UploadFile]]) -> Dict[str, Path]:
@@ -403,3 +402,13 @@ def _chosen_tracks(
 def _suggest_target(album: Album) -> Dict[str, str]:
     """What to prefill the series and episode fields with."""
     return {"series": album.artist or "", "episode": album.title}
+
+
+def _finished_outcome(jobs: JobRunner, job_id: str) -> Outcome:
+    """The outcome of a finished encode, or a refusal explaining which it is not."""
+    job = jobs.get(job_id)
+    if job is None:
+        raise Refused(404, "error.no_job")
+    if job.state is not JobState.DONE or not isinstance(job.result, Outcome):
+        raise Refused(409, "error.no_taf_yet")
+    return job.result

@@ -17,12 +17,12 @@ from ..encode import EncodeError, existing_taf, library_path, taf_exists
 from ..jobs import JobState, new_id
 from ..library import played, same, source_of
 from ..parts import fewest_parts, part_name, split
+from ..publishing import Details, Outcome, encode_job, free_tags, put_on_sticker
 from ..settings import Settings
-from ..teddycloud import TeddyCloudClient, TeddyCloudError
+from ..teddycloud import TeddyCloudClient
 from ..thumbnails import DEFAULT_SIZE
-from ..tonie import Model, TonieError, list_models, list_tags
-from .common import (Catalogue, Context, Refused, _encode_job, _free_tags, _publish_result,
-                     translator)
+from ..tonie import Model, list_models, list_tags
+from .common import (Catalogue, Context, Refused, translator)
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         return templates.TemplateResponse(request, "batch.html", {
             "rows": rows,
             "how": how if how in (AUTO, PLACE) else PLACE,
-            "free": len(_free_tags(connection)),
+            "free": len(free_tags(connection)),
             "needed": sum(len(row.targets) for row in rows if not row.skipped),
             "thumb_size": DEFAULT_SIZE,
         })
@@ -86,40 +86,33 @@ def register(app: FastAPI, ctx: Context) -> None:
                            dict(zip(ids, episodes, strict=False)), models=models,
                            tonies=_albums_with_tonies(catalogue.albums(), models))
         job_ids = []
-        # Made before any encode is queued: one that finishes at once must
-        # already find the slot it settles.
-        placing = Placing([]) if placing_wanted else None
+        # Both ways hand out stickers the same way: automatically, each slot
+        # has its sticker reserved from the start; by hand, it gets one when
+        # a sticker is placed. Made before any encode is queued, because one
+        # that finishes at once must already find the slot it settles.
+        placing = Placing([], by_hand=placing_wanted)
         for row in rows:
             if row.skipped:
                 continue
             tags = [None] * len(row.targets) if placing_wanted or not row.tags else row.tags
             for number, (indices, target, ruid) in enumerate(
                     zip(row.groups, row.targets, tags, strict=True), 1):
-                episode = part_name(row.episode, number, len(row.targets))
+                details = Details(
+                    series=row.series, episode=part_name(row.episode, number, len(row.targets)),
+                    cover=str(row.album.cover_candidates[0]) if row.album.cover_candidates else None,
+                    year=row.album.year, album=row.identifier)
                 job_id = new_id()
-                if placing is not None:
-                    placing.add(Slot(job_id=job_id, episode=episode))
-                    after = _publish_when_placed(connection, settings, placing, job_id,
-                                                 row.series, episode)
-                else:
-                    after = (_publish_after(connection, settings, ruid, row.series, episode)
-                             if ruid else None)
-                job_ids.append(jobs.submit("encode", target, job_id=job_id, work=_encode_job(
-                    connection, [row.chosen[index] for index in indices], target,
-                    replace=False, reuse=row.reusable,
-                    carried={"series": row.series, "episode": episode,
-                             "cover": str(row.album.cover_candidates[0])
-                             if row.album.cover_candidates else None,
-                             "crop": {"zoom": 1.0, "x": 0.0, "y": 0.0},
-                             "year": row.album.year, "album": row.identifier},
-                    after=after)))
+                placing.add(Slot(job_id=job_id, episode=details.episode, ruid=ruid))
+                job_ids.append(jobs.submit("encode", target, job_id=job_id, work=encode_job(
+                    connection, [row.chosen[index] for index in indices], target, details,
+                    reuse=row.reusable,
+                    after=_on_sticker_when_known(connection, settings, placing, job_id))))
         if not job_ids:
             raise Refused(400, "error.batch_nothing_new")
         group = uuid.uuid4().hex[:12]
         groups[group] = job_ids
         batches.add(group)
-        if placing is not None:
-            placings[group] = placing
+        placings[group] = placing
         response = RedirectResponse(f"/parts/{group}", 303)
         response.set_cookie(HOW_COOKIE, PLACE if placing_wanted else AUTO,
                             max_age=365 * 24 * 3600, samesite="lax")
@@ -172,42 +165,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not settled:
             return answer("reserved", slot)
         job = jobs.get(slot.job_id)
-        if job is None or not job.done.wait(30) or not isinstance(job.result, dict):
+        if job is None or not job.done.wait(30) or not isinstance(job.result, Outcome):
             return answer("reserved", slot)
-        try:
-            job.result["model"] = _publish_result(connection, settings, ruid, job.result,
-                                                  job.result["series"], slot.episode)
-            job.result["ruid"] = ruid
-        except (TonieError, TeddyCloudError) as error:
-            log.warning("batch: could not put %s on %s: %s", slot.episode, ruid, error)
-            job.result["assign_error"] = "batch.publish_failed"
-            return answer("failed", slot)
-        return answer("assigned", slot)
+        if put_on_sticker(connection, settings.data_dir, ruid, job.result):
+            return answer("assigned", slot)
+        return answer("failed", slot)
 
 
 # --- helpers --------------------------------------------------------------
-
-
-def _publish_after(connection: TeddyCloudClient, settings: Settings, ruid: str,
-                   series: str, episode: str) -> Callable[[Dict], None]:
-    """The step that puts a batch encode on the tag planned for it.
-
-    A tag that was given something else since the plan is left alone: the
-    encode still counts, and its page offers the ordinary assignment. A
-    failure to publish is recorded the same way rather than failing a job
-    whose taf is fine.
-    """
-    def after(result: Dict) -> None:
-        if ruid not in _free_tags(connection):
-            result["assign_error"] = "batch.tag_taken"
-            return
-        try:
-            result["model"] = _publish_result(connection, settings, ruid, result, series, episode)
-            result["ruid"] = ruid
-        except (TonieError, TeddyCloudError) as error:
-            log.warning("batch: could not put %s on %s: %s", episode, ruid, error)
-            result["assign_error"] = "batch.publish_failed"
-    return after
 
 
 # What the progress page says after a sticker was placed, by outcome.
@@ -221,23 +186,18 @@ PLACE_MESSAGES = {
 }
 
 
-def _publish_when_placed(connection: TeddyCloudClient, settings: Settings, placing: Placing,
-                         job_id: str, series: str, episode: str) -> Callable[[Dict], None]:
-    """The step that puts a batch encode on the sticker placed for it meanwhile.
+def _on_sticker_when_known(client: TeddyCloudClient, settings: Settings, placing: Placing,
+                           job_id: str) -> Callable[[Outcome], None]:
+    """The step that puts a batch encode on its sticker once it is encoded.
 
-    Without a sticker yet nothing happens here; the one placed later is
-    published by the request that reserves it.
+    The sticker is the one reserved for it up front, or the one placed on the
+    box meanwhile. Without one yet nothing happens here; a sticker placed
+    later is put on by the request that reserves it.
     """
-    def after(result: Dict) -> None:
+    def after(outcome: Outcome) -> None:
         ruid = placing.settle(job_id)
-        if ruid is None:
-            return
-        try:
-            result["model"] = _publish_result(connection, settings, ruid, result, series, episode)
-            result["ruid"] = ruid
-        except (TonieError, TeddyCloudError) as error:
-            log.warning("batch: could not put %s on %s: %s", episode, ruid, error)
-            result["assign_error"] = "batch.publish_failed"
+        if ruid is not None:
+            put_on_sticker(client, settings.data_dir, ruid, outcome)
     return after
 
 
@@ -322,7 +282,7 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, catalogue: Cat
 
     waiting = [row for row in rows if not row.skipped]
     for row, tags in zip(waiting, allocate([len(row.targets) for row in waiting],
-                                           _free_tags(connection)), strict=True):
+                                           free_tags(connection)), strict=True):
         row.tags = tags
     return rows
 

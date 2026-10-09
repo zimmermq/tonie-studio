@@ -30,8 +30,8 @@ from .i18n import Problem, catalogs
 from .jobs import JobRunner
 from .listening import ListeningLog
 from .pages import albums, batch, extras, printing, tonies, upkeep
-from .pages.common import TEMPLATES, Catalogue, Context, Refused, _language, translator
-from .pages.upkeep import _clear_parked_restores
+from .pages.common import TEMPLATES, Catalogue, Context, Refused, language_context, translator
+from .pages.upkeep import clear_parked_restores
 from .podcast import SERIES as PODCAST_SERIES
 from .podcast import Fetch, download, load_subscriptions, refresh, update_subscription
 from .settings import Settings
@@ -60,7 +60,7 @@ def create_app(
     fetch: Fetch = download,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
-    templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[_language])
+    templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[language_context])
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)
     listening = ListeningLog(settings.data_dir)
@@ -78,7 +78,7 @@ def create_app(
     def housekeeping() -> None:
         """What an earlier run left lying about, in teddyCloud and on the volume."""
         remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
-        _clear_parked_restores(settings)
+        clear_parked_restores(settings)
         clear_abandoned_staging()
 
     def clear_abandoned_staging() -> None:

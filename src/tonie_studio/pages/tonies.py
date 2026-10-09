@@ -18,7 +18,7 @@ from ..sheet import FILL, FIT, PIXELS, render_square
 from ..teddycloud import TeddyCloudError
 from ..tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, copy_tag, fetch_cover, find_model,
                      list_tags, publish_stream, remove_model, update_model)
-from .common import Context, Refused, _is_image_name
+from .common import Context, Refused, is_image_name
 
 log = logging.getLogger(__name__)
 
@@ -234,6 +234,6 @@ def _uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
     Anything that is not an image by its name is ignored rather than refused:
     the cover is optional, and the rest of the form is still worth saving.
     """
-    if cover is None or not _is_image_name(cover.filename):
+    if cover is None or not is_image_name(cover.filename):
         return None, "jpg"
     return cover.file.read(), Path(cover.filename).suffix.lstrip(".") or "jpg"

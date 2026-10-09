@@ -13,26 +13,21 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from ..album import AUDIO_EXTENSIONS, AlbumSummary, list_albums
-from ..albumnotes import remember_made
 from ..batch import Placing
 from ..boxstate import BoxWatcher
-from ..encode import EncodeError, encode_files, existing_taf
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
-from ..jobs import JobRunner, JobState
+from ..jobs import JobRunner
 from ..listening import ListeningLog
 from ..podcast import Fetch
-from ..runtimes import remember
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
-from ..thumbnails import crop
-from ..tonie import DEFAULT_CATEGORY, list_tags, publish
 
 log = logging.getLogger(__name__)
 
@@ -81,94 +76,6 @@ class Context:
     placings: Dict[str, Placing] = field(default_factory=dict)
 
 
-def _encode_job(connection: TeddyCloudClient, chosen: Sequence[Tuple[object, str]], target: str,
-                replace: bool, carried: Dict,
-                after: Optional[Callable[[Dict], None]] = None, reuse: bool = False) -> Callable:
-    """The work of one encode, returning what the tag and model steps need.
-
-    ``carried`` goes into the result unchanged: the names a person approved
-    rather than the ones that were guessed, the cover, and what the printed
-    text side and the album list read back. ``after`` runs once the taf
-    exists and may add to the result; it must not raise for a failure the
-    encode itself does not share. With ``reuse`` the taf already at
-    ``target`` is taken as it is; it fails if that taf has gone or no
-    longer has one chapter per track.
-    """
-    paths = [track.path for track, _name in chosen]
-    names = [name for _track, name in chosen]
-    # The playing time turns the encode from a dead bar into a position;
-    # teddyCloud itself reports nothing while ffmpeg runs.
-    playing_time = sum(track.duration or 0 for track, _name in chosen) or None
-
-    def work(progress):
-        if reuse:
-            encoded = existing_taf(connection, target)
-            if encoded is None or encoded.tracks != len(paths):
-                raise EncodeError(f"{target} is no longer the taf this album was planned with")
-        else:
-            encoded = encode_files(connection, paths, target, progress=progress,
-                                   replace=replace, total_seconds=playing_time)
-        result = {"encode": encoded, "tracks": names, "seconds": playing_time, **carried}
-        if after is not None:
-            after(result)
-        return result
-    return work
-
-
-def _publish_result(connection: TeddyCloudClient, settings: Settings, ruid: str, result: Dict,
-                    series: str, episode: str, category: str = DEFAULT_CATEGORY) -> str:
-    """Put a finished encode on a tag, and record what the app keeps about it."""
-    model_id = publish(
-        connection,
-        ruid,
-        result["encode"],
-        series=series,
-        episode=episode,
-        tracks=result["tracks"],
-        cover=_cropped_cover(result),
-        category=category,
-        year=result.get("year"),
-    )
-    remember(settings.data_dir, model_id, result.get("seconds"))
-    remember_made(settings.data_dir, result.get("album", ""), model_id)
-    return model_id
-
-
-def _free_tags(connection: TeddyCloudClient) -> List[str]:
-    """Tags the box has read that play nothing yet, in the order they are handed out."""
-    return [tag.ruid for tag in list_tags(connection) if not tag.assigned]
-
-
-def _cropped_cover(result: Dict) -> Optional[bytes]:
-    """The album cover, cut the way the album page showed it.
-
-    Cropping here rather than at print time means what teddyCloud displays and
-    what comes out of the printer are the same picture.
-    """
-    cover = result.get("cover")
-    if not cover:
-        return None
-    crop_settings = result.get("crop") or {}
-    return crop(
-        Path(cover),
-        zoom=crop_settings.get("zoom", 1.0),
-        offset_x=crop_settings.get("x", 0.0),
-        offset_y=crop_settings.get("y", 0.0),
-    )
-
-
-def _finished_result(jobs: JobRunner, job_id: str) -> Dict:
-    """The result of a finished encode, or a refusal explaining which it is not."""
-    job = jobs.get(job_id)
-    if job is None:
-        raise Refused(404, "error.no_job")
-    if job.state is not JobState.DONE:
-        raise Refused(409, "error.no_taf_yet")
-    return job.result
-
-
-# Keyed by the directories scanned, not only by `describe`: two apps in one
-# process - which is every test run - must not hand each other their archives.
 class Catalogue:
     """Every album on offer, from the uploads and the archive.
 
@@ -244,23 +151,15 @@ def translator(request: Request) -> Translator:
                                 request.headers.get("accept-language")))
 
 
-def _language(request: Request) -> Dict:
+def language_context(request: Request) -> Dict:
     """What every page needs to speak the reader's language."""
     translate = translator(request)
     return {"t": translate, "lang": translate.lang, "languages": languages()}
 
 
-def _is_audio_name(name: Optional[str]) -> bool:
+def is_audio_name(name: Optional[str]) -> bool:
     return bool(name) and Path(name).suffix.lower() in AUDIO_EXTENSIONS
 
 
-def _is_image_name(name: Optional[str]) -> bool:
+def is_image_name(name: Optional[str]) -> bool:
     return bool(name) and Path(name).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
-
-
-def _next_to_place(placing: Optional[Placing]) -> str:
-    """The episode the next sticker put on the box will get, for the page."""
-    if placing is None:
-        return ""
-    waiting = placing.waiting(lambda job_id: False)
-    return waiting.episode if waiting else ""

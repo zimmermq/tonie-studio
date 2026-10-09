@@ -287,7 +287,7 @@ class TestEncoding:
             "titles": ["Geister", "Kleine Monster"],
         }, follow_redirects=False)
 
-        assert _finish(runner, response).result["tracks"] == ["Geister", "Kleine Monster"]
+        assert _finish(runner, response).result.tracks == ["Geister", "Kleine Monster"]
 
     def test_refuses_when_nothing_is_ticked(self, client):
         identifier = _album_id(client)
@@ -1503,7 +1503,7 @@ class TestParts:
     def test_one_part_is_the_old_single_encode(self, client, runner, teddycloud):
         job = _finish(runner, self._encode(client))
 
-        assert job.result["episode"] == "Halloween"
+        assert job.result.episode == "Halloween"
 
     def test_parts_become_separate_tafs(self, client, runner, teddycloud):
         response = self._encode(client, parts="2")
@@ -1521,7 +1521,7 @@ class TestParts:
         for job in runner.all():
             assert job.done.wait(5)
 
-        names = [name for job in runner.all() for name in job.result["tracks"]]
+        names = [name for job in runner.all() for name in job.result.tracks]
         assert sorted(names) == ["Drei", "Eins", "Zwei"]
 
     def test_too_many_tracks_for_one_taf_is_refused_with_the_reason(self, client, monkeypatch):
@@ -1890,7 +1890,7 @@ class TestSeveralFolders:
         assert taf_exists(teddycloud, library_path("Serie", "Folge 3"))
         assert len(teddycloud.custom_tonies()) == 2
         third = next(job for job in runner.all() if job.label.endswith("Folge 3.taf"))
-        assert third.state == JobState.DONE and not third.result.get("model")
+        assert third.state == JobState.DONE and not third.result.model
 
     def test_a_sticker_taken_in_the_meantime_is_not_overwritten(self, client, runner, teddycloud):
         ids = _batch_ids(_upload_series(client, episodes=2))
@@ -1908,7 +1908,7 @@ class TestSeveralFolders:
         assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == "lib://Andere/Folge.taf"
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Andere/Zwei.taf"
         for job in runner.all():
-            assert job.state == JobState.DONE and job.result.get("assign_error")
+            assert job.state == JobState.DONE and job.result.assign_error
         note = client.get(f"/api/job/{runner.all()[0].id}").json()["note"]
         assert note and not note.startswith("batch.")
 
@@ -1947,7 +1947,7 @@ class TestSeveralFolders:
         teddycloud.add_tag("aaaaaaaaaaaaaaaa")
 
         page = client.get("/batch", params={"ids": ids}).text
-        with patch("tonie_studio.pages.common.encode_files",
+        with patch("tonie_studio.publishing.encode_files",
                    side_effect=AssertionError("encoded again")):
             _run_batch(client, runner, ids, series="Serie", stickers="auto")
 
@@ -2107,7 +2107,7 @@ class TestPlacingStickers:
                                                                           teddycloud):
         import threading
 
-        import tonie_studio.pages.common as common
+        import tonie_studio.publishing as common
 
         gate = threading.Event()
         original = common.encode_files
@@ -2116,7 +2116,7 @@ class TestPlacingStickers:
             assert gate.wait(5)
             return original(*args, **kwargs)
 
-        with patch("tonie_studio.pages.common.encode_files", side_effect=slow):
+        with patch("tonie_studio.publishing.encode_files", side_effect=slow):
             group = _start_placing(client, runner)
             placed = _place(client, group, "deb4ed0e500304e0")
             assert placed["status"] == "reserved" and placed["episode"] == "Folge 1"
