@@ -4,7 +4,7 @@ and startup."""
 
 import pytest
 from fastapi.testclient import TestClient
-from web_helpers import eventually, first_album_id
+from web_helpers import encode_and_assign_page, eventually, first_album_id
 
 from tonie_studio.teddycloud import TeddyCloudError
 from tonie_studio.web import create_app
@@ -181,3 +181,16 @@ class TestNavigation:
         page = client.get(f"/album/{first_album_id(client)}").text
 
         assert 'href="/" aria-current="page"' in page
+
+
+class TestOneBoxPoller:
+    def test_every_page_asks_about_the_box_in_one_place_only(self, client, runner, teddycloud):
+        # The pages that follow the box listen for the "box" event the shared
+        # poller sends; a second loop of their own doubles the requests.
+        job, _page = encode_and_assign_page(client, runner)
+        pages = ["/", "/tonies", f"/job/{job.id}/assign", "/sheet", "/listening"]
+
+        for path in pages:
+            page = client.get(path).text
+            assert page.count("fetch('/api/box')") == 1, path
+            assert "new CustomEvent('box'" in page, path

@@ -47,16 +47,8 @@
   const words = {{ t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline",
                              "tonies.note_stale", "tonies.note_nothing") | tojson }};
 
-  async function refresh() {
-    let box;
-    try {
-      const response = await fetch('/api/box');
-      if (!response.ok) return schedule();
-      box = await response.json();
-    } catch (error) {
-      return schedule();
-    }
-
+  document.addEventListener('box', event => {
+    const box = event.detail;
     for (const marker of document.querySelectorAll('.onbox')) marker.hidden = true;
     const row = box.ruid ? document.getElementById(`tag-${box.ruid}`) : null;
 
@@ -70,10 +62,6 @@
     } else {
       note.textContent = words['tonies.note_nothing'];
     }
-    schedule();
-  }
-
-  function schedule() { setTimeout(refresh, 4000); }
-  refresh();
+  });
 </script>
 {% endblock %}

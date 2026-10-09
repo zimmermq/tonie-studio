@@ -80,17 +80,10 @@
   const alreadyTried = new URLSearchParams(window.location.search).get('new');
   const hint = document.getElementById('hint');
 
-  async function watch() {
-    let box;
-    try {
-      const response = await fetch('/api/box');
-      if (!response.ok) return setTimeout(watch, 4000);
-      box = await response.json();
-    } catch (error) {
-      return setTimeout(watch, 4000);
-    }
-
-    const fresh = box.unknown_ruid;
+  let leaving = false;
+  document.addEventListener('box', event => {
+    if (leaving) return;
+    const fresh = event.detail.unknown_ruid;
     if (fresh && !known.has(fresh)) {
       if (fresh === alreadyTried) {
         // Reloading again would not help: the list has been fetched since and
@@ -101,12 +94,10 @@
         hint.replaceChildren(words['assign.unknown_tag'] + ' ', code, ' ' + words['assign.unknown_tag_hint']);
       } else {
         hint.textContent = words['assign.new_tag'];
+        leaving = true;
         window.location = `${window.location.pathname}?new=${encodeURIComponent(fresh)}`;
-        return;
       }
     }
-    setTimeout(watch, 3000);
-  }
-  watch();
+  });
 </script>
 {% endblock %}

@@ -99,9 +99,14 @@
   const group = {{ group | tojson }};
   const placemsg = document.getElementById('placemsg');
   let lastSticker = null;
-  async function watchBox() {
+  // One sticker at a time: a box report arriving while the last placement is
+  // still being answered waits for the next one.
+  let asking = false;
+  document.addEventListener('box', async event => {
+    if (asking) return;
+    asking = true;
     try {
-      const box = await (await fetch('/api/box')).json();
+      const box = event.detail;
       const ruid = box.unknown_ruid || (box.on_box ? box.ruid : null);
       if (!ruid) lastSticker = null;
       if (ruid && ruid !== lastSticker) {
@@ -116,11 +121,10 @@
         }
       }
     } catch (error) {
-      // A dropped poll changes nothing; the next one asks again.
+      // A dropped answer changes nothing; the next box report asks again.
     }
-    setTimeout(watchBox, 2000);
-  }
-  watchBox();
+    asking = false;
+  });
   {% endif %}
 </script>
 {% endblock %}

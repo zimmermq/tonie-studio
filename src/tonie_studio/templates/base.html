@@ -472,21 +472,26 @@
 
   // What is on the box belongs on every page, not only on the tonie list: it
   // is the one piece of state that changes without anyone touching this app.
+  // This is the only place that asks; every answer goes out as a "box" event
+  // on the document, and a page that cares about the box listens for that
+  // rather than asking again.
   (() => {
     const slot = document.getElementById('boxnow');
-    if (!slot) return;
     const words = {{ t.strings("box.unreachable", "box.playing", "box.on_box") | tojson }};
     let known = {};
 
     async function tick() {
       try {
         const response = await fetch('/api/box');
-        if (response.ok) known = await response.json();
+        if (response.ok) {
+          known = await response.json();
+          document.dispatchEvent(new CustomEvent('box', {detail: known}));
+        }
       } catch (error) {
         // A dropped poll says nothing about the box.
       }
-      render();
-      setTimeout(tick, 5000);
+      if (slot) render();
+      setTimeout(tick, 3000);
     }
 
     function render() {
