@@ -30,9 +30,11 @@ SUSPECT = {
     "\ufeff": "byte order mark",
 }
 
-# .html is in here because the Jinja templates are source too, and a curly
-# quote pasted into one is exactly as invisible as it is in Python.
-CHECKED_SUFFIXES = {".py", ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".cfg", ".html"}
+# .html, .js and .css are in here because the templates, the pages' scripts
+# and the styles are source too, and a curly quote pasted into one is exactly
+# as invisible as it is in Python.
+CHECKED_SUFFIXES = {".py", ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".cfg", ".html",
+                    ".js", ".css"}
 SKIPPED_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules",
                 "data", "notes-local"}
 
