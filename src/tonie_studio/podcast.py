@@ -472,12 +472,13 @@ class PodcastUpdater:
                 if checked is None or now - checked >= REFRESH_AFTER:
                     self.queue(subscription.id)
 
-    def _refresh(self, subscription_id: str) -> Dict:
+    def _refresh(self, subscription_id: str) -> bool:
+        """Refresh one subscription; True when its sticker now plays something new."""
         try:
             subscription = next((entry for entry in load_subscriptions(self.data_dir)
                                  if entry.id == subscription_id), None)
             if subscription is None:
-                return {"changed": False}
+                return False
             try:
                 changed = refresh(self.client(), subscription, self.data_dir, fetch=self.fetch)
             except Exception as error:
@@ -495,7 +496,7 @@ class PodcastUpdater:
                 update_subscription(self.data_dir, subscription)
                 raise
             update_subscription(self.data_dir, subscription)
-            return {"changed": changed}
+            return changed
         finally:
             with self._lock:
                 self._in_flight.discard(subscription_id)
