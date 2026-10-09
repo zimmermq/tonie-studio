@@ -117,15 +117,53 @@ class TestEditTonie:
 
         assert teddycloud.images["TS-0001.jpg"] == jpeg_bytes()
 
-    def test_removing_the_model_leaves_the_tonie_playing(self, client, runner, teddycloud):
-        # The audio hangs off the tag, not off the model.
+    def test_deleting_the_tonie_frees_the_sticker_and_deletes_model_and_taf(self, client, runner,
+                                                                          teddycloud):
         publish_album(client, runner, teddycloud)
+        played = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
 
         response = client.post("/tonies/7ab4ed0e500304e0/delete", follow_redirects=False)
 
         assert response.status_code == 303
         assert teddycloud.custom_tonies() == []
-        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"].startswith("lib://")
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == ""
+        assert "/" + played[len("lib://"):] not in teddycloud.files
+
+    def test_the_page_lists_what_deleting_takes_with_it(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        played = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "TS-0001" in page and played[len("lib://"):] in page
+        assert 'action="/tonies/7ab4ed0e500304e0/delete"' in page
+
+    def test_a_sticker_without_a_model_can_be_emptied_too(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Weg/Weg.taf"
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+        client.post("/tonies/7ab4ed0e500304e0/delete", follow_redirects=False)
+
+        assert 'action="/tonies/7ab4ed0e500304e0/delete"' in page
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == ""
+
+    def test_a_free_sticker_offers_nothing_to_delete(self, client):
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "/delete" not in page
+
+    def test_its_podcast_subscription_goes_too(self, client, runner, teddycloud, settings):
+        from tonie_studio.podcast import Subscription, add_subscription, load_subscriptions
+
+        publish_album(client, runner, teddycloud)
+        add_subscription(settings.data_dir, Subscription(id="p1", feed="https://x.example/f",
+                                                         ruid="7ab4ed0e500304e0"))
+        add_subscription(settings.data_dir, Subscription(id="p2", feed="https://x.example/g",
+                                                         ruid="deb4ed0e500304e0"))
+
+        client.post("/tonies/7ab4ed0e500304e0/delete", follow_redirects=False)
+
+        assert [entry.id for entry in load_subscriptions(settings.data_dir)] == ["p2"]
 
     def test_refuses_a_tag_teddycloud_does_not_know(self, client):
         assert client.get("/tonies/ffffffffffffffff").status_code == 404
@@ -261,7 +299,7 @@ class TestCopyTonie:
 
 
 class TestDeletingASharedModel:
-    def test_deleting_the_model_of_a_copy_keeps_it_for_the_original(self, client, runner, teddycloud,
+    def test_deleting_a_copy_keeps_model_and_audio_for_the_original(self, client, runner, teddycloud,
                                                                     settings):
         from tonie_studio.runtimes import playing_times, remember
 
@@ -277,6 +315,8 @@ class TestDeletingASharedModel:
         assert [entry["model"] for entry in teddycloud.custom_tonies()] == [model]
         assert teddycloud.tag_entries[original]["tonie_model"] == model
         assert teddycloud.tag_entries[copy]["tonie_model"] == ""
+        assert teddycloud.tag_entries[copy]["source"] == ""
+        assert teddycloud.tag_entries[original]["source"].startswith("lib://")
         assert model in playing_times(settings.data_dir)
 
 

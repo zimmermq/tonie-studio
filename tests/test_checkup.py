@@ -73,6 +73,13 @@ class TestMissingTaf:
         assert found[0].severity == "error"
         assert found[0].target == BOBO
 
+    def test_offers_to_empty_a_sticker_whose_taf_is_gone(self, cloud):
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", nocloud=True)
+
+        found = next(f for f in examine(cloud) if f.kind == "missing_taf")
+
+        assert found.fix == "empty_sticker"
+
     def test_offers_the_repair_when_the_path_is_only_garbled(self, cloud):
         # The exact shape of that incident: the taf is there, the path naming
         # it had its umlaut mangled.

@@ -138,6 +138,7 @@ def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Findi
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
                     detail="checkup.missing_taf", params={"source": source},
+                    fix="empty_sticker", preview_key="checkup.empties_sticker",
                 ))
 
         if not tag.nocloud:

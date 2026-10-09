@@ -181,6 +181,10 @@ def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: s
         changes = model_repairs(model)
         update_model(client, target, series=changes.get("series"),
                      episode=changes.get("episode"), tracks=changes.get("tracks"))
+    elif fix == "empty_sticker":
+        # The model goes too: without it, the empty sticker would still carry
+        # the old name and cover in teddyCloud.
+        client.set_tag(target, source="", tonie_model="")
     elif fix == "delete_taf":
         delete_taf(client, target)
     elif fix == "delete_model":

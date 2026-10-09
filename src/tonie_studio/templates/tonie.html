@@ -52,16 +52,6 @@
      <a class="ml-12" href="/tonies">{{ t("common.cancel") }}</a></p>
 </form>
 
-<h2>{{ t("tonie.remove_model") }}</h2>
-<div class="card">
-  <p class="muted mt-0">
-    {{ t("tonie.remove_hint") }} <strong>{{ t("tonie.keeps_playing") }}</strong> {{ t("tonie.audio_on_tag") }}
-  </p>
-  <form method="post" action="/tonies/{{ tag.ruid }}/delete"
-        data-confirm="{{ t('tonie.confirm_delete', model=model.id) }}">
-    <button type="submit">{{ t("tonie.delete_model", model=model.id) }}</button>
-  </form>
-</div>
 {% endif %}
 
 {% if tag.source %}
@@ -85,6 +75,22 @@
   {% else %}
   <p class="muted">{{ t("tonie.no_other") }}</p>
   {% endif %}
+</div>
+{% endif %}
+
+{% if removal %}
+<h2>{{ t("tonie.remove_title") }}</h2>
+<div class="card">
+  <p class="muted mt-0">{{ t("tonie.remove_hint") }}</p>
+  <ul class="muted">
+    <li>{{ t("tonie.removes_sticker", uid=tag.uid) }}</li>
+    {% if removal.model %}<li>{{ t("tonie.removes_model", model=removal.model) }}</li>{% endif %}
+    {% if removal.taf %}<li>{{ t("tonie.removes_taf", taf=removal.taf) }}</li>{% endif %}
+  </ul>
+  <form method="post" action="/tonies/{{ tag.ruid }}/delete"
+        data-confirm="{{ t('tonie.confirm_remove') }}">
+    <button type="submit">{{ t("tonie.remove_button") }}</button>
+  </form>
 </div>
 {% endif %}
 {% endblock %}

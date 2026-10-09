@@ -15,11 +15,12 @@ from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
 from ..models import (CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, fetch_cover, find_model,
                       is_cover_name, update_model)
+from ..podcast import load_subscriptions, remove_subscription
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, list_tags
 from ..teddycloud import TeddyCloudError
-from ..tonie import copy_tag, drop_model, publish_stream
+from ..tonie import copy_tag, plan_removal, publish_stream, remove_tonie
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -69,6 +70,8 @@ def register(app: FastAPI, ctx: Context) -> None:
             "categories": CATEGORIES,
             # Where a copy could go, the empty stickers first.
             "others": [other for other in tags if other.ruid != ruid],
+            # What the delete button would take with it, shown before it is pressed.
+            "removal": plan_removal(connection, ruid) if tag.assigned or tag.model else None,
         })
 
 
@@ -108,14 +111,18 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/tonies/{ruid}/delete")
     def delete_tonie(ruid: str):
-        """Drop the model. The tag keeps its audio and goes on playing."""
+        """Free the sticker and delete what only it used: model, taf, its podcast."""
         try:
-            deleted = drop_model(client(), ruid)
-        except TonieError as error:
-            raise Refused(404, "error.no_model") from error
-        if deleted:
-            forget(settings.data_dir, deleted)
-            forget_model(settings.data_dir, deleted)
+            removal = remove_tonie(client(), ruid)
+        except (TonieError, EncodeError) as error:
+            raise Refused(400, "error.failed", detail=error) from error
+        if removal.model:
+            forget(settings.data_dir, removal.model)
+            forget_model(settings.data_dir, removal.model)
+        # A subscription would only fail on the emptied sticker from now on.
+        for subscription in load_subscriptions(settings.data_dir):
+            if subscription.ruid == ruid:
+                remove_subscription(settings.data_dir, subscription.id)
         return RedirectResponse("/tonies", 303)
 
 

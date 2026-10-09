@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
-from .encode import EncodeResult, taf_exists
-from .library import is_library
+from .encode import EncodeResult, delete_taf, taf_exists
+from .library import is_library, path_of, same
 from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, find_model, new_model, next_model_id,
                      release_from_year, remove_model, upload_cover)
 from .tags import TonieError, find_tag, list_tags, require_tag
@@ -167,26 +168,56 @@ def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     log.info("tag %s now plays what %s plays", to_ruid, from_ruid)
 
 
-def drop_model(client: TeddyCloudClient, ruid: str) -> Optional[str]:
-    """Take the model off a sticker; delete it only if no other sticker names it.
+@dataclass
+class Removal:
+    """What removing a tonie takes with it besides emptying its sticker.
 
-    A copied sticker shares its model with the original, so deleting it from
-    the copy would leave the original nameless. Returns the id of the model
-    that was deleted, or None when it was only unlinked from this sticker.
+    ``model`` and ``taf`` name what is deleted, or are None where nothing is:
+    there was none, another sticker still uses it, or the model is not one of
+    this app's own.
     """
-    tag = find_tag(client, ruid)
-    if tag is None or not tag.model:
-        raise TonieError("tonie.model_missing", model="")
-    # Only a model of this app's own can be deleted; unlinking an official
-    # one first would leave the sticker nameless for nothing.
-    if find_model(client, tag.model) is None:
-        raise TonieError("tonie.model_missing", model=tag.model)
+
+    ruid: str
+    model: Optional[str] = None
+    taf: Optional[str] = None
+
+
+def plan_removal(client: TeddyCloudClient, ruid: str) -> Removal:
+    """What ``remove_tonie`` would delete, without deleting anything."""
+    tags = list_tags(client)
+    tag = next((candidate for candidate in tags if candidate.ruid == ruid), None)
+    if tag is None:
+        raise TonieError("tonie.unknown_tag", ruid=ruid)
+    if not tag.assigned and not tag.model:
+        raise TonieError("tonie.nothing_to_remove")
+    others = [other for other in tags if other.ruid != ruid]
+
+    model = None
+    if tag.model and not any(other.model.lower() == tag.model.lower() for other in others) \
+            and find_model(client, tag.model) is not None:
+        model = tag.model
+
+    taf = None
+    if is_library(tag.source) and not any(same(other.source) == same(tag.source)
+                                          for other in others):
+        path = path_of(tag.source)
+        if taf_exists(client, path):
+            taf = path
+    return Removal(ruid=ruid, model=model, taf=taf)
+
+
+def remove_tonie(client: TeddyCloudClient, ruid: str) -> Removal:
+    """Free a sticker, and delete its model and taf where nothing else uses them.
+
+    The sticker is emptied first: should a deletion after it fail, nothing
+    points at audio that is gone, and the leftover shows up in the checkup.
+    """
     with _WRITING:
-        others = [other for other in list_tags(client)
-                  if other.ruid != ruid and other.model.lower() == tag.model.lower()]
-        if others:
-            client.set_tag(ruid, tonie_model="")
-            log.info("tag %s no longer names %s; other stickers still do", ruid, tag.model)
-            return None
-        remove_model(client, tag.model, ruid=ruid)
-        return tag.model
+        removal = plan_removal(client, ruid)
+        client.set_tag(ruid, source="", tonie_model="")
+        if removal.model:
+            remove_model(client, removal.model)
+        if removal.taf:
+            delete_taf(client, removal.taf)
+    log.info("tag %s emptied; deleted model %s, taf %s", ruid, removal.model, removal.taf)
+    return removal

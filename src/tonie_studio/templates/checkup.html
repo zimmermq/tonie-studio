@@ -40,14 +40,16 @@
       {% endif %}
     </span>
     {% if finding.fix %}
+    {#- A repair is shown before it runs; deleting and emptying also ask,
+        because neither can be taken back. #}
+    {%- set deletes = finding.fix.startswith("delete") %}
+    {%- set empties = finding.fix == "empty_sticker" %}
     <form method="post" action="/checkup/fix"
-          {#- A repair is shown before it runs; a deletion also asks, because it
-              cannot be taken back. #}
-          {% if finding.fix.startswith("delete") %}data-confirm="{{ preview }}&#10;&#10;{{ t('checkup.really') }}"{% endif %}>
+          {% if deletes or empties %}data-confirm="{{ preview }}&#10;&#10;{{ t('checkup.really') }}"{% endif %}>
       <input type="hidden" name="fix" value="{{ finding.fix }}">
       <input type="hidden" name="target" value="{{ finding.target }}">
       <button type="submit" class="small">
-        {% if finding.fix.startswith("delete") %}{{ t("common.delete") }}{% else %}{{ t("checkup.repair") }}{% endif %}
+        {% if deletes %}{{ t("common.delete") }}{% elif empties %}{{ t("checkup.empty") }}{% else %}{{ t("checkup.repair") }}{% endif %}
       </button>
     </form>
     {% endif %}

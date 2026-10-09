@@ -4,6 +4,8 @@
 
 from web_helpers import encode_and_assign_page, publish_album
 
+from tonie_studio.tags import list_tags
+
 
 class TestCheckupPage:
     def test_a_healthy_setup_says_so(self, client, runner, teddycloud):
@@ -49,6 +51,29 @@ class TestCheckupPage:
 
         assert response.headers["location"] == "/checkup?stale=1"
         assert path in teddycloud.files
+
+    def test_empties_a_sticker_whose_taf_is_gone(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        teddycloud.tag_entries[ruid].update(source="lib://Weg/Weg.taf", nocloud=True)
+
+        page = client.get("/checkup").text
+        client.post("/checkup/fix", data={"fix": "empty_sticker", "target": ruid})
+
+        assert 'value="empty_sticker"' in page and "leeren" in page
+        assert teddycloud.tag_entries[ruid]["source"] == ""
+        assert teddycloud.tag_entries[ruid]["tonie_model"] == ""
+        assert ruid in [tag.ruid for tag in list_tags(teddycloud) if not tag.assigned]
+
+    def test_asks_before_emptying_a_sticker(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        teddycloud.tag_entries[ruid].update(source="lib://Weg/Weg.taf", nocloud=True)
+
+        page = client.get("/checkup").text
+        form = page[page.index('value="empty_sticker"') - 600:page.index('value="empty_sticker"')]
+
+        assert "data-confirm=" in form
 
     def test_deletes_a_taf_nothing_plays(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
