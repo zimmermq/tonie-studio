@@ -31,8 +31,16 @@ function show(job) {
 
   if (job.state === 'done' || job.state === 'failed') {
     outcome.hidden = false;
-    document.getElementById('next').hidden = job.state !== 'done';
-    message.textContent = job.error || words[data.doneKey];
+    const next = document.getElementById('next');
+    next.hidden = job.state !== 'done';
+    // A batch encode may have gone on its sticker by itself since the page
+    // was drawn; then it says so and leads on to the tonies.
+    const ending = job.assigned && data.assigned ? data.assigned : null;
+    if (ending) {
+      next.href = ending.href;
+      next.textContent = words[ending.nextKey];
+    }
+    message.textContent = job.error || words[(ending || data).doneKey];
     message.className = job.state === 'failed' ? 'state-failed' : 'state-done';
     return false;
   }

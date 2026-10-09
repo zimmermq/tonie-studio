@@ -362,3 +362,13 @@ class TestRetries:
         retries = client.session.get_adapter("https://teddycloud.test").max_retries
 
         assert "POST" not in retries.allowed_methods
+
+
+class TestTwin:
+    def test_a_twin_talks_to_the_same_teddycloud_over_its_own_session(self):
+        original = TeddyCloudClient("https://teddycloud.test/", overlay="abc", timeout=7)
+
+        twin = original.twin()
+
+        assert (twin.base_url, twin.overlay, twin.timeout) == ("https://teddycloud.test", "abc", 7)
+        assert twin.session is not original.session

@@ -319,3 +319,36 @@ class TestRestoringAHostileFile:
         data = self._backup_with(cloud, data_dir, "covers/x.html", b"<script>alert(1)</script>")
 
         assert "x.html" not in read_backup(data).covers
+
+
+class TestAMalformedBackupIsDamaged:
+    """Valid JSON of the wrong shape is a damaged backup, not a crash."""
+
+    @staticmethod
+    def _zip(manifest, models, tags):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("manifest.json", json.dumps(manifest))
+            archive.writestr("models.json", json.dumps(models))
+            archive.writestr("tags.json", json.dumps(tags))
+        return buffer.getvalue()
+
+    @pytest.mark.parametrize("manifest, models, tags", [
+        ([1], [], []),
+        ({"format": 1}, {"model": "TS-0001"}, []),
+        ({"format": 1}, [], "tags"),
+    ])
+    def test_says_damaged(self, manifest, models, tags):
+        with pytest.raises(BackupError) as caught:
+            read_backup(self._zip(manifest, models, tags))
+
+        assert caught.value.key == "backup.damaged"
+
+
+class TestPlayingTimesFromABackup:
+    def test_numbers_that_are_not_finite_are_left_out(self, tmp_path):
+        from tonie_studio.runtimes import add_missing, playing_times
+
+        add_missing(tmp_path, {"TS-0001": float("inf"), "TS-0002": float("nan"), "TS-0003": 600})
+
+        assert playing_times(tmp_path) == {"TS-0003": 600}

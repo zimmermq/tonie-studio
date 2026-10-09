@@ -41,7 +41,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from .album import AUDIO_EXTENSIONS
-from .encode import EncodeError, delete_taf, encode_files, library_path
+from .encode import EncodeError, cut_to_bytes, delete_taf, encode_files, library_path
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
@@ -74,10 +74,12 @@ LARGEST_IMAGE = 10 * 1024 * 1024
 
 MOST_REDIRECTS = 5
 
-# How much of the podcast's title goes into a taf's name. Names are cut at 120
-# characters, and what tells one refresh's taf from the next - the time stamp
-# after the title - must never be the part that is cut off.
+# How much of the podcast's title goes into a taf's name, in characters and in
+# bytes. Names are cut at MAX_NAME and MAX_NAME_BYTES, and what tells one
+# refresh's taf from the next - the time stamp after the title - must never be
+# the part that is cut off.
 TITLE_IN_NAME = 80
+TITLE_IN_NAME_BYTES = 160
 
 PICTURE_SUFFIXES = frozenset(suffix.lstrip(".") for suffix in COVER_TYPES)
 
@@ -272,8 +274,8 @@ def refresh(
         seconds = sum(episode.seconds or 0 for episode in chosen) or None
         # A new name every time, so the old taf keeps playing until the new
         # one is complete and the tag has been switched over.
-        target = library_path(SERIES, f"{feed.title[:TITLE_IN_NAME].strip()} "
-                                      f"{now:%Y-%m-%d %H%M%S}")
+        title = cut_to_bytes(feed.title[:TITLE_IN_NAME], TITLE_IN_NAME_BYTES).strip()
+        target = library_path(SERIES, f"{title} {now:%Y-%m-%d %H%M%S}")
         encoded = encode_files(client, paths, target, total_seconds=seconds)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
@@ -476,14 +478,26 @@ class PodcastUpdater:
     def run(self, stop: threading.Event) -> None:
         """Wake up now and then and refresh what has not been checked lately, until ``stop``."""
         while not stop.wait(WAKE_SECONDS):
-            now = datetime.now(timezone.utc)
-            for subscription in load_subscriptions(self.data_dir):
-                try:
-                    checked = datetime.fromisoformat(subscription.checked)
-                except ValueError:
-                    checked = None
-                if checked is None or now - checked >= REFRESH_AFTER:
-                    self.queue(subscription.id)
+            # Whatever goes wrong in one round, the next comes all the same:
+            # a dead loop would stop every refresh until the app restarts.
+            try:
+                self._queue_due(datetime.now(timezone.utc))
+            except Exception:
+                log.exception("podcast round failed")
+
+    def _queue_due(self, now: datetime) -> None:
+        """Queue every subscription not checked for REFRESH_AFTER."""
+        for subscription in load_subscriptions(self.data_dir):
+            try:
+                checked = datetime.fromisoformat(subscription.checked)
+            except ValueError:
+                checked = None
+            # This app writes times with their zone; one without, as a hand-edited
+            # file may hold, is read as UTC rather than failing the comparison.
+            if checked is not None and checked.tzinfo is None:
+                checked = checked.replace(tzinfo=timezone.utc)
+            if checked is None or now - checked >= REFRESH_AFTER:
+                self.queue(subscription.id)
 
     def _refresh(self, subscription_id: str) -> bool:
         """Refresh one subscription; True when its sticker now plays something new."""

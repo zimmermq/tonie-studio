@@ -96,3 +96,26 @@ class TestHousekeepingRepeats:
         web._housekeeping(settings, lambda: None, stop)
 
         assert len(rounds) == 3 and len(staging) == 1
+
+    def test_a_round_that_fails_is_followed_by_the_next(self, settings, monkeypatch):
+        import threading
+
+        from tonie_studio import web
+
+        rounds = []
+        stop = threading.Event()
+
+        def flaky(_upload_dir, _keep_days):
+            rounds.append(1)
+            if len(rounds) == 1:
+                raise RuntimeError("volume went away")
+            stop.set()
+            return 0, 0
+
+        monkeypatch.setattr(web, "remove_old_uploads", flaky)
+        monkeypatch.setattr(web, "remove_orphaned_staging", lambda _client: 0)
+        monkeypatch.setattr(web, "HOUSEKEEPING_EVERY", 0.01)
+
+        web._housekeeping(settings, lambda: None, stop)
+
+        assert len(rounds) == 2

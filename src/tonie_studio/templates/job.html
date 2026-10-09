@@ -21,6 +21,6 @@
   <a class="button" href="/">{{ t("job.back") }}</a>
 </div>
 
-<script type="application/json" id="page-data">{{ {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key), "doneKey": done_key, "running": job.state.value not in ('done', 'failed')} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies"), "doneKey": done_key, "assigned": assigned_ending, "running": job.state.value not in ('done', 'failed')} | tojson }}</script>
 <script src="{{ asset('job.js') }}"></script>
 {% endblock %}

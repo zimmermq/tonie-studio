@@ -51,8 +51,14 @@ def publish(
     language: str = DEFAULT_LANGUAGE,
     category: str = DEFAULT_CATEGORY,
     year: Optional[Union[int, str]] = None,
+    require_free: bool = False,
 ) -> str:
-    """Give the tag its audio and its identity, and return the model id used."""
+    """Give the tag its audio and its identity, and return the model id used.
+
+    With ``require_free`` a tag that plays something is refused rather than
+    replaced. That is checked under the same lock as the write, so two
+    writers that both saw it free cannot both have it.
+    """
     if not encoded.source:
         raise TonieError("tonie.no_source")
     # A tag pointing at a path that is not there plays nothing, and nothing
@@ -64,6 +70,8 @@ def publish(
     require_tag(client, ruid)
 
     with _WRITING:
+        if require_free and require_tag(client, ruid).assigned:
+            raise TonieError("tonie.sticker_taken", ruid=ruid)
         model_id = model_id or next_model_id(client)
         model = new_model(model_id, series, episode, tracks, language, category)
         model.release = release_from_year(year) or ""
@@ -170,6 +178,10 @@ def drop_model(client: TeddyCloudClient, ruid: str) -> Optional[str]:
     tag = find_tag(client, ruid)
     if tag is None or not tag.model:
         raise TonieError("tonie.model_missing", model="")
+    # Only a model of this app's own can be deleted; unlinking an official
+    # one first would leave the sticker nameless for nothing.
+    if find_model(client, tag.model) is None:
+        raise TonieError("tonie.model_missing", model=tag.model)
     with _WRITING:
         others = [other for other in list_tags(client)
                   if other.ruid != ruid and other.model.lower() == tag.model.lower()]

@@ -54,6 +54,19 @@ def is_cover_name(name: Optional[str]) -> bool:
 CATEGORIES = ("music", "audio-book", "audio-play", "audio-play-songs", "audio-book-songs")
 
 
+
+def cover_name(picture: Optional[str]) -> Optional[str]:
+    """The file name a model's picture has in custom_img, or None.
+
+    None as well for a picture hosted elsewhere, or a name with a path in
+    it: neither is a file this app can fetch, back up or print.
+    """
+    if not picture or not picture.startswith(CUSTOM_IMG):
+        return None
+    name = picture[len(CUSTOM_IMG):]
+    return name if name and "/" not in name else None
+
+
 @dataclass
 class Model:
     """One custom model in teddyCloud: what a tonie is called and shows.
@@ -117,15 +130,8 @@ class Model:
 
     @property
     def cover(self) -> Optional[str]:
-        """The file name of the cover in custom_img, or None.
-
-        None as well for a picture hosted elsewhere, or a name with a path in
-        it: neither is a file this app can fetch, back up or print.
-        """
-        if not self.picture.startswith(CUSTOM_IMG):
-            return None
-        name = self.picture[len(CUSTOM_IMG):]
-        return name if name and "/" not in name else None
+        """The file name of the cover in custom_img, or None; see ``cover_name``."""
+        return cover_name(self.picture)
 
     @property
     def year(self) -> Optional[int]:

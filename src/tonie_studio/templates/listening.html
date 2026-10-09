@@ -25,8 +25,8 @@
 <div class="list">
 {% for tag, entry in heard %}
   <div class="album">
-    {% if tag.model %}
-    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% if tag.picture | cover_name %}
+    <img src="/cover/custom/{{ tag.picture | cover_name }}" alt="" loading="lazy">
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}
@@ -50,8 +50,8 @@
 <div class="list">
 {% for tag, entry in quiet %}
   <div class="album">
-    {% if tag.model %}
-    <img src="/cover/custom/{{ tag.picture.rsplit('/', 1)[-1] }}" alt="" loading="lazy">
+    {% if tag.picture | cover_name %}
+    <img src="/cover/custom/{{ tag.picture | cover_name }}" alt="" loading="lazy">
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}

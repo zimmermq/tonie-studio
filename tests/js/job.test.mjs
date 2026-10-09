@@ -12,3 +12,19 @@ const page = await runPage(['app.js', 'job.js'], {
 assert.equal(page.message.textContent, 'Encodiert.');
 assert.equal(page.outcome.hidden, false);
 console.log('job.test: ok');
+
+// A batch encode that went on its sticker by itself no longer asks to be assigned.
+const placed = await runPage(['app.js', 'job.js'], {
+  ids: ['fill', 'state', 'detail', 'outcome', 'message', 'next'],
+  pageData: {
+    id: 'def', words: { ...words, 'job.published': 'Auf dem Sticker.', 'job.to_tonies': 'Zu den Tonies' },
+    doneKey: 'job.taf_done', running: true,
+    assigned: { doneKey: 'job.published', href: '/tonies', nextKey: 'job.to_tonies' },
+  },
+  answers: { '/api/job/def': { state: 'done', percent: 100, step: null, error: null, assigned: true } },
+});
+
+assert.equal(placed.message.textContent, 'Auf dem Sticker.');
+assert.equal(placed.next.href, '/tonies');
+assert.equal(placed.next.textContent, 'Zu den Tonies');
+console.log('job.test: assigned ok');

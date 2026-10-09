@@ -23,7 +23,7 @@ from .boxstate import BoxWatcher
 from .encode import remove_orphaned_staging
 from .jobs import Groups, JobRunner
 from .listening import ListeningLog
-from .models import ModelCache
+from .models import ModelCache, cover_name
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
 from .pages import jobs as job_pages
 from .pages.common import STATIC, TEMPLATES, Catalogue, Context, page_context
@@ -48,6 +48,7 @@ def create_app(
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
+    templates.env.filters["cover_name"] = cover_name
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)
     groups = Groups(jobs)
@@ -118,7 +119,12 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
         # pages that need it will say so themselves.
         log.warning("could not reach teddyCloud at startup: %s", error)
     while True:
-        remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
-        clear_parked_restores(settings)
+        # A failed round is logged and the next one comes all the same; a dead
+        # loop would leave the volume to fill until the app restarts.
+        try:
+            remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
+            clear_parked_restores(settings)
+        except Exception:
+            log.exception("housekeeping round failed")
         if stop.wait(HOUSEKEEPING_EVERY):
             return

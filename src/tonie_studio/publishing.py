@@ -83,10 +83,13 @@ class Outcome:
         return self.details.series
 
 
-def encode_job(client: TeddyCloudClient, chosen: Sequence[Tuple[Track, str]], target: str,
-               details: Details, replace: bool = False, reuse: bool = False,
+def encode_job(client: Callable[[], TeddyCloudClient], chosen: Sequence[Tuple[Track, str]],
+               target: str, details: Details, replace: bool = False, reuse: bool = False,
                after: Optional[Callable[[Outcome], None]] = None) -> Callable:
     """The work of one encode for the job runner; it returns an Outcome.
+
+    ``client`` makes the teddyCloud client the job uses, on the job's own
+    thread: a session is not shared with the request that started it.
 
     ``chosen`` pairs each track with the name a person gave it. With
     ``reuse`` the taf already at ``target`` is taken as it is, and the job
@@ -101,12 +104,13 @@ def encode_job(client: TeddyCloudClient, chosen: Sequence[Tuple[Track, str]], ta
     playing_time = sum(track.duration or 0 for track, _name in chosen) or None
 
     def work(progress):
+        connection = client()
         if reuse:
-            encoded = existing_taf(client, target)
+            encoded = existing_taf(connection, target)
             if encoded is None or encoded.tracks != len(paths):
                 raise EncodeError("encode.changed", target=target)
         else:
-            encoded = encode_files(client, paths, target, progress=progress,
+            encoded = encode_files(connection, paths, target, progress=progress,
                                    replace=replace, total_seconds=playing_time)
         outcome = Outcome(encoded=encoded, details=details, tracks=names, seconds=playing_time)
         if after is not None:
@@ -117,11 +121,12 @@ def encode_job(client: TeddyCloudClient, chosen: Sequence[Tuple[Track, str]], ta
 
 def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome: Outcome,
                     series: Optional[str] = None, episode: Optional[str] = None,
-                    category: str = DEFAULT_CATEGORY) -> str:
+                    category: str = DEFAULT_CATEGORY, require_free: bool = False) -> str:
     """Put a finished encode on a tag and return the model id it became.
 
     ``series`` and ``episode`` override the names the encode was planned
     with, for the assignment page where they can still be changed.
+    ``require_free`` refuses a tag that plays something, as ``publish`` does.
     """
     model_id = publish(
         client,
@@ -133,6 +138,7 @@ def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome
         cover=cropped_cover(outcome.details),
         category=category,
         year=outcome.details.year,
+        require_free=require_free,
     )
     outcome.model, outcome.ruid = model_id, ruid
     remember(data_dir, model_id, outcome.seconds)
@@ -147,16 +153,23 @@ def put_on_sticker(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome:
     and its page offers the ordinary assignment. A sticker given something
     else since it was chosen is left alone.
     """
-    if ruid not in free_tags(client):
-        outcome.assign_error = "batch.tag_taken"
-        return False
     try:
-        publish_outcome(client, data_dir, ruid, outcome)
-    except (TonieError, TeddyCloudError) as error:
-        log.warning("could not put %s on %s: %s", outcome.episode, ruid, error)
-        outcome.assign_error = "batch.publish_failed"
+        publish_outcome(client, data_dir, ruid, outcome, require_free=True)
+    except TonieError as error:
+        if error.key == "tonie.sticker_taken":
+            outcome.assign_error = "batch.tag_taken"
+            return False
+        _note_publish_failed(outcome, ruid, error)
+        return False
+    except TeddyCloudError as error:
+        _note_publish_failed(outcome, ruid, error)
         return False
     return True
+
+
+def _note_publish_failed(outcome: Outcome, ruid: str, error: Exception) -> None:
+    log.warning("could not put %s on %s: %s", outcome.episode, ruid, error)
+    outcome.assign_error = "batch.publish_failed"
 
 
 def free_tags(client: TeddyCloudClient) -> List[str]:

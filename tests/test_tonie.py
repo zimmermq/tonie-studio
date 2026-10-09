@@ -459,3 +459,49 @@ class TestPublishingAtOnce:
 
         assert len(set(ids)) == 2
         assert len(teddycloud.custom_tonies()) == 2
+
+
+class TestOnlyAFreeSticker:
+    """Asked for a free sticker, publish checks it is free where nothing else can write."""
+
+    def test_a_sticker_taken_just_before_the_write_is_left_alone(self, teddycloud, encoded,
+                                                                  monkeypatch):
+        import tonie_studio.tonie as tonie
+
+        original = tonie.require_tag
+
+        def taken_meanwhile(client, ruid):
+            tag = original(client, ruid)
+            teddycloud.tag_entries[ruid]["source"] = "lib://Andere/Folge.taf"
+            return tag
+
+        monkeypatch.setattr(tonie, "require_tag", taken_meanwhile)
+
+        with pytest.raises(TonieError) as caught:
+            publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                    tracks=["a"], require_free=True)
+
+        assert caught.value.key == "tonie.sticker_taken"
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == "lib://Andere/Folge.taf"
+        assert teddycloud.custom_tonies() == []
+
+    def test_without_asking_it_replaces_as_before(self, teddycloud, encoded):
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["a"])
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == encoded.source
+
+
+class TestDropOnlyOwnModels:
+    def test_an_official_model_is_left_as_it_is(self, teddycloud):
+        from tonie_studio.tonie import drop_model
+
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(source="lib://a.taf",
+                                                         tonie_model="10000001")
+
+        with pytest.raises(TonieError):
+            drop_model(teddycloud, "7ab4ed0e500304e0")
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"] == "10000001"
+

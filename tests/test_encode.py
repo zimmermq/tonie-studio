@@ -186,6 +186,16 @@ class TestLibraryPath:
     def test_puts_a_taf_without_a_series_at_the_top(self):
         assert library_path("", "Gemeinsam") == "/Gemeinsam.taf"
 
+    def test_a_name_of_wide_characters_stays_inside_the_file_name_limit(self):
+        path = library_path("", "\U0001F984" * 100)
+
+        name = path.rsplit("/", 1)[-1]
+        assert len(name.encode("utf-8")) <= 255
+        assert name.endswith(".taf") and "\ufffd" not in name
+
+    def test_a_latin_name_is_cut_where_it_always_was(self):
+        assert library_path("", "a" * 150) == "/" + "a" * 120 + ".taf"
+
     def test_keeps_the_umlauts_the_library_already_holds(self):
         assert library_path("", "Bobo Siebenschl\u00e4fer") == "/Bobo Siebenschl\u00e4fer.taf"
 
@@ -402,3 +412,45 @@ class TestReplacingKeepsTheOldUntilTheNewIsThere:
 
         kept = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
         assert kept != "lib://a.taf" and taf_exists(teddycloud, "/" + kept[len("lib://"):])
+
+
+class TestThreadsKeepTheirOwnClient:
+    """A requests.Session is not shared between the threads an encode runs on."""
+
+    def test_the_growth_watcher_asks_through_a_twin(self, teddycloud, sources):
+        twins = []
+        teddycloud.twin = lambda: twins.append(1) or teddycloud
+
+        encode_files(teddycloud, sources, "/a.taf", progress=lambda *args: None,
+                     total_seconds=600)
+
+        assert twins == [1]
+
+    def test_an_encode_job_gets_its_client_when_it_runs(self, teddycloud, sources):
+        from tonie_studio.album import Track
+        from tonie_studio.publishing import Details, encode_job
+
+        made = []
+        tracks = [(Track(number=n, path=path, title=path.stem), path.stem)
+                  for n, path in enumerate(sources, 1)]
+        work = encode_job(lambda: made.append(1) or teddycloud, tracks, "/a.taf",
+                          Details(series="S", episode="E"))
+
+        assert made == []
+        work(lambda *args: None)
+        assert made == [1]
+
+
+class TestTheCopyBesideIsNeverSomeoneElses:
+    def test_a_copy_an_earlier_replace_left_playing_survives_the_next(self, teddycloud, sources):
+        # A replace whose final encode failed leaves the stickers on its copy;
+        # trying again must not delete that copy before anything plays instead.
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.files["/a.new.taf"] = b"what the stickers play"
+        teddycloud.add_tag("7ab4ed0e500304e0", source="lib://a.new.taf")
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.files["/a.new.taf"] == b"what the stickers play"
+        assert sorted(path for path in teddycloud.files if path.endswith(".taf")) == [
+            "/a.new.taf", "/a.taf"]

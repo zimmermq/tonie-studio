@@ -256,3 +256,37 @@ class TestNoRouteBlocksTheLoop:
         assert len(ours) > 40
 
         assert coroutines == []
+
+
+class TestOtherSitesCannotChangeAnything:
+    """A page elsewhere can make the browser post here; the browser says where it came from."""
+
+    def _delete(self, client, **headers):
+        return client.post("/podcasts/nope/delete", headers=headers, follow_redirects=False)
+
+    def test_a_post_from_another_site_is_refused(self, client):
+        for site in ("cross-site", "same-site"):
+            assert self._delete(client, **{"Sec-Fetch-Site": site}).status_code == 403
+
+    def test_a_post_from_this_app_goes_through(self, client):
+        assert self._delete(client, **{"Sec-Fetch-Site": "same-origin"}).status_code != 403
+
+    def test_reading_from_anywhere_is_fine(self, client):
+        assert client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
+class TestTeddyCloudAwayOnTheApi:
+    def test_a_script_asking_gets_json_not_a_page(self, client):
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        def away():
+            raise TeddyCloudError("connection refused")
+
+        client.app.add_api_route("/api/test-away", away)
+
+        response = client.get("/api/test-away")
+
+        assert response.status_code == 503
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+

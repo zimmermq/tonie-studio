@@ -302,3 +302,19 @@ class TestRadioAsksBeforeReplacing:
         page = client.get("/radio").text
 
         assert page.count("data-confirm=") == 1
+
+
+class TestOnlyOwnCoversAreLinked:
+    """A model whose picture is not in custom_img has no cover this app can serve."""
+
+    def test_a_tonie_without_a_picture_of_ours_shows_none(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(
+            source="lib://Andere/Folge.taf", tonie_model="10000001")
+
+        for path in ("/tonies", "/tonies/7ab4ed0e500304e0", "/radio", "/listening"):
+            assert "/cover/custom/img_unknown.png" not in client.get(path).text, path
+
+    def test_one_of_ours_still_shows_its_cover(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        assert "/cover/custom/TS-0001." in client.get("/tonies").text

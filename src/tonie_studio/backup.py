@@ -208,6 +208,9 @@ def read_backup(data: bytes) -> Backup:
             tags = json.loads(archive.read("tags.json").decode("utf-8"))
         except (KeyError, ValueError, UnicodeDecodeError) as error:
             raise BackupError("backup.damaged", detail=str(error)) from error
+        if not (isinstance(manifest, dict) and isinstance(models, list)
+                and isinstance(tags, list)):
+            raise BackupError("backup.damaged", detail="unexpected structure")
         if manifest.get("format") != FORMAT:
             raise BackupError("backup.unknown_format", format=manifest.get("format"))
 

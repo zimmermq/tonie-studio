@@ -73,6 +73,10 @@ def register(app: FastAPI, ctx: Context) -> None:
             done_key, next_href, next_key = "job.taf_done", f"/job/{job.id}/assign", "job.to_assign"
         return templates.TemplateResponse(request, "job.html", {
             "job": job, "done_key": done_key, "next_href": next_href, "next_key": next_key,
+            # How the page ends should the encode go on its sticker by itself.
+            "assigned_ending": (None if podcast or published else
+                                {"doneKey": "job.published", "href": "/tonies",
+                                 "nextKey": "job.to_tonies"}),
             "error": _error_text(job, translator(request)),
         })
 

@@ -14,6 +14,7 @@ a few bytes, so nothing goes hunting for them.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Tuple
 
@@ -79,7 +80,13 @@ def _read(data_dir: Path) -> Dict[str, int]:
 
 
 def _valid(loaded) -> Dict[str, int]:
+    """The entries of ``loaded`` that are a number of seconds; the rest is dropped.
+
+    It may come from a backup anyone could have edited. Python reads Infinity
+    and NaN as JSON numbers, and ``int`` raises on both.
+    """
     if not isinstance(loaded, Mapping):
         return {}
     return {str(key): int(value) for key, value in loaded.items()
-            if isinstance(value, (int, float))}
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value)}

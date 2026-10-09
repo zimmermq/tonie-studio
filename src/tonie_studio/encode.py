@@ -38,9 +38,12 @@ STAGING_ROOT = "/_tonie-studio-staging"
 
 TAF_SUFFIX = ".taf"
 
-# Long enough for the album titles in the archive, short enough to stay well
-# inside the 255 byte limit a file name has once it is UTF-8 encoded.
+# Long enough for the album titles in the archive. A name is cut at both: the
+# characters keep every name made so far as it was, the bytes keep a name of
+# wide characters (four bytes for an emoji) inside the 255 bytes a file name
+# may have, with room for ".taf" and the copy a replace writes beside it.
 MAX_NAME = 120
+MAX_NAME_BYTES = 200
 
 # Characters that would split a path or hide a file.
 UNSAFE = re.compile(r"[/\\\x00-\x1f]")
@@ -234,12 +237,13 @@ def _encode(client: TeddyCloudClient, staged: Sequence[str], target: str,
             progress: Optional[Progress], total_seconds: Optional[float]) -> None:
     # teddyCloud blocks for the whole encode and says nothing. Watching the
     # target grow is the only way to show that something is happening; for a
-    # sixty track album that is minutes of otherwise dead screen.
+    # sixty track album that is minutes of otherwise dead screen. The watcher
+    # asks over its own session while this one waits for the encode.
     stop = threading.Event()
     if progress and total_seconds:
         threading.Thread(
             target=_watch_growth,
-            args=(client, target, float(total_seconds), progress, stop),
+            args=(client.twin(), target, float(total_seconds), progress, stop),
             name="encode-progress", daemon=True,
         ).start()
     try:
@@ -260,9 +264,9 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     old taf is pointed at the one beside it, so nothing that played before
     plays nothing now, and the error says where the audio is.
     """
-    aside = f"{target[:-len(TAF_SUFFIX)]}.new{TAF_SUFFIX}"
-    if _find_entry(client, aside) is not None:
-        _delete(client, aside)
+    # A name of its own each time: a copy an earlier failed replace left
+    # behind may be what the stickers play now, and is not this one's to delete.
+    aside = f"{target[:-len(TAF_SUFFIX)]}.new-{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
     _encode(client, staged, aside, progress, total_seconds)
 
     log.info("replacing the taf at %s", target)
@@ -352,7 +356,12 @@ def _check(sources: Sequence[Path], target: str) -> None:
 def _safe_name(text: str) -> str:
     name = UNSAFE.sub("-", text or "")
     name = re.sub(r"\s+", " ", name).strip(" .")
-    return name[:MAX_NAME].strip()
+    return cut_to_bytes(name[:MAX_NAME], MAX_NAME_BYTES).strip()
+
+
+def cut_to_bytes(text: str, limit: int) -> str:
+    """``text`` cut to at most ``limit`` bytes of UTF-8, never inside a character."""
+    return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
 
 
 def _ensure_parents(client: TeddyCloudClient, target: str) -> None:

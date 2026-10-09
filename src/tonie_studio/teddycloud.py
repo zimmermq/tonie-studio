@@ -80,6 +80,10 @@ class TeddyCloudClient:
         self.session.mount("http://", retrying)
         self.session.mount("https://", retrying)
 
+    def twin(self) -> "TeddyCloudClient":
+        """A client for the same teddyCloud with a session of its own, for another thread."""
+        return TeddyCloudClient(self.base_url, overlay=self.overlay, timeout=self.timeout)
+
     @classmethod
     def from_env(cls) -> "TeddyCloudClient":
         """Build a client from TS_TEDDYCLOUD_URL and the optional TS_TEDDYCLOUD_OVERLAY."""

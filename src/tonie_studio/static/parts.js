@@ -21,7 +21,10 @@ function moveTo(step) {
 }
 const group = data.group;
 every(3000, async () => {
-  const answer = await (await fetch(`/api/group/${group}`)).json();
+  const response = await fetch(`/api/group/${group}`);
+  // A group that is gone stays gone; there is nothing left to watch.
+  if (!response.ok) return false;
+  const answer = await response.json();
   let running = false;
   let waitingForSticker = false;
   const models = [];

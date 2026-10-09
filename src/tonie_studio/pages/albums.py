@@ -173,7 +173,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
         job_ids = [
             jobs.submit("encode", part.target, encode_job(
-                connection, part.tracks, part.target,
+                client, part.tracks, part.target,
                 Details(series=series, episode=part.episode, cover=cover, crop=cut,
                         year=album.year, album=identifier),
                 replace=part.target in occupied))

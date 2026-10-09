@@ -195,6 +195,18 @@ class TestRefreshEdges:
 
         assert changed is True
 
+    def test_a_title_of_wide_characters_still_refreshes_more_than_once(self, cloud, subscription,
+                                                                       tmp_path):
+        title = "\U0001F984" * 80
+        wide_feed = FEED.replace(b"Kakadu \xe2\x80\x93 Der Kinderpodcast", title.encode())
+        refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb(wide_feed))
+
+        changed = refresh(cloud, subscription, tmp_path, now=NOW.replace(day=10),
+                          fetch=FakeWeb(newer(wide_feed)))
+
+        assert changed is True
+        assert len(cloud.encoded[-1][0].rsplit("/", 1)[-1].encode()) <= 255
+
     def test_does_not_take_back_a_sticker_now_used_for_something_else(
             self, cloud, subscription, tmp_path):
         refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
@@ -373,3 +385,52 @@ class TestAnOldErrorClears:
         assert not load_subscriptions(tmp_path)[0].error_key
         assert not load_subscriptions(tmp_path)[0].error
         runner.shutdown()
+
+
+class TestTheUpdaterKeepsGoing:
+    """The updater runs for the life of the app; one bad round must not end it."""
+
+    def _updater(self, tmp_path, queued):
+        from tonie_studio.podcast import PodcastUpdater
+
+        updater = PodcastUpdater(lambda: None, tmp_path, None, FakeWeb())
+        updater.queue = queued.append
+        return updater
+
+    def test_a_round_that_fails_is_followed_by_the_next(self, tmp_path, monkeypatch):
+        import threading
+
+        import tonie_studio.podcast as podcast
+
+        rounds, stop = [], threading.Event()
+
+        def flaky(_data_dir):
+            rounds.append(1)
+            if len(rounds) == 1:
+                raise RuntimeError("disk went away")
+            stop.set()
+            return []
+
+        monkeypatch.setattr(podcast, "WAKE_SECONDS", 0.01)
+        monkeypatch.setattr(podcast, "load_subscriptions", flaky)
+
+        self._updater(tmp_path, []).run(stop)
+
+        assert len(rounds) == 2
+
+    def test_a_time_without_a_zone_counts_as_utc(self, tmp_path, monkeypatch):
+        import threading
+
+        import tonie_studio.podcast as podcast
+
+        stop = threading.Event()
+        old = Subscription(id="alt", feed="https://example.org/feed.xml", ruid=RUID,
+                           checked="2020-01-01T00:00:00")
+        monkeypatch.setattr(podcast, "WAKE_SECONDS", 0.01)
+        monkeypatch.setattr(podcast, "load_subscriptions",
+                            lambda _data_dir: stop.set() or [old])
+        queued = []
+
+        self._updater(tmp_path, queued).run(stop)
+
+        assert queued == ["alt"]

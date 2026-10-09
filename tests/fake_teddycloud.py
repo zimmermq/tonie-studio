@@ -43,6 +43,10 @@ class FakeTeddyCloud:
         self.tag_entries: Dict[str, dict] = {}
         self.custom_models: List[dict] = []
 
+    def twin(self) -> "FakeTeddyCloud":
+        # One process, no sessions: every thread may share the fake.
+        return self
+
     def add_tag(self, ruid: str, **fields) -> None:
         """Pretend the box has read this tag, which is the only way one appears."""
         entry = {"source": "", "tonie_model": "", "live": False, "nocloud": False,

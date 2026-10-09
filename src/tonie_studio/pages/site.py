@@ -15,6 +15,12 @@ from .common import Context, Refused, translator
 
 log = logging.getLogger(__name__)
 
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# What Sec-Fetch-Site says for a request a page outside this app started. A
+# neighbouring subdomain is another app, so "same-site" counts as outside too.
+OTHER_SITES = frozenset({"cross-site", "same-site"})
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the app-wide routes and error answers to ``app``."""
@@ -28,6 +34,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         service being away rather than as this one being broken.
         """
         log.warning("teddyCloud unreachable while serving %s: %s", request.url.path, error)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": str(error)}, status_code=503)
         return templates.TemplateResponse(
             request, "error.html", {"message": str(error)}, status_code=503,
         )
@@ -41,6 +49,21 @@ def register(app: FastAPI, ctx: Context) -> None:
         return templates.TemplateResponse(
             request, "refused.html", {"message": message}, status_code=error.status,
         )
+
+    @app.middleware("http")
+    async def same_site_only(request: Request, call_next):
+        """Refuse a change asked for by a page on another site.
+
+        A page anywhere can make a visitor's browser post a form here, and the
+        login in front of the app does not tell those posts apart. The browser
+        does: it names where a request came from in Sec-Fetch-Site. A browser
+        that does not send it, or a client without one, is let through.
+        """
+        if request.method not in SAFE_METHODS and \
+                request.headers.get("sec-fetch-site") in OTHER_SITES:
+            log.warning("refused a %s to %s from another site", request.method, request.url.path)
+            return refused(request, Refused(403, "error.cross_site"))
+        return await call_next(request)
 
     @app.get("/lang/{code}")
     def choose_language(code: str, next: str = "/"):

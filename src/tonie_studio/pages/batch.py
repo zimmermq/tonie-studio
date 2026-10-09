@@ -108,9 +108,9 @@ def register(app: FastAPI, ctx: Context) -> None:
                 job_id = new_id()
                 placing.add(Slot(job_id=job_id, episode=details.episode, ruid=ruid))
                 job_ids.append(jobs.submit("encode", part.target, job_id=job_id, work=encode_job(
-                    connection, part.tracks, part.target, details,
+                    client, part.tracks, part.target, details,
                     reuse=row.reusable,
-                    after=_on_sticker_when_known(connection, settings, placing, job_id))))
+                    after=_on_sticker_when_known(client, settings, placing, job_id))))
         if not job_ids:
             raise Refused(400, "error.batch_nothing_new")
         group = groups.add(job_ids, batch=True, placing=placing)
@@ -154,8 +154,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 PLACE_MESSAGES = {result: f"place.{result}" for result in PLACE_RESULTS}
 
 
-def _on_sticker_when_known(client: TeddyCloudClient, settings: Settings, placing: Placing,
-                           job_id: str) -> Callable[[Outcome], None]:
+def _on_sticker_when_known(client: Callable[[], TeddyCloudClient], settings: Settings,
+                           placing: Placing, job_id: str) -> Callable[[Outcome], None]:
     """The step that puts a batch encode on its sticker once it is encoded.
 
     The sticker is the one reserved for it up front, or the one placed on the
@@ -165,5 +165,5 @@ def _on_sticker_when_known(client: TeddyCloudClient, settings: Settings, placing
     def after(outcome: Outcome) -> None:
         ruid = placing.settle(job_id)
         if ruid is not None:
-            put_on_sticker(client, settings.data_dir, ruid, outcome)
+            put_on_sticker(client(), settings.data_dir, ruid, outcome)
     return after
