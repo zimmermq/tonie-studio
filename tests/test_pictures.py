@@ -5,15 +5,15 @@ import io
 import pytest
 from PIL import Image
 
-from tonie_studio import thumbnails
-from tonie_studio.thumbnails import DEFAULT_SIZE, MAX_SIZE, thumbnail
+from tonie_studio import pictures
+from tonie_studio.pictures import DEFAULT_SIZE, MAX_SIZE, thumbnail
 
 
 @pytest.fixture(autouse=True)
 def empty_cache():
-    thumbnails._cache.clear()
+    pictures._cache.clear()
     yield
-    thumbnails._cache.clear()
+    pictures._cache.clear()
 
 
 def _cover(path, size=(800, 800), colour=(200, 60, 40)):
@@ -70,18 +70,18 @@ class TestCache:
     def test_renders_a_cover_only_once(self, tmp_path):
         path = _cover(tmp_path / "cover.jpg")
         calls = []
-        original = thumbnails._render
+        original = pictures._render
 
         def counted(*args):
             calls.append(args)
             return original(*args)
 
-        thumbnails._render = counted
+        pictures._render = counted
         try:
             thumbnail(path, size=64)
             thumbnail(path, size=64)
         finally:
-            thumbnails._render = original
+            pictures._render = original
 
         assert len(calls) == 1
 
@@ -105,27 +105,33 @@ class TestCache:
         assert _size_of(thumbnail(path, size=64)) == (64, 64)
 
     def test_does_not_grow_without_bound(self, tmp_path):
-        for index in range(thumbnails.CACHE_ENTRIES + 20):
+        for index in range(pictures.CACHE_ENTRIES + 20):
             thumbnail(_cover(tmp_path / f"c{index}.jpg", size=(64, 64)), size=32)
 
-        assert len(thumbnails._cache) <= thumbnails.CACHE_ENTRIES
+        assert len(pictures._cache) <= pictures.CACHE_ENTRIES
 
 
 class TestCrop:
     def test_renders_the_whole_cover_at_zoom_one(self, tmp_path):
-        from tonie_studio.thumbnails import COVER_SIZE, crop
+        from tonie_studio.pictures import crop
 
         data = crop(_cover(tmp_path / "cover.jpg"), size=64)
 
         assert _size_of(data) == (64, 64)
-        assert crop(_cover(tmp_path / "c2.jpg")) is not None
-        assert _size_of(crop(_cover(tmp_path / "c3.jpg"))) == (COVER_SIZE, COVER_SIZE)
+
+    def test_the_cover_teddycloud_gets_is_the_size_the_sheet_prints(self, tmp_path):
+        from tonie_studio.publishing import Details, cropped_cover
+        from tonie_studio.sheet import PIXELS
+
+        details = Details(series="S", episode="E", cover=str(_cover(tmp_path / "cover.jpg")))
+
+        assert _size_of(cropped_cover(details)) == (PIXELS, PIXELS)
 
     def test_zooming_in_shows_less_of_the_picture(self, tmp_path):
         # A picture with a distinct centre: zoomed in, the edges must be gone.
         from PIL import Image
 
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         image = Image.new("RGB", (300, 300), (255, 0, 0))
         image.paste(Image.new("RGB", (100, 100), (0, 0, 255)), (100, 100))
@@ -140,7 +146,7 @@ class TestCrop:
     def test_shifting_moves_what_the_circle_keeps(self, tmp_path):
         from PIL import Image
 
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         image = Image.new("RGB", (300, 300), (255, 0, 0))
         image.paste(Image.new("RGB", (100, 300), (0, 0, 255)), (0, 0))
@@ -157,7 +163,7 @@ class TestCrop:
         # Zoomed out, a mark in the very corner has to survive.
         from PIL import Image
 
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         image = Image.new("RGB", (300, 300), (255, 0, 0))
         image.paste(Image.new("RGB", (40, 40), (0, 0, 255)), (0, 0))
@@ -172,7 +178,7 @@ class TestCrop:
         # shrunken cover carries the cover's own colours.
         from PIL import Image
 
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         data = crop(_cover(tmp_path / "cover.jpg", colour=(200, 60, 40)), zoom=0.6, size=64)
         picture = Image.open(io.BytesIO(data))
@@ -180,31 +186,31 @@ class TestCrop:
         assert picture.getpixel((2, 2))[0] > 100  # the corner is cover, not paper
 
     def test_refuses_to_zoom_out_past_what_is_sensible(self, tmp_path):
-        from tonie_studio.thumbnails import MIN_ZOOM, crop
+        from tonie_studio.pictures import MIN_ZOOM, crop
 
         # Smaller than this the cover is a stamp on a blurred disc.
         assert crop(_cover(tmp_path / "cover.jpg"), zoom=0.01, size=32) == \
                crop(_cover(tmp_path / "cover.jpg"), zoom=MIN_ZOOM, size=32)
 
     def test_refuses_to_zoom_past_what_is_sensible(self, tmp_path):
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         # Beyond 3x a 600px cover is mush; clamping beats a pixelated sticker.
         assert crop(_cover(tmp_path / "cover.jpg"), zoom=99, size=32) == \
                crop(_cover(tmp_path / "cover.jpg"), zoom=3, size=32)
 
     def test_a_shift_cannot_walk_out_of_the_picture(self, tmp_path):
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         assert crop(_cover(tmp_path / "cover.jpg"), zoom=1.5, offset_x=99, size=32) is not None
 
     def test_answers_none_for_something_it_cannot_read(self, tmp_path):
-        from tonie_studio.thumbnails import crop
+        from tonie_studio.pictures import crop
 
         broken = tmp_path / "broken.jpg"
         broken.write_bytes(b"nope")
 
-        assert crop(broken) is None
+        assert crop(broken, size=64) is None
 
 
 def _blue_share(data):

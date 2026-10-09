@@ -62,9 +62,8 @@ def publish(
     if not encoded.source:
         raise TonieError("tonie.no_source")
     # A tag pointing at a path that is not there plays nothing, and nothing
-    # says so: teddyCloud stores whatever it is handed. This has happened once
-    # already, from a source string that had been read with the wrong encoding
-    # and written straight back.
+    # says so: teddyCloud stores whatever it is handed, a source string read
+    # with the wrong encoding and written straight back included.
     if is_library(encoded.source) and not taf_exists(client, encoded.target):
         raise TonieError("tonie.no_taf", target=encoded.target)
     require_tag(client, ruid)

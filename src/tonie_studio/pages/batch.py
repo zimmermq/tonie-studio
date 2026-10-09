@@ -14,12 +14,12 @@ from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
 from ..jobs import new_id
 from ..models import list_models
+from ..pictures import DEFAULT_SIZE
 from ..planning import plan_batch
 from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, job_states,
                           place, put_on_sticker)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
-from ..thumbnails import DEFAULT_SIZE
 from .common import Context, Refused, refused, translator
 
 log = logging.getLogger(__name__)

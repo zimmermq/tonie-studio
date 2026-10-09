@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 import uuid
-from typing import Dict, List, Optional, Sequence
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence
 
 from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -15,14 +17,14 @@ from ..calibration import FILE_NAME as CALIBRATION_FILE
 from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from ..i18n import DEFAULT as DEFAULT_LANGUAGE
 from ..i18n import Translator
-from ..models import Model, fetch_cover, list_models
+from ..models import Model, fetch_cover, is_cover_name, list_models
 from ..overview import Entry, build_overview
 from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
                      build_sheet)
 from ..tags import list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from .common import Context, Refused, is_image_name, translator
+from .common import Context, Refused, translator
 
 log = logging.getLogger(__name__)
 
@@ -66,17 +68,11 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/sheet/calibration")
     def calibration_sheet(request: Request):
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        target = settings.data_dir / f"calibration-{uuid.uuid4().hex[:8]}.pdf"
         # Printed with the current correction, so measuring it shows what is
         # still off rather than what was off before.
-        build_calibration(target, read_shift(settings.data_dir), translator(request))
-        return FileResponse(
-            target,
-            media_type="application/pdf",
-            filename="kalibrierblatt.pdf",
-            background=BackgroundTask(target.unlink, missing_ok=True),
-        )
+        return _send_pdf(settings.data_dir, "calibration", "kalibrierblatt.pdf",
+                         lambda target: build_calibration(target, read_shift(settings.data_dir),
+                                                          translator(request)))
 
 
     @app.post("/sheet/calibration")
@@ -104,15 +100,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         entries = _overview_entries(client(), playing_times(settings.data_dir), translate)
         if not entries:
             raise Refused(400, "error.nothing_to_list")
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        target = settings.data_dir / f"overview-{uuid.uuid4().hex[:8]}.pdf"
-        build_overview(entries, target, translate)
-        return FileResponse(
-            target,
-            media_type="application/pdf",
-            filename="tonies-uebersicht.pdf",
-            background=BackgroundTask(target.unlink, missing_ok=True),
-        )
+        return _send_pdf(settings.data_dir, "overview", "tonies-uebersicht.pdf",
+                         lambda target: build_overview(entries, target, translate))
 
 
     @app.post("/sheet")
@@ -155,7 +144,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                                         back=description))
 
         for upload_file in files:
-            if is_image_name(upload_file.filename):
+            if is_cover_name(upload_file.filename):
                 stickers.append(Sticker(image=upload_file.file.read(),
                                         label=upload_file.filename or "upload",
                                         mode=FIT if upload_mode == FIT else FILL))
@@ -163,25 +152,54 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not stickers:
             raise Refused(400, "error.nothing_to_print")
 
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        target = settings.data_dir / f"sheet-{uuid.uuid4().hex[:8]}.pdf"
-        try:
-            skipped = build_sheet(stickers, target, read_shift(settings.data_dir))
-        except ValueError as error:
-            # Every picture asked for was unreadable, so there is nothing to print.
-            raise Refused(400, "error.nothing_to_print") from error
-        if skipped:
-            log.warning("left off the sheet: %s", ", ".join(skipped))
+        def build(target: Path) -> None:
+            try:
+                skipped = build_sheet(stickers, target, read_shift(settings.data_dir))
+            except ValueError as error:
+                # Every picture asked for was unreadable, so there is nothing to print.
+                raise Refused(400, "error.nothing_to_print") from error
+            if skipped:
+                log.warning("left off the sheet: %s", ", ".join(skipped))
 
-        return FileResponse(
-            target,
-            media_type="application/pdf",
-            filename="traveltonies.pdf",
-            background=BackgroundTask(target.unlink, missing_ok=True),
-        )
+        return _send_pdf(settings.data_dir, "sheet", "traveltonies.pdf", build)
 
 
 # --- helpers --------------------------------------------------------------
+
+
+# How old a PDF left in the data folder must be before housekeeping removes
+# it. One being sent right now is seconds old.
+OLD_PDF_SECONDS = 86400
+
+
+def _send_pdf(data_dir: Path, prefix: str, filename: str,
+              build: Callable[[Path], None]) -> FileResponse:
+    """Build a PDF in ``data_dir``, send it as ``filename`` and remove it once sent.
+
+    A build that fails removes what it had written before the error goes on.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    target = data_dir / f"{prefix}-{uuid.uuid4().hex[:8]}.pdf"
+    try:
+        build(target)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return FileResponse(target, media_type="application/pdf", filename=filename,
+                        background=BackgroundTask(target.unlink, missing_ok=True))
+
+
+def clear_old_pdfs(data_dir: Path) -> None:
+    """Remove PDFs a process that died while sending them left behind."""
+    if not data_dir.is_dir():
+        return
+    cutoff = time.time() - OLD_PDF_SECONDS
+    for leftover in data_dir.glob("*.pdf"):
+        try:
+            if leftover.stat().st_mtime < cutoff:
+                leftover.unlink()
+        except OSError as error:
+            log.warning("cannot remove %s: %s", leftover, error)
 
 
 def _printable_models(client: TeddyCloudClient) -> List[Model]:

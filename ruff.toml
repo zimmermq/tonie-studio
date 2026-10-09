@@ -1,0 +1,11 @@
+# The checks this code is kept clean of: `uvx ruff check src tests`.
+target-version = "py314"
+
+[lint]
+select = ["F", "B", "E9"]
+ignore = [
+    # FastAPI declares form fields and uploads as calls in parameter defaults.
+    "B008",
+    # zip() pairs sequences built to the same length; strict= would only add noise.
+    "B905",
+]

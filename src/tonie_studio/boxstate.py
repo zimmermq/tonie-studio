@@ -8,12 +8,12 @@ inside the raw RTNL log as function group 15, function 16067 on an ESP32 box
 and 8630 on a CC3200 one, so one extra case turns "last placed" into "on the
 box right now".
 
-Two things about those raw entries were learned from a real box rather than
-from the source, and both broke the first version:
+Two things about those raw entries show only on a real box, not in the
+source, and reading them naively drops every removal:
 
 - The tag id in ``field6`` has its two 4-byte halves swapped: teddyCloud reads
   the first four bytes as the low word (``read_big_endian64``). Read straight,
-  the id names no tag on the box and every removal was dropped.
+  the id names no tag on the box and the removal is lost.
 - The box sends its log in bundles, sometimes minutes after the fact; three
   rounds of on and off arrived in the same second. When something happened is
   therefore taken from the box's own ``uptime`` in each entry, tied to the wall

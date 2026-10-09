@@ -105,8 +105,8 @@ class TestTrackSelection:
 
 class TestOccupiedName:
     def test_asks_instead_of_failing_inside_the_job(self, client, teddycloud):
-        # The old behaviour sent you to a progress page that then showed an
-        # error. An occupied name is a question for the form.
+        # An occupied name is a question for the form, not an error minutes
+        # later on a progress page.
         teddycloud.create_dir("/Lichterkinder")
         teddycloud.files["/Lichterkinder/Halloween.taf"] = b"older"
 

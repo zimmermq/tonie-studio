@@ -52,7 +52,7 @@ UNSAFE = re.compile(r"[/\\\x00-\x1f]")
 # how many.
 Progress = Callable[[str, int, int], None]
 
-# The steps an encode reports progress in; texts in job.step.*.
+# The steps an encode reports progress in; ``describe_progress`` words each.
 UPLOAD, ENCODE = "upload", "encode"
 STEPS = (UPLOAD, ENCODE)
 

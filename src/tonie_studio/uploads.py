@@ -1,8 +1,8 @@
 """Housekeeping for the files a browser upload leaves behind.
 
 Every upload is spooled into its own folder so the album reader can treat it
-like any other album. Nothing removed them, and a FLAC album is several hundred
-megabytes, so the volume filled up one careless evening at a time.
+like any other album. A FLAC album is several hundred megabytes, so left alone
+those folders fill the volume one evening of uploads at a time.
 
 Folders are removed by age rather than after a successful encode: an upload is
 still worth having when the encode failed, when the tracks were ordered wrongly,

@@ -42,23 +42,6 @@ def request_mock(client):
         yield mock
 
 
-class TestFromEnv:
-    def test_builds_a_client_from_the_environment(self, monkeypatch):
-        monkeypatch.setenv("TS_TEDDYCLOUD_URL", "http://teddy:8080/")
-
-        client = TeddyCloudClient.from_env()
-
-        assert client.base_url == "http://teddy:8080"
-
-    def test_names_the_missing_variable(self, monkeypatch):
-        monkeypatch.delenv("TS_TEDDYCLOUD_URL", raising=False)
-
-        with pytest.raises(TeddyCloudError) as excinfo:
-            TeddyCloudClient.from_env()
-
-        assert "TS_TEDDYCLOUD_URL" in str(excinfo.value)
-
-
 class TestListDir:
     def test_returns_the_file_entries(self, client, request_mock):
         request_mock.return_value = _json({"files": [{"name": "a.taf", "isDir": False}]})

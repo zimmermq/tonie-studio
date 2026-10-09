@@ -23,10 +23,11 @@ from .batch import Placing, PlayedOn, Slot
 from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .jobs import Job, JobState
 from .models import DEFAULT_CATEGORY
+from .pictures import crop
 from .runtimes import remember
+from .sheet import PIXELS
 from .tags import TonieError, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .thumbnails import crop
 from .tonie import publish
 
 log = logging.getLogger(__name__)
@@ -185,7 +186,7 @@ def cropped_cover(details: Details) -> Optional[bytes]:
     """
     if not details.cover:
         return None
-    return crop(Path(details.cover), zoom=details.crop.zoom,
+    return crop(Path(details.cover), size=PIXELS, zoom=details.crop.zoom,
                 offset_x=details.crop.x, offset_y=details.crop.y)
 
 

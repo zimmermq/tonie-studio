@@ -15,7 +15,7 @@
 <form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data">
   <div class="card row items-start">
     {% if tag.picture | cover_name %}
-    <img class="cover" src="/cover/custom/{{ tag.picture | cover_name }}" alt="Cover">
+    <img class="cover" src="/cover/custom/{{ tag.picture | cover_name | urlencode }}" alt="Cover">
     {% endif %}
     <div class="grow">
       <label class="field">

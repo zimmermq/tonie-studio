@@ -288,7 +288,9 @@ def _series(series: str, model_id: str) -> str:
 
 
 def _tracks(tracks: Sequence[str]) -> List[str]:
-    return [track for track in tracks if track]
+    # One name per chapter, by position: a track without a name keeps its
+    # place as an empty one, or every name after it would label the wrong chapter.
+    return [track or "" for track in tracks]
 
 
 def _category(category: str) -> str:

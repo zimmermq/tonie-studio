@@ -19,11 +19,12 @@ from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
 from ..encode import taf_exists
 from ..i18n import Problem
+from ..models import is_cover_name
 from ..parts import MOST_CHAPTERS
+from ..pictures import DEFAULT_SIZE, crop, thumbnail
 from ..planning import chosen_tracks, plan_parts
 from ..publishing import Crop, Details, encode_job
-from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
-from .common import UPLOAD, Context, Refused, is_audio_name, is_image_name, refused
+from .common import UPLOAD, Context, Refused, is_audio_name, refused
 
 log = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         candidates = cover_candidates(catalogue.resolve(identifier))
         if not 0 <= index < len(candidates):
             raise Refused(404, "error.no_cover")
-        rendered = crop(candidates[index], zoom, x, y, max(32, min(size, 800)))
+        rendered = crop(candidates[index], max(32, min(size, 800)), zoom, x, y)
         if rendered is None:
             raise Refused(404, "error.cover_unreadable")
         return Response(rendered, media_type="image/jpeg")
@@ -211,7 +212,7 @@ def _upload_folders(files: Sequence[UploadFile]) -> Dict[str, List[UploadFile]]:
     """
     folders: Dict[str, List[UploadFile]] = {}
     for file in files:
-        if not (is_audio_name(file.filename) or is_image_name(file.filename)):
+        if not (is_audio_name(file.filename) or is_cover_name(file.filename)):
             continue
         folder = str(PurePosixPath((file.filename or "").replace("\\", "/")).parent)
         folders.setdefault(folder, []).append(file)

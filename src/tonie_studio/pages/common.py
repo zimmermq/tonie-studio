@@ -1,5 +1,6 @@
 """What the pages share: the context they are built with, the album catalogue,
-encoding and publishing, and turning requests down in the reader's language.
+the addresses of the static files, and turning requests down in the reader's
+language.
 
 Album ids carry a one letter prefix for the root they came from. Without it an
 uploaded folder and an archive folder of the same name would hash to the same
@@ -20,13 +21,14 @@ from typing import Callable, Dict, List, Optional, Tuple
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from .. import encode
 from ..album import AUDIO_EXTENSIONS, AlbumSummary, list_albums
 from ..boxstate import BoxWatcher
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
-from ..models import ModelCache, is_cover_name
+from ..models import ModelCache
 from ..podcast import Fetch, PodcastUpdater
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
@@ -47,6 +49,10 @@ UPLOAD = "u"
 # album copied onto the share shows up on the next reload; an upload made here
 # clears it outright.
 CATALOGUE_TTL = 10.0
+
+# Below this many seconds of audio an encode is done before minutes would mean
+# anything, so its progress is not counted in them.
+LONG_ENCODE_SECONDS = 90
 
 
 @dataclass
@@ -173,6 +179,19 @@ def is_audio_name(name: Optional[str]) -> bool:
     return bool(name) and Path(name).suffix.lower() in AUDIO_EXTENSIONS
 
 
-def is_image_name(name: Optional[str]) -> bool:
-    """Whether an uploaded file is a picture that can become a cover."""
-    return is_cover_name(name)
+def describe_progress(job, translate: Translator) -> str:
+    """Where a running job is, in words: tracks for uploads, minutes for an encode.
+
+    The encode counts seconds of audio, and "encode 312/4917" would be true
+    and useless. ``static/job.js`` says the same while the page watches.
+    """
+    if not job.step:
+        return translate("job.preparing")
+    if job.step == encode.UPLOAD:
+        return translate("job.uploaded", done=job.done_count, count=job.total)
+    if job.step == encode.ENCODE:
+        if job.total > LONG_ENCODE_SECONDS:
+            return translate("job.encoded_minutes", done=round(job.done_count / 60),
+                             count=round(job.total / 60))
+        return translate("job.encoding")
+    return f"{job.step} {job.done_count}/{job.total}"

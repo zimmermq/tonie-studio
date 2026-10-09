@@ -290,3 +290,33 @@ class TestTeddyCloudAwayOnTheApi:
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
 
+
+class TestProgressInWords:
+    """The server describes a running job the way the page's script does."""
+
+    def _say(self, step, done, total):
+        from types import SimpleNamespace
+
+        from tonie_studio.i18n import Translator
+        from tonie_studio.pages.common import describe_progress
+
+        job = SimpleNamespace(step=step, done_count=done, total=total)
+        return describe_progress(job, Translator("de"))
+
+    def test_an_encode_counts_minutes_not_seconds(self):
+        assert self._say("encode", 312, 4917) == "encodiert, etwa 5 von 82 Minuten"
+
+    def test_a_short_encode_just_says_so(self):
+        assert self._say("encode", 30, 60) == "wird encodiert"
+
+    def test_uploads_count_tracks(self):
+        assert self._say("upload", 2, 9) == "Track 2 von 9 hochgeladen"
+
+    def test_every_step_an_encode_reports_is_put_in_words(self):
+        from tonie_studio.encode import STEPS
+
+        for step in STEPS:
+            assert not self._say(step, 1, 600).startswith(step)
+
+    def test_before_the_first_step(self):
+        assert self._say(None, 0, 0) == self._say("", 0, 0) != ""

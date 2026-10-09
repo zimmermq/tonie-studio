@@ -1,4 +1,5 @@
-"""Small square previews of the album covers, for the picker.
+"""Square pictures made from covers: previews for the picker, the crop the
+sticker prints, and the blurred ring a whole cover is set into.
 
 The covers in the archive are around 130 KB each. Sixteen of them on one page
 is two megabytes of JPEG to show pictures the size of a stamp, so the list gets
@@ -27,9 +28,6 @@ log = logging.getLogger(__name__)
 DEFAULT_SIZE = 128
 
 MAX_SIZE = 512
-
-# What a 46 mm sticker needs at 300 dpi, with the bleed the sheet prints.
-COVER_SIZE = 567
 
 # How far out the cover may be zoomed. Below this the cover is a stamp in the
 # middle of a blurred disc, which is no longer a picture of the album.
@@ -78,10 +76,10 @@ def thumbnail(path: Path, size: int = DEFAULT_SIZE) -> Optional[bytes]:
 
 def crop(
     path: Path,
+    size: int,
     zoom: float = 1.0,
     offset_x: float = 0.0,
     offset_y: float = 0.0,
-    size: int = COVER_SIZE,
 ) -> Optional[bytes]:
     """Render a cover as the square that goes under the round sticker.
 

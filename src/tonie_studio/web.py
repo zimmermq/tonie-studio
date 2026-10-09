@@ -26,7 +26,9 @@ from .listening import ListeningLog
 from .models import ModelCache, cover_name
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
 from .pages import jobs as job_pages
-from .pages.common import STATIC, TEMPLATES, Catalogue, Context, page_context
+from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
+                           page_context)
+from .pages.printing import clear_old_pdfs
 from .pages.upkeep import clear_parked_restores
 from .podcast import Fetch, PodcastUpdater, download
 from .settings import Settings
@@ -35,8 +37,8 @@ from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)
 
-# How often, in seconds, old uploads and unconfirmed restores are cleared
-# while the app runs. They age in days, so once a day loses nothing.
+# How often, in seconds, old uploads, unconfirmed restores and stray PDFs are
+# cleared while the app runs. They age in days, so once a day loses nothing.
 HOUSEKEEPING_EVERY = 86400.0
 
 def create_app(
@@ -49,6 +51,7 @@ def create_app(
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     templates.env.filters["cover_name"] = cover_name
+    templates.env.globals["describe_progress"] = describe_progress
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)
     groups = Groups(jobs)
@@ -124,6 +127,7 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
         try:
             remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
             clear_parked_restores(settings)
+            clear_old_pdfs(settings.data_dir)
         except Exception:
             log.exception("housekeeping round failed")
         if stop.wait(HOUSEKEEPING_EVERY):

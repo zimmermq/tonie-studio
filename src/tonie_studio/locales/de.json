@@ -240,8 +240,6 @@
  "job.state.failed": "fehlgeschlagen",
  "job.state.queued": "wartet",
  "job.state.running": "läuft",
- "job.step.encode": "encodieren",
- "job.step.upload": "hochladen",
  "job.taf_done": "Encodiert. Jetzt bekommt es einen Sticker.",
  "job.to_assign": "Sticker zuordnen",
  "job.to_podcasts": "Zu den Podcasts",

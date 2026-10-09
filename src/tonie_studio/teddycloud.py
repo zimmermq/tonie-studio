@@ -27,7 +27,6 @@ service off any untrusted network.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any, BinaryIO, Dict, Iterable, List, Optional
 
@@ -83,14 +82,6 @@ class TeddyCloudClient:
     def twin(self) -> "TeddyCloudClient":
         """A client for the same teddyCloud with a session of its own, for another thread."""
         return TeddyCloudClient(self.base_url, overlay=self.overlay, timeout=self.timeout)
-
-    @classmethod
-    def from_env(cls) -> "TeddyCloudClient":
-        """Build a client from TS_TEDDYCLOUD_URL and the optional TS_TEDDYCLOUD_OVERLAY."""
-        base_url = os.environ.get("TS_TEDDYCLOUD_URL")
-        if not base_url:
-            raise TeddyCloudError("TS_TEDDYCLOUD_URL is not set")
-        return cls(base_url, overlay=os.environ.get("TS_TEDDYCLOUD_OVERLAY") or None)
 
     # --- directories and files -------------------------------------------
 

@@ -36,7 +36,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(404, "error.parts_gone")
         batch = found.batch
         by_hand = bool(found.placing and found.placing.by_hand)
-        members = [jobs.get(job_id) for job_id in found.jobs if jobs.get(job_id)]
+        members = [job for job in map(jobs.get, found.jobs) if job]
         made_models = [job.result.model for job in members
                        if isinstance(job.result, Outcome) and job.result.model]
         return templates.TemplateResponse(request, "parts.html", {

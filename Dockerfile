@@ -24,13 +24,11 @@ RUN useradd --uid 10001 --create-home app \
     && chown -R app:app /data
 USER app
 
-# Build identity for the footer. CI passes these on release; the defaults keep
-# a source run sane. Placed late so a version bump does not invalidate the
-# dependency layers above.
+# The release this image is, written into every backup's manifest. CI passes
+# it on release; the default keeps a source run sane. Placed late so a version
+# bump does not invalidate the dependency layers above.
 ARG TS_VERSION=dev
-ARG TS_COMMIT=unknown
-ENV TS_VERSION=$TS_VERSION \
-    TS_COMMIT=$TS_COMMIT
+ENV TS_VERSION=$TS_VERSION
 
 EXPOSE 8080
 

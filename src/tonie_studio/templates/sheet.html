@@ -23,7 +23,7 @@
 
   <div class="list">
     {% for model in models %}
-    <div class="album sticker" data-src="/cover/custom/{{ model.cover }}">
+    <div class="album sticker" data-src="/cover/custom/{{ model.cover | urlencode }}">
       <input type="checkbox" class="want" {% if model.id in preset %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
       <span class="grow truncate">

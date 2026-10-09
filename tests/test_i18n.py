@@ -15,7 +15,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 # Families of keys whose last part is a value from the code, so no source file
 # names them in full. Each has a test below that every value is covered.
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
-           "restore.what.", "job.step.", "place.unknown", "place.taken", "place.reserved",
+           "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.failed")
 
 
@@ -91,10 +91,6 @@ class TestCatalogs:
         from tonie_studio.publishing import PLACE_RESULTS
 
         assert {f"place.{result}" for result in PLACE_RESULTS} <= keys
-
-        from tonie_studio.encode import STEPS
-
-        assert {f"job.step.{step}" for step in STEPS} <= keys
 
 
 class TestTranslator:

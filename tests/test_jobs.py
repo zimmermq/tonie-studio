@@ -165,3 +165,40 @@ def _eventually(condition, timeout=3.0):
             return
         time.sleep(0.01)
     raise AssertionError("condition never became true")
+
+
+class TestGroups:
+    class Runner:
+        """Records what the groups pin and let go of."""
+
+        def __init__(self):
+            self.kept, self.released = [], []
+
+        def keep(self, job_ids):
+            self.kept.extend(job_ids)
+
+        def release(self, job_ids):
+            self.released.extend(job_ids)
+
+    def test_the_oldest_group_goes_once_there_are_too_many(self):
+        from tonie_studio.jobs import Groups
+
+        runner = self.Runner()
+        groups = Groups(runner, keep=2)
+        first = groups.add(["a1", "a2"])
+        second = groups.add(["b1"])
+        third = groups.add(["c1"])
+
+        assert groups.get(first) is None
+        assert groups.get(second).jobs == ["b1"] and groups.get(third).jobs == ["c1"]
+        assert runner.released == ["a1", "a2"]
+        assert runner.kept == ["a1", "a2", "b1", "c1"]
+
+    def test_a_group_keeps_what_it_was_given(self):
+        from tonie_studio.jobs import Groups
+
+        groups = Groups(self.Runner())
+        group = groups.add(["j1"], batch=True, placing="the placing")
+
+        found = groups.get(group)
+        assert (found.batch, found.placing) == (True, "the placing")

@@ -232,17 +232,7 @@ def read_album(path: Path) -> Album:
     tags = {file: _read_tags(file) or TrackTags() for file in files}
     ordered, ordering = _order(files, tags, path)
 
-    tracks = [
-        Track(
-            path=file,
-            number=index,
-            title=_track_title(file, tags[file]),
-            artist=tags[file].artist,
-            duration=tags[file].duration,
-            extra=bool(EXTRA_MARKERS.search(_track_title(file, tags[file]))),
-        )
-        for index, file in enumerate(ordered, start=1)
-    ]
+    tracks = [_track(file, index, tags[file]) for index, file in enumerate(ordered, start=1)]
 
     if not tracks:
         warnings.append(WARN_NO_AUDIO)
@@ -331,6 +321,12 @@ def _playlist_order(directory: Path, files):
 
 
 # --- naming ---------------------------------------------------------------
+
+
+def _track(path: Path, number: int, tags: TrackTags) -> Track:
+    title = _track_title(path, tags)
+    return Track(path=path, number=number, title=title, artist=tags.artist,
+                 duration=tags.duration, extra=bool(EXTRA_MARKERS.search(title)))
 
 
 def _track_title(path: Path, tags: TrackTags) -> str:

@@ -37,7 +37,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
-from .thumbnails import centre_square, inset
+from .pictures import centre_square, inset
 
 log = logging.getLogger(__name__)
 

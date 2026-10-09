@@ -333,3 +333,37 @@ class TestSheetReadsTheModelsOnce:
             client.post("/sheet", data={"models": [model, model, model], "counts": ["1", "1", "1"]})
 
         assert len(asked) == 1
+
+
+class TestNoPdfIsLeftBehind:
+    def test_a_sheet_that_fails_half_way_leaves_no_file(self, client, runner, teddycloud,
+                                                        settings):
+        publish_album(client, runner, teddycloud)
+        model = teddycloud.custom_tonies()[0]["model"]
+
+        def half_written(stickers, target, shift):
+            target.write_bytes(b"%PDF-1.4 half")
+            raise RuntimeError("reportlab ran out of something")
+
+        with patch("tonie_studio.pages.printing.build_sheet", side_effect=half_written):
+            with pytest.raises(RuntimeError):
+                client.post("/sheet", data={"models": [model], "counts": ["1"]})
+
+        assert list(settings.data_dir.glob("*.pdf")) == []
+
+    def test_housekeeping_clears_a_pdf_a_dead_process_left(self, settings):
+        import os
+        import time
+
+        from tonie_studio.pages.printing import clear_old_pdfs
+
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        old = settings.data_dir / "sheet-dead.pdf"
+        new = settings.data_dir / "sheet-sending.pdf"
+        old.write_bytes(b"%PDF"), new.write_bytes(b"%PDF")
+        two_days_ago = time.time() - 2 * 86400
+        os.utime(old, (two_days_ago, two_days_ago))
+
+        clear_old_pdfs(settings.data_dir)
+
+        assert not old.exists() and new.exists()

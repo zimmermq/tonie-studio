@@ -12,7 +12,7 @@
 {% for tag in tags %}
   <div class="album" id="tag-{{ tag.ruid }}">
     {% if tag.picture | cover_name %}
-    <img src="/cover/custom/{{ tag.picture | cover_name }}" alt="" loading="lazy">
+    <img src="/cover/custom/{{ tag.picture | cover_name | urlencode }}" alt="" loading="lazy">
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}
@@ -27,7 +27,7 @@
       </span>
     </a>
     {% if tag.model %}
-    <a class="button small" href="/sheet?model={{ tag.model }}"
+    <a class="button small" href="/sheet?model={{ tag.model | urlencode }}"
        title="{{ t('tonies.sticker_title') }}">{{ t("tonies.sticker") }}</a>
     {% endif %}
   </div>

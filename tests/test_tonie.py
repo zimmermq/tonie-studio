@@ -505,3 +505,10 @@ class TestDropOnlyOwnModels:
 
         assert teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"] == "10000001"
 
+
+class TestTrackNamesKeepTheirChapters:
+    def test_a_track_without_a_name_keeps_its_place(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                tracks=["Eins", "", "Drei"])
+
+        assert teddycloud.custom_tonies()[0]["tracks"] == ["Eins", "", "Drei"]

@@ -7,9 +7,7 @@
 
 <div class="card">
   <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
-  <p class="muted mb-0" id="detail">
-    <span id="detailtext">{% if job.step %}{{ t("job.step." ~ job.step) }} {{ job.done_count }}/{{ job.total }}{% else %}{{ t("job.preparing") }}{% endif %}</span>
-  </p>
+  <p class="muted mb-0" id="detail">{{ describe_progress(job, t) }}</p>
 </div>
 
 <div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>

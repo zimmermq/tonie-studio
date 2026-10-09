@@ -240,8 +240,6 @@
  "job.state.failed": "failed",
  "job.state.queued": "queued",
  "job.state.running": "running",
- "job.step.encode": "encoding",
- "job.step.upload": "uploading",
  "job.taf_done": "Encoded. Now it gets a sticker.",
  "job.to_assign": "Choose a sticker",
  "job.to_podcasts": "To the podcasts",
