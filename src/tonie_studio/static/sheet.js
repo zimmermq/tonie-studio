@@ -70,10 +70,10 @@ if (fillsheet) fillsheet.addEventListener('click', () => {
 });
 
 const extra = document.getElementById('extra');
-if (extra) extra.addEventListener('change', () => {
-  document.getElementById('extrapicked').textContent =
-    extra.files.length ? say(words['sheet.pictures'], {count: extra.files.length}) : words['common.nothing_chosen'];
-});
+if (extra) {
+  showPicked(extra, document.getElementById('extrapicked'),
+             files => say(words['sheet.pictures'], {count: files.length}));
+}
 
 // The text side. The server already decided which lines fit, so this only
 // has to draw them: a preview that re-decided would promise what the sheet

@@ -64,7 +64,8 @@ if (coverimg) {
     const [a, b] = [...touches.values()];
     const gap = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     if (pinch === null) { pinch = { gap, zoom: +zoom.value }; return; }
-    zoom.value = Math.max(1, Math.min(2.5, pinch.zoom * gap / pinch.gap));
+    // The slider's own limits, so a pinch reaches exactly what the slider does.
+    zoom.value = Math.max(+zoom.min, Math.min(+zoom.max, pinch.zoom * gap / pinch.gap));
     paint();
   });
   for (const done of ['pointerup', 'pointercancel', 'pointerleave']) {

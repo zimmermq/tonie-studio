@@ -25,6 +25,7 @@ from .jobs import JobRunner
 from .listening import ListeningLog
 from .models import ModelCache
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
+from .pages import jobs as job_pages
 from .pages.common import STATIC, TEMPLATES, Catalogue, Context, page_context
 from .pages.upkeep import clear_parked_restores
 from .podcast import Fetch, PodcastUpdater, download
@@ -87,7 +88,7 @@ def create_app(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
     )
-    for part in (site, albums, batch, tonies, extras, upkeep, printing):
+    for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing):
         part.register(app, ctx)
     return app
 

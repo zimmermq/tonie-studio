@@ -27,6 +27,16 @@ window.every = (ms, step) => {
   run();
 };
 
+// Under a file picker, what it holds: ``describe`` turns the chosen files into
+// a line, and with none the label shows again what the server put there.
+// Without it, choosing a folder of sixty files looks like nothing happened.
+window.showPicked = (input, slot, describe) => {
+  const empty = slot.textContent;
+  input.addEventListener('change', () => {
+    slot.textContent = input.files.length ? describe([...input.files]) : empty;
+  });
+};
+
 // A form that cannot be taken back carries its question in data-confirm,
 // already in the reader's language; it is sent only once that is answered.
 document.addEventListener('submit', event => {

@@ -24,3 +24,13 @@ class TestScriptsLiveInFiles:
         # The server never renders them; a "{{" left in one reaches the browser as is.
         for script in (ROOT / "static").glob("*.js"):
             assert "{{" not in script.read_text() and "{%" not in script.read_text(), script.name
+
+
+class TestCoverZoom:
+    def test_a_pinch_reaches_what_the_slider_does(self):
+        # The limits live on the slider only; a second copy in the script fell
+        # out of step once already, and the phone could not zoom out.
+        script = (ROOT / "static" / "album.js").read_text()
+
+        assert "+zoom.min" in script and "+zoom.max" in script
+        assert "2.5" not in script

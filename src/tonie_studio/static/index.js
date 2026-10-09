@@ -47,21 +47,22 @@ document.getElementById('albums').addEventListener('change', () => {
   pickcount.textContent = say(words['batch.picked'], {count: ticked});
 });
 
-// Without a word on what was picked, choosing a folder of 60 files looks
-// like nothing happened at all.
+// Two pickers, a folder and single files, of which one counts: choosing in
+// one empties the other, and the button waits until something is chosen.
 const form = document.getElementById('upload');
 const picked = document.getElementById('picked');
 const send = document.getElementById('send');
+const pickers = [...form.querySelectorAll('input[type=file]')];
 
-form.addEventListener('change', event => {
-  const input = event.target;
-  if (input.type !== 'file') return;
-  for (const other of form.querySelectorAll('input[type=file]')) {
-    if (other !== input) other.value = '';
-  }
-  const files = [...input.files];
-  if (!files.length) return;
-  const bytes = files.reduce((sum, file) => sum + file.size, 0);
-  picked.textContent = say(words['upload.picked'], {count: files.length, size: (bytes / 1048576).toFixed(0)});
-  send.disabled = false;
-});
+for (const input of pickers) {
+  showPicked(input, picked, files => {
+    const bytes = files.reduce((sum, file) => sum + file.size, 0);
+    return say(words['upload.picked'], {count: files.length, size: (bytes / 1048576).toFixed(0)});
+  });
+  input.addEventListener('change', () => {
+    for (const other of pickers) {
+      if (other !== input) other.value = '';
+    }
+    send.disabled = !input.files.length;
+  });
+}
