@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -15,11 +15,11 @@ from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
 from ..jobs import JobState, new_id
 from ..planning import plan_batch
-from ..publishing import Details, Outcome, encode_job, free_tags, put_on_sticker
+from ..publishing import PLACE_RESULTS, place, Details, Outcome, encode_job, free_tags, put_on_sticker
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from ..thumbnails import DEFAULT_SIZE
-from ..tonie import list_models, list_tags
+from ..tonie import list_models
 from .common import Context, Refused, refused, translator
 
 log = logging.getLogger(__name__)
@@ -138,58 +138,25 @@ def register(app: FastAPI, ctx: Context) -> None:
         if placing is None:
             raise Refused(404, "error.parts_gone")
         translate = translator(request)
-        connection = client()
-
-        def failed(job_id: str) -> bool:
-            job = jobs.get(job_id)
-            return job is None or job.state is JobState.FAILED
-
-        def answer(status: str, slot: Optional[Slot] = None) -> JSONResponse:
-            waiting = placing.waiting(failed)
-            return JSONResponse({
-                "status": status,
-                "message": translate(PLACE_MESSAGES[status], episode=slot.episode if slot else ""),
-                "then": (translate("place.next", episode=waiting.episode) if waiting
-                         else translate("place.all_done")),
-                "episode": slot.episode if slot else None,
-                "job": slot.job_id if slot else None,
-                "next": waiting.episode if waiting else None,
-            })
-
-        own = next((slot for slot in placing.slots if slot.ruid == ruid), None)
-        tags = {tag.ruid: tag for tag in list_tags(connection)}
-        if ruid not in tags:
-            return answer("unknown")
-        if tags[ruid].assigned:
-            if own is not None:
-                return answer("assigned", own)
-            return answer("taken")
-
-        slot, settled = placing.reserve(ruid, failed)
-        if slot is None:
-            return answer("complete")
-        if not settled:
-            return answer("reserved", slot)
-        job = jobs.get(slot.job_id)
-        if job is None or not job.done.wait(30) or not isinstance(job.result, Outcome):
-            return answer("reserved", slot)
-        if put_on_sticker(connection, settings.data_dir, ruid, job.result):
-            return answer("assigned", slot)
-        return answer("failed", slot)
+        status, slot = place(client(), settings.data_dir, placing, ruid, jobs.get)
+        waiting = placing.waiting(lambda job_id: jobs.get(job_id) is None
+                                  or jobs.get(job_id).state is JobState.FAILED)
+        return JSONResponse({
+            "status": status,
+            "message": translate(PLACE_MESSAGES[status], episode=slot.episode if slot else ""),
+            "then": (translate("place.next", episode=waiting.episode) if waiting
+                     else translate("place.all_done")),
+            "episode": slot.episode if slot else None,
+            "job": slot.job_id if slot else None,
+            "next": waiting.episode if waiting else None,
+        })
 
 
 # --- helpers --------------------------------------------------------------
 
 
 # What the progress page says after a sticker was placed, by outcome.
-PLACE_MESSAGES = {
-    "unknown": "place.unknown",
-    "taken": "place.taken",
-    "reserved": "place.reserved",
-    "assigned": "place.assigned",
-    "complete": "place.complete",
-    "failed": "place.failed",
-}
+PLACE_MESSAGES = {result: f"place.{result}" for result in PLACE_RESULTS}
 
 
 def _on_sticker_when_known(client: TeddyCloudClient, settings: Settings, placing: Placing,

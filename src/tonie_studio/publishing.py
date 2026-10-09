@@ -20,10 +20,12 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from .album import Track
 from .albumnotes import remember_made
 from .encode import EncodeError, EncodeResult, encode_files, existing_taf
+from .batch import Placing, Slot
+from .jobs import Job, JobState
 from .runtimes import remember
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .thumbnails import crop
-from .tonie import DEFAULT_CATEGORY, TonieError, list_tags, publish
+from .tonie import DEFAULT_CATEGORY, TonieError, find_tag, list_tags, publish
 
 log = logging.getLogger(__name__)
 
@@ -171,3 +173,46 @@ def cropped_cover(details: Details) -> Optional[bytes]:
     return crop(Path(details.cover), zoom=details.crop.zoom,
                 offset_x=details.crop.x, offset_y=details.crop.y)
 
+
+# What putting a sticker on the box during a batch came to.
+UNKNOWN = "unknown"      # teddyCloud has not filed the sticker yet; ask again
+TAKEN = "taken"          # it plays something else and is left as it is
+RESERVED = "reserved"    # it waits for its episode's encode to finish
+ASSIGNED = "assigned"    # it plays its episode now
+COMPLETE = "complete"    # every episode has a sticker already
+FAILED = "failed"        # it could not be written
+PLACE_RESULTS = (UNKNOWN, TAKEN, RESERVED, ASSIGNED, COMPLETE, FAILED)
+
+
+def place(client: TeddyCloudClient, data_dir: Path, placing: Placing, ruid: str,
+          job_of: Callable[[str], Optional[Job]]) -> Tuple[str, Optional[Slot]]:
+    """Give the sticker lying on the box to the next episode of a batch.
+
+    Returns what happened and the episode slot it happened to. Only a free
+    sticker is taken. One placed again keeps its episode, so a sticker left
+    lying on the box between two polls is not handed a second one. An
+    episode already encoded is put on its sticker at once; one still being
+    encoded gets it when its encode finishes.
+    """
+    def failed(job_id: str) -> bool:
+        job = job_of(job_id)
+        return job is None or job.state is JobState.FAILED
+
+    own = next((slot for slot in placing.slots if slot.ruid == ruid), None)
+    tag = find_tag(client, ruid)
+    if tag is None:
+        return UNKNOWN, None
+    if tag.assigned:
+        return (ASSIGNED, own) if own is not None else (TAKEN, None)
+
+    slot, settled = placing.reserve(ruid, failed)
+    if slot is None:
+        return COMPLETE, None
+    if not settled:
+        return RESERVED, slot
+    job = job_of(slot.job_id)
+    if job is None or not job.done.wait(30) or not isinstance(job.result, Outcome):
+        return RESERVED, slot
+    if put_on_sticker(client, data_dir, ruid, job.result):
+        return ASSIGNED, slot
+    return FAILED, slot
