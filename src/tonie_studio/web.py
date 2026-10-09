@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from typing import Callable, Optional
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .boxstate import BoxWatcher
@@ -24,7 +25,7 @@ from .jobs import JobRunner
 from .listening import ListeningLog
 from .models import ModelCache
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
-from .pages.common import TEMPLATES, Catalogue, Context, language_context
+from .pages.common import STATIC, TEMPLATES, Catalogue, Context, page_context
 from .pages.upkeep import clear_parked_restores
 from .podcast import Fetch, PodcastUpdater, download
 from .settings import Settings
@@ -41,7 +42,7 @@ def create_app(
     fetch: Fetch = download,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
-    templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[language_context])
+    templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)
     listening = ListeningLog(settings.data_dir)
@@ -77,6 +78,7 @@ def create_app(
             stop_podcasts.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
+    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     app.state.settings = settings
     app.state.catalogue = catalogue
     app.state.jobs = jobs

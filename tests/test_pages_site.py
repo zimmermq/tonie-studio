@@ -186,14 +186,31 @@ class TestNavigation:
 class TestOneBoxPoller:
     def test_every_page_asks_about_the_box_in_one_place_only(self, client, runner, teddycloud):
         # The pages that follow the box listen for the "box" event the shared
-        # poller sends; a second loop of their own doubles the requests.
+        # script sends; a second loop of their own doubles the requests.
         job, _page = encode_and_assign_page(client, runner)
-        pages = ["/", "/tonies", f"/job/{job.id}/assign", "/sheet", "/listening"]
+        shared = client.get(_script_of(client.get("/").text)).text
 
-        for path in pages:
+        assert shared.count("fetch('/api/box')") == 1 and "new CustomEvent('box'" in shared
+        for path in ["/", "/tonies", f"/job/{job.id}/assign", "/sheet", "/listening"]:
             page = client.get(path).text
-            assert page.count("fetch('/api/box')") == 1, path
-            assert "new CustomEvent('box'" in page, path
+            assert "fetch('/api/box')" not in page, path
+            assert _script_of(page).startswith("/static/app.js?v="), path
+
+
+def _script_of(page):
+    start = page.index('<script src="') + len('<script src="')
+    return page[start:page.index('"', start)]
+
+
+class TestSharedFiles:
+    def test_are_served_and_named_after_their_content(self, client):
+        page = client.get("/").text
+
+        for name in ("app.css", "app.js"):
+            start = page.index(f"/static/{name}?v=")
+            url = page[start:page.index('"', start)]
+            assert client.get(url).status_code == 200
+            assert len(url.rsplit("=", 1)[1]) == 12
 
 
 class TestConfirmations:
@@ -202,7 +219,8 @@ class TestConfirmations:
     def test_one_handler_asks_for_every_form_that_wants_it(self, client):
         page = client.get("/").text
 
-        assert page.count("dataset.confirm") == 1
+        assert "dataset.confirm" not in page
+        assert client.get(_script_of(page)).text.count("dataset.confirm") == 1
 
     def test_deleting_a_model_asks_first(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

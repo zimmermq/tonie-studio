@@ -8,9 +8,11 @@ id, and the wrong one would be encoded.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Dict, List, Optional, Tuple
@@ -33,6 +35,7 @@ from ..teddycloud import TeddyCloudClient
 log = logging.getLogger(__name__)
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
+STATIC = Path(__file__).parent.parent / "static"
 
 # Which root an album id belongs to.
 ARCHIVE = "a"
@@ -155,10 +158,22 @@ def translator(request: Request) -> Translator:
                                 request.headers.get("accept-language")))
 
 
-def language_context(request: Request) -> Dict:
-    """What every page needs to speak the reader's language."""
+def page_context(request: Request) -> Dict:
+    """What every page's template needs: the reader's language and the shared files."""
     translate = translator(request)
-    return {"t": translate, "lang": translate.lang, "languages": languages()}
+    return {"t": translate, "lang": translate.lang, "languages": languages(), "asset": asset}
+
+
+@lru_cache(maxsize=None)
+def asset(name: str) -> str:
+    """The address of a file in ``static``, named after its content.
+
+    The browser may keep such a file as long as it likes: a release that
+    changes it changes the address, so an old copy is never used by mistake.
+    Read once per process; the files ship with the app.
+    """
+    digest = hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:12]
+    return f"/static/{name}?v={digest}"
 
 
 def is_audio_name(name: Optional[str]) -> bool:
