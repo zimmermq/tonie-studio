@@ -324,3 +324,28 @@ class TestStickerTakenDuringARefresh:
             refresh(cloud, subscription, tmp_path, now=NOW.replace(day=10), fetch=Meanwhile(newer()))
 
         assert cloud.tag_entries[RUID]["source"] == "lib://Andere/Folge.taf"
+
+
+class TestAnOldErrorClears:
+    def test_a_refresh_that_works_clears_the_last_error_even_with_nothing_new(self, cloud, tmp_path):
+        from tonie_studio.jobs import JobRunner
+        from tonie_studio.podcast import PodcastUpdater, add_subscription, load_subscriptions
+
+        runner = JobRunner()
+        add_subscription(tmp_path, Subscription(id="kakadu", feed="https://example.org/feed.xml",
+                                                ruid=RUID, keep=2))
+        broken = FakeWeb(b"<html>not a feed</html>")
+        working = FakeWeb()
+        web = {"now": working}
+        updater = PodcastUpdater(lambda: cloud, tmp_path, runner, lambda url, limit=None: web["now"](url, limit))
+
+        assert runner.get(updater.queue("kakadu")).done.wait(5)
+        web["now"] = broken
+        assert runner.get(updater.queue("kakadu")).done.wait(5)
+        assert load_subscriptions(tmp_path)[0].error_key
+        web["now"] = working
+        assert runner.get(updater.queue("kakadu")).done.wait(5)
+
+        assert not load_subscriptions(tmp_path)[0].error_key
+        assert not load_subscriptions(tmp_path)[0].error
+        runner.shutdown()

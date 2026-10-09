@@ -158,6 +158,6 @@
 <script type="application/json" id="backdata">{{ backs | tojson }}</script>
 {% endif %}
 
-<script type="application/json" id="page-data">{{ {"perPage": per_page, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures"), "diameterMm": diameter_mm, "backFade": back_fade} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"perPage": per_page, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures"), "diameterMm": diameter_mm, "backFade": back_fade} | tojson }}</script>
 <script src="{{ asset('sheet.js') }}"></script>
 {% endblock %}

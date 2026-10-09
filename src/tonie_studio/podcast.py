@@ -252,6 +252,9 @@ def refresh(
     _check_sticker(client, subscription)
     guids = [episode.guid for episode in chosen]
     if guids == subscription.guids and subscription.source:
+        # Nothing new, but the feed answered: whatever went wrong last time
+        # is over, and the page must stop saying it.
+        subscription.error, subscription.error_key, subscription.error_params = "", "", {}
         return False
 
     folder = data_dir / "podcasts" / subscription.id

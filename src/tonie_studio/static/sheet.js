@@ -23,7 +23,7 @@ for (const row of rows) {
 const countOf = row => +row.querySelector('input[name=counts]').value || 0;
 
 function setCount(row, value) {
-  value = Math.max(0, Math.min(99, value));
+  value = Math.max(0, Math.min(data.mostCopies, value));
   row.querySelector('input[name=counts]').value = value;
   row.querySelector('.want').checked = value > 0;
   row.querySelector('.times').classList.toggle('empty', value < 1);

@@ -299,6 +299,11 @@ class BoxWatcher:
         self._state.uid = uid.lower()
         self._state.ruid = ruid
         self._state.on_box = True
+        # A sticker teddyCloud knows lies on the box now, so the unknown one
+        # read before it is not there any more; reporting it on would hide
+        # this one from a page that asks about unknown stickers first.
+        self._state.unknown_ruid = None
+        self._state.unknown_since = None
 
     def _raw(self, data: str, arrival: datetime) -> None:
         """The box's own clock, and the only place a removal shows up."""

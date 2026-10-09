@@ -26,6 +26,9 @@ from .common import Context, Refused, is_image_name, translator
 
 log = logging.getLogger(__name__)
 
+# The most copies of one motif the sheet page lets a person ask for.
+MOST_COPIES = 99
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -45,6 +48,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         return templates.TemplateResponse(request, "sheet.html", {
             "models": models,
             "per_page": PER_PAGE,
+            "most_copies": MOST_COPIES,
             "fill": FILL,
             "fit": FIT,
             "preset": set(model),
@@ -130,7 +134,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         times = playing_times(settings.data_dir)
 
         for position, model in enumerate(models):
-            count = counts[position] if position < len(counts) else 0
+            # As the page allows it: a count is a number of copies a person
+            # asks for, and each copy is a picture held in memory.
+            count = max(0, min(MOST_COPIES, counts[position])) if position < len(counts) else 0
             if count < 1:
                 continue
             picture = _model_picture(connection, model)
@@ -159,7 +165,11 @@ def register(app: FastAPI, ctx: Context) -> None:
 
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         target = settings.data_dir / f"sheet-{uuid.uuid4().hex[:8]}.pdf"
-        skipped = build_sheet(stickers, target, read_shift(settings.data_dir))
+        try:
+            skipped = build_sheet(stickers, target, read_shift(settings.data_dir))
+        except ValueError as error:
+            # Every picture asked for was unreadable, so there is nothing to print.
+            raise Refused(400, "error.nothing_to_print") from error
         if skipped:
             log.warning("left off the sheet: %s", ", ".join(skipped))
 

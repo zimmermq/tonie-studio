@@ -700,3 +700,12 @@ class TestAssignNeverPicksAnOccupiedSticker:
         radio = radio[:radio.index(">")]
 
         assert "data-confirm=" in radio
+
+
+class TestCoverIndexOutOfRange:
+    def test_a_negative_index_is_no_cover(self, client):
+        identifier = first_album_id(client)
+
+        assert client.get(f"/album/{identifier}/cover", params={"index": -1}).status_code == 404
+        assert client.get(f"/album/{identifier}/cover", params={"index": -5}).status_code == 404
+        assert client.get(f"/album/{identifier}/crop", params={"index": -5}).status_code == 404

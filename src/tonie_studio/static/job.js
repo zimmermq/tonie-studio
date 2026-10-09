@@ -11,28 +11,29 @@ const message = document.getElementById('message');
 
 // The encode counts in seconds of audio, the uploads in files. Showing
 // "encode 312/4917" would be true and useless.
-function describe(data) {
-  if (!data.step) return words['job.preparing'];
-  if (data.step === 'upload') return say(words['job.uploaded'], {done: data.done, count: data.total});
-  if (data.step === 'encode') {
+function describe(job) {
+  if (!job.step) return words['job.preparing'];
+  if (job.step === 'upload') return say(words['job.uploaded'], {done: job.done, count: job.total});
+  if (job.step === 'encode') {
     const mins = value => Math.round(value / 60);
-    return data.total > 90
-      ? say(words['job.encoded_minutes'], {done: mins(data.done), count: mins(data.total)})
+    return job.total > 90
+      ? say(words['job.encoded_minutes'], {done: mins(job.done), count: mins(job.total)})
       : words['job.encoding'];
   }
-  return `${data.step} ${data.done}/${data.total}`;
+  return `${job.step} ${job.done}/${job.total}`;
 }
 
-function show(data) {
-  state.textContent = words[`job.state.${data.state}`] || data.state;
-  fill.style.width = (data.percent ?? 0) + '%';
-  detail.textContent = describe(data);
+// ``job`` is the answer of /api/job; ``data`` stays the page's own.
+function show(job) {
+  state.textContent = words[`job.state.${job.state}`] || job.state;
+  fill.style.width = (job.percent ?? 0) + '%';
+  detail.textContent = describe(job);
 
-  if (data.state === 'done' || data.state === 'failed') {
+  if (job.state === 'done' || job.state === 'failed') {
     outcome.hidden = false;
-    document.getElementById('next').hidden = data.state !== 'done';
-    message.textContent = data.error || words[data.doneKey];
-    message.className = data.state === 'failed' ? 'state-failed' : 'state-done';
+    document.getElementById('next').hidden = job.state !== 'done';
+    message.textContent = job.error || words[data.doneKey];
+    message.className = job.state === 'failed' ? 'state-failed' : 'state-done';
     return false;
   }
   return true;

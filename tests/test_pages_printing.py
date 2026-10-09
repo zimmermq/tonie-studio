@@ -296,3 +296,26 @@ class TestPrintedLanguage:
         assert _back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
         assert _back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"
         assert _back_of(model, 1500, Translator("en")).language == "en"
+
+
+class TestSheetRefusesWhatItCannotPrint:
+    def test_only_pictures_it_cannot_read_is_refused_not_a_crash(self, client):
+        response = client.post("/sheet", files=[("files", ("x.png", b"not an image", "image/png"))])
+
+        assert response.status_code == 400
+
+    def test_a_count_beyond_a_sheet_full_is_held_to_what_a_person_can_ask_for(
+            self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        model = teddycloud.custom_tonies()[0]["model"]
+        asked = []
+
+        def instead(stickers, target, shift=(0.0, 0.0)):
+            asked.extend(sticker.count for sticker in stickers)
+            target.write_bytes(b"%PDF")
+            return []
+
+        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+            client.post("/sheet", data={"models": [model], "counts": ["100000000"]})
+
+        assert asked and max(asked) <= 99

@@ -108,7 +108,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         of JPEG to draw pictures the size of a stamp.
         """
         candidates = cover_candidates(catalogue.resolve(identifier))
-        if index >= len(candidates):
+        if not 0 <= index < len(candidates):
             raise Refused(404, "error.no_cover")
 
         path = candidates[index]
@@ -183,7 +183,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                      x: float = 0.0, y: float = 0.0, size: int = 256):
         """The cover as the round sticker will cut it."""
         candidates = cover_candidates(catalogue.resolve(identifier))
-        if index >= len(candidates):
+        if not 0 <= index < len(candidates):
             raise Refused(404, "error.no_cover")
         rendered = crop(candidates[index], zoom, x, y, max(32, min(size, 800)))
         if rendered is None:

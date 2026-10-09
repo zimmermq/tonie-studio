@@ -38,10 +38,12 @@ jobs:
           echo "All tests passed"
 
       # The pages' scripts run only in a browser, which no test above starts;
-      # this at least refuses a release whose JavaScript does not parse.
-      - name: Check the JavaScript parses
+      # this refuses a release whose JavaScript does not parse, and runs the
+      # few page scripts that have tests of their own against a stand-in page.
+      - name: Check the JavaScript parses and its page tests pass
         run: |
           for script in src/tonie_studio/static/*.js; do node --check "$script"; done
+          for test in tests/js/*.test.mjs; do node "$test"; done
 
   # Validate the image builds on every push to main (no push to registry).
   build-validation:

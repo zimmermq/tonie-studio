@@ -340,3 +340,17 @@ class TestRealBox:
         _replay(watcher, clock)
 
         assert watcher.state.on_box is False
+
+
+class TestAStickerPlacedAfterAnUnknownOne:
+    def test_a_known_sticker_placed_next_is_no_longer_hidden_by_the_unknown_one(self):
+        # The placing page asks about an unknown sticker first; once a known
+        # one lies on the box, the unknown one is not on it any more.
+        watcher = BoxWatcher("http://teddycloud.test")
+        watcher.handle("TagInvalid", "E00403500EEDFFFF")
+        assert watcher.state.fresh_unknown is not None
+
+        watcher.handle("TagValid", "E00403500EEDC9A9")
+
+        assert watcher.state.fresh_unknown is None
+        assert watcher.state.ruid == "a9c9ed0e500304e0"

@@ -34,3 +34,29 @@ class TestCoverZoom:
 
         assert "+zoom.min" in script and "+zoom.max" in script
         assert "2.5" not in script
+
+
+def _node():
+    import os
+    import shutil
+
+    found = os.environ.get("NODE") or shutil.which("node")
+    if found:
+        return found
+    candidates = sorted(Path.home().glob(".nvm/versions/node/*/bin/node"))
+    return str(candidates[-1]) if candidates else None
+
+
+class TestPageScriptsRun:
+    def test_every_page_script_test_passes(self):
+        # CI runs these directly; here they run whenever a node is at hand.
+        import subprocess
+
+        import pytest
+
+        node = _node()
+        if node is None:
+            pytest.skip("no node to run the page script tests with")
+        for test in sorted((Path(__file__).resolve().parent / "js").glob("*.test.mjs")):
+            result = subprocess.run([node, str(test)], capture_output=True, text=True, timeout=60)
+            assert result.returncode == 0, (test.name, result.stderr[-2000:])
