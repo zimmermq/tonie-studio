@@ -26,7 +26,10 @@
     </span>
     {% endif %}
     <form method="post" action="/library/delete"
-          {% if used_by %}data-used="{{ used_by | map(attribute='label') | join(', ') }}"{% endif %}>
+          {#- Deleting a taf a sticker plays leaves that tonie silent. Sometimes
+              that is the intent - replacing the audio underneath - so it asks
+              rather than refuses. #}
+          {% if used_by %}data-confirm="{{ t('library.confirm_used', used=used_by | map(attribute='label') | join(', ')) }}"{% endif %}>
       <input type="hidden" name="path" value="{{ taf.path }}">
       <button type="submit" class="small">{{ t("common.delete") }}</button>
     </form>
@@ -38,15 +41,4 @@
 
 <p><a class="button" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 
-<script>
-  // Deleting a taf a tag points at leaves that tonie silent. Sometimes that is
-  // the intent - replacing the audio underneath - so it asks rather than refuses.
-  const words = {{ t.strings("library.confirm_used") | tojson }};
-  for (const form of document.querySelectorAll('form[data-used]')) {
-    form.addEventListener('submit', event => {
-      const message = say(words['library.confirm_used'], {used: form.dataset.used});
-      if (!window.confirm(message)) event.preventDefault();
-    });
-  }
-</script>
 {% endblock %}

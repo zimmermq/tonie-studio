@@ -435,6 +435,7 @@
  "tag.free_uid": "free - {uid}",
  "tag.replaced": "{label} (will be replaced)",
  "tonie.audio_on_tag": "- the audio belongs to the sticker, not the model.",
+ "tonie.confirm_delete": "Delete model {model}? The sticker keeps playing but loses its cover and track names.",
  "tonie.copy": "Copy onto it",
  "tonie.copy_hint": "A second sticker that plays the same: for the grandparents, or to replace a lost one. It gets the same audio and the same name; nothing is encoded again. A new sticker only shows up here once the box has read it.",
  "tonie.copy_onto_itself": "A sticker cannot be copied onto itself.",

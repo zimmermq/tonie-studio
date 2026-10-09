@@ -4,7 +4,7 @@ and startup."""
 
 import pytest
 from fastapi.testclient import TestClient
-from web_helpers import encode_and_assign_page, eventually, first_album_id
+from web_helpers import encode_and_assign_page, eventually, first_album_id, publish_album
 
 from tonie_studio.teddycloud import TeddyCloudError
 from tonie_studio.web import create_app
@@ -194,3 +194,28 @@ class TestOneBoxPoller:
             page = client.get(path).text
             assert page.count("fetch('/api/box')") == 1, path
             assert "new CustomEvent('box'" in page, path
+
+
+class TestConfirmations:
+    """Every action that cannot be taken back asks first, the same way everywhere."""
+
+    def test_one_handler_asks_for_every_form_that_wants_it(self, client):
+        page = client.get("/").text
+
+        assert page.count("dataset.confirm") == 1
+
+    def test_deleting_a_model_asks_first(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        ruid = next(ruid for ruid, entry in teddycloud.tag_entries.items() if entry["source"])
+
+        page = client.get(f"/tonies/{ruid}").text
+        form = page[page.index(f'action="/tonies/{ruid}/delete"') - 200:page.index(f'action="/tonies/{ruid}/delete"') + 200]
+
+        assert "data-confirm=" in form
+
+    def test_deleting_a_taf_a_sticker_plays_says_which_one(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/library").text
+
+        assert 'data-confirm="Dieses Taf wird gespielt von:' in page

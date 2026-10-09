@@ -41,7 +41,9 @@
     </span>
     {% if finding.fix %}
     <form method="post" action="/checkup/fix"
-          {% if finding.fix.startswith("delete") %}data-confirm="{{ preview }}"{% endif %}>
+          {#- A repair is shown before it runs; a deletion also asks, because it
+              cannot be taken back. #}
+          {% if finding.fix.startswith("delete") %}data-confirm="{{ preview }}&#10;&#10;{{ t('checkup.really') }}"{% endif %}>
       <input type="hidden" name="fix" value="{{ finding.fix }}">
       <input type="hidden" name="target" value="{{ finding.target }}">
       <button type="submit" class="small">
@@ -55,14 +57,4 @@
 {% endif %}
 {% endfor %}
 
-<script>
-  // A repair is shown before it runs; a deletion also asks, because it cannot
-  // be taken back.
-  const words = {{ t.strings("checkup.really") | tojson }};
-  for (const form of document.querySelectorAll('form[data-confirm]')) {
-    form.addEventListener('submit', event => {
-      if (!window.confirm(`${form.dataset.confirm}\n\n${words['checkup.really']}`)) event.preventDefault();
-    });
-  }
-</script>
 {% endblock %}

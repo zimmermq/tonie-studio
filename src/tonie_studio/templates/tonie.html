@@ -57,7 +57,8 @@
   <p class="muted mt-0">
     {{ t("tonie.remove_hint") }} <strong>{{ t("tonie.keeps_playing") }}</strong> {{ t("tonie.audio_on_tag") }}
   </p>
-  <form method="post" action="/tonies/{{ tag.ruid }}/delete">
+  <form method="post" action="/tonies/{{ tag.ruid }}/delete"
+        data-confirm="{{ t('tonie.confirm_delete', model=model.id) }}">
     <button type="submit">{{ t("tonie.delete_model", model=model.id) }}</button>
   </form>
 </div>

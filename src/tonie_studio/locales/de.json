@@ -435,6 +435,7 @@
  "tag.free_uid": "frei - {uid}",
  "tag.replaced": "{label} (wird überschrieben)",
  "tonie.audio_on_tag": "- das Audio hängt am Sticker, nicht am Modell.",
+ "tonie.confirm_delete": "Modell {model} löschen? Der Sticker spielt weiter, verliert aber Cover und Tracknamen.",
  "tonie.copy": "Bespielen",
  "tonie.copy_hint": "Ein zweiter Sticker, der dasselbe spielt: für die Großeltern, oder als Ersatz für einen verlorenen. Er bekommt dasselbe Audio und denselben Namen, nichts wird neu encodiert. Ein neuer Sticker taucht hier erst auf, wenn die Box ihn einmal gelesen hat.",
  "tonie.copy_onto_itself": "Ein Sticker lässt sich nicht auf sich selbst kopieren.",

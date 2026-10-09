@@ -383,6 +383,13 @@
   </span>
 </header>
 <script>
+  // A form that cannot be taken back carries its question in data-confirm,
+  // already in the reader's language; it is sent only once that is answered.
+  document.addEventListener('submit', event => {
+    const question = event.target.dataset.confirm;
+    if (question && !window.confirm(question)) event.preventDefault();
+  });
+
   // One menu open at a time, and a click anywhere else closes it: a details
   // element on its own stays open until its own summary is clicked again.
   document.addEventListener('click', event => {
