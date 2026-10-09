@@ -1,9 +1,82 @@
-"""Put the package on the import path so plain `pytest` works.
+"""The package on the import path, and the fixtures the page tests share.
 
-CI sets PYTHONPATH=src; this keeps a bare local run working too.
+CI sets PYTHONPATH=src; putting src on the path here keeps a bare local run
+working too. The imports below it need that path, so they come after it.
 """
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from unittest.mock import patch  # noqa: E402
+
+import pytest  # noqa: E402
+from fake_teddycloud import FakeTeddyCloud  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from web_helpers import write_jpeg  # noqa: E402
+
+from tonie_studio.album import TrackTags  # noqa: E402
+from tonie_studio.boxstate import BoxWatcher  # noqa: E402
+from tonie_studio.jobs import JobRunner  # noqa: E402
+from tonie_studio.settings import Settings  # noqa: E402
+from tonie_studio.web import create_app  # noqa: E402
+
+
+@pytest.fixture
+def tags():
+    """No tags anywhere; names come from the file names."""
+    with patch("tonie_studio.album._read_tags", return_value=TrackTags()):
+        yield
+
+
+@pytest.fixture
+def archive(tmp_path):
+    folder = tmp_path / "archive" / "Lichterkinder-Halloween-WEB-FLAC-2023-WALKMAN"
+    folder.mkdir(parents=True)
+    for index, name in enumerate(["01-kleine_monster.flac", "02-suesses.flac", "03-geister.flac"], 1):
+        (folder / name).write_bytes(bytes([index]) * 8)
+    # A real image: the cover is cropped and rendered on its way to a sticker,
+    # so a three byte stand-in would only prove that nothing reads it.
+    write_jpeg(folder / "cover.jpg")
+    return tmp_path / "archive"
+
+
+@pytest.fixture
+def settings(tmp_path, archive):
+    return Settings(
+        teddycloud_url="http://teddycloud.test",
+        archive_dir=archive,
+        data_dir=tmp_path / "data",
+    )
+
+
+@pytest.fixture
+def teddycloud():
+    cloud = FakeTeddyCloud()
+    # Two tags the box has already read; nothing is assigned yet.
+    cloud.add_tag("7ab4ed0e500304e0")
+    cloud.add_tag("deb4ed0e500304e0")
+    return cloud
+
+
+@pytest.fixture
+def runner():
+    runner = JobRunner()
+    yield runner
+    runner.shutdown()
+
+
+@pytest.fixture
+def box():
+    """A watcher that never opens a connection; tests feed it events."""
+    watcher = BoxWatcher("http://teddycloud.test")
+    watcher.start = lambda: None
+    return watcher
+
+
+@pytest.fixture
+def client(settings, teddycloud, runner, tags, box):
+    app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
+    with TestClient(app) as client:
+        yield client
