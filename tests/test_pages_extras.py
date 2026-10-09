@@ -1,5 +1,6 @@
 """Tests for the pages of the listening log and the podcasts."""
 
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,6 +68,25 @@ class TestPodcastPages:
                          watcher=box, fetch=web)
         with TestClient(app) as client:
             yield client
+
+    def test_subscribing_notes_what_the_sticker_played(self, podcasts, runner, teddycloud,
+                                                       settings):
+        from tonie_studio.podcast import load_subscriptions
+
+        teddycloud.tag_entries["deb4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+        with patch.object(runner, "submit", return_value="held"):
+            podcasts.post("/podcasts", data={"feed": "https://example.org/feed.xml",
+                                             "ruid": "deb4ed0e500304e0", "keep": "2"},
+                          follow_redirects=False)
+
+        assert load_subscriptions(settings.data_dir)[0].played_before == "lib://Andere/Folge.taf"
+
+    def test_a_sticker_that_plays_something_asks_first(self, podcasts, teddycloud):
+        teddycloud.tag_entries["deb4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+
+        page = podcasts.get("/podcasts").text
+
+        assert page.count("data-confirm=") == 1
 
     def test_subscribing_puts_the_episodes_on_the_sticker(self, podcasts, runner, teddycloud):
         response = podcasts.post("/podcasts", data={

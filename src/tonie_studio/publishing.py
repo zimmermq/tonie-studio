@@ -19,7 +19,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .album import Track
 from .albumnotes import remember_made
-from .batch import Placing, Slot
+from .batch import Placing, PlayedOn, Slot
 from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .jobs import Job, JobState
 from .models import DEFAULT_CATEGORY
@@ -186,6 +186,24 @@ FAILED = "failed"        # it could not be written
 PLACE_RESULTS = (UNKNOWN, TAKEN, RESERVED, ASSIGNED, COMPLETE, FAILED)
 
 
+def job_states(job_of: Callable[[str], Optional[Job]]
+               ) -> Tuple[Callable[[str], bool], PlayedOn]:
+    """How a batch's encodes stand, as ``Placing`` asks: which failed, and where each plays.
+
+    An encode that is gone counts as failed: nothing can be put on a sticker from it.
+    """
+    def failed(job_id: str) -> bool:
+        job = job_of(job_id)
+        return job is None or job.state is JobState.FAILED
+
+    def played_on(job_id: str) -> Optional[str]:
+        job = job_of(job_id)
+        outcome = job.result if job is not None else None
+        return outcome.ruid if isinstance(outcome, Outcome) and outcome.model else None
+
+    return failed, played_on
+
+
 def place(client: TeddyCloudClient, data_dir: Path, placing: Placing, ruid: str,
           job_of: Callable[[str], Optional[Job]]) -> Tuple[str, Optional[Slot]]:
     """Give the sticker lying on the box to the next episode of a batch.
@@ -196,10 +214,7 @@ def place(client: TeddyCloudClient, data_dir: Path, placing: Placing, ruid: str,
     episode already encoded is put on its sticker at once; one still being
     encoded gets it when its encode finishes.
     """
-    def failed(job_id: str) -> bool:
-        job = job_of(job_id)
-        return job is None or job.state is JobState.FAILED
-
+    failed, played_on = job_states(job_of)
     own = next((slot for slot in placing.slots if slot.ruid == ruid), None)
     tag = find_tag(client, ruid)
     if tag is None:
@@ -207,7 +222,7 @@ def place(client: TeddyCloudClient, data_dir: Path, placing: Placing, ruid: str,
     if tag.assigned:
         return (ASSIGNED, own) if own is not None else (TAKEN, None)
 
-    slot, settled = placing.reserve(ruid, failed)
+    slot, settled = placing.reserve(ruid, failed, played_on)
     if slot is None:
         return COMPLETE, None
     if not settled:

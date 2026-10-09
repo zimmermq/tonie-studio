@@ -95,7 +95,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/restore", response_class=HTMLResponse)
-    async def restore_preview(request: Request, file: UploadFile = File(...)):
+    def restore_preview(request: Request, file: UploadFile = File(...)):
         """Show what a restore would do. Nothing is written until confirmed.
 
         The upload is parked on the volume under a random name, so the
@@ -103,7 +103,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         # Read at most one byte past the limit: enough to know it is too big
         # without holding all of it.
-        data = await file.read(LARGEST_BACKUP + 1)
+        data = file.file.read(LARGEST_BACKUP + 1)
         try:
             backup = read_backup(data)
         except BackupError as error:

@@ -293,3 +293,12 @@ class TestCoverRouteServesPicturesOnly:
 
         assert response.headers["content-type"] == "image/jpeg"
         assert response.headers["x-content-type-options"] == "nosniff"
+
+
+class TestRadioAsksBeforeReplacing:
+    def test_only_a_sticker_that_plays_something_asks_first(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+
+        page = client.get("/radio").text
+
+        assert page.count("data-confirm=") == 1

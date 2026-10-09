@@ -104,11 +104,13 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "error.feed_unreadable", detail=error) from error
         if not parsed.episodes:
             raise Refused(400, "feed.no_audio")
-        if find_tag(client(), ruid) is None:
+        tag = find_tag(client(), ruid)
+        if tag is None:
             raise Refused(400, "error.no_tag")
 
         subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
-                                    keep=max(1, min(keep, 20)), title=parsed.title)
+                                    keep=max(1, min(keep, 20)), title=parsed.title,
+                                    played_before=tag.source or "")
         add_subscription(settings.data_dir, subscription)
         job_id = podcasts.queue(subscription.id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)

@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from ..i18n import Translator
 from ..jobs import Job, JobRunner, JobState
 from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
-from ..publishing import Outcome, publish_outcome
+from ..publishing import Outcome, job_states, publish_outcome
 from ..tags import TonieError, list_tags
 from .common import Context, Refused, translator
 
@@ -52,7 +52,8 @@ def register(app: FastAPI, ctx: Context) -> None:
                           else "batch.progress_intro" if batch else "parts.intro"),
             "placing": by_hand,
             "group": group,
-            "next_episode": found.placing.next_episode() if found.placing else "",
+            "next_episode": (found.placing.next_episode(job_states(jobs.get)[1])
+                             if found.placing else ""),
         })
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)

@@ -63,6 +63,14 @@ class Slot:
     settled: bool = False
 
 
+# The sticker a batch encode was published on, by job id; None while it has none.
+PlayedOn = Callable[[str], Optional[str]]
+
+
+def _nowhere(_job_id: str) -> Optional[str]:
+    return None
+
+
 class Placing:
     """Hands the stickers put on the box to a batch's encodes, in order.
 
@@ -86,24 +94,28 @@ class Placing:
         with self.lock:
             self.slots.append(slot)
 
-    def reserve(self, ruid: str, failed: Callable[[str], bool]) -> Tuple[Optional[Slot], bool]:
+    def reserve(self, ruid: str, failed: Callable[[str], bool],
+                played_on: PlayedOn = _nowhere) -> Tuple[Optional[Slot], bool]:
         """Give ``ruid`` to the next encode without a sticker.
 
         Returns the slot and whether it was already settled, in which case
         the caller publishes at once. A sticker already reserved here comes
-        back as its own slot, not as a second episode; a slot whose encode
-        failed gives its sticker up and is passed over.
+        back as its own slot, not as a second episode. ``played_on`` names the
+        sticker an encode was published on, if any: an encode that failed, or
+        that went on another sticker by hand, gives its reservation up and is
+        passed over.
         """
         with self.lock:
             for slot in self.slots:
-                if slot.ruid == ruid and not failed(slot.job_id):
+                if slot.ruid is not None and _given_up(slot, failed, played_on):
+                    slot.ruid = None
+            for slot in self.slots:
+                if slot.ruid == ruid:
                     return slot, False
             for slot in self.slots:
-                if slot.ruid is None and not failed(slot.job_id):
+                if _open(slot, failed, played_on):
                     slot.ruid = ruid
                     return slot, slot.settled
-                if slot.ruid is not None and failed(slot.job_id):
-                    slot.ruid = None
             return None, False
 
     def settle(self, job_id: str) -> Optional[str]:
@@ -115,13 +127,26 @@ class Placing:
                     return slot.ruid
         return None
 
-    def next_episode(self) -> str:
+    def next_episode(self, played_on: PlayedOn = _nowhere) -> str:
         """The episode the next sticker put on the box will get, for the page."""
-        waiting = self.waiting(lambda job_id: False)
+        waiting = self.waiting(lambda job_id: False, played_on)
         return waiting.episode if waiting else ""
 
-    def waiting(self, failed: Callable[[str], bool]) -> Optional[Slot]:
+    def waiting(self, failed: Callable[[str], bool],
+                played_on: PlayedOn = _nowhere) -> Optional[Slot]:
         """The next encode still without a sticker."""
         with self.lock:
-            return next((slot for slot in self.slots
-                         if slot.ruid is None and not failed(slot.job_id)), None)
+            return next((slot for slot in self.slots if _open(slot, failed, played_on)), None)
+
+
+def _given_up(slot: Slot, failed: Callable[[str], bool], played_on: PlayedOn) -> bool:
+    """Whether a slot no longer needs the sticker reserved for it."""
+    if failed(slot.job_id):
+        return True
+    published = played_on(slot.job_id)
+    return published is not None and published != slot.ruid
+
+
+def _open(slot: Slot, failed: Callable[[str], bool], played_on: PlayedOn) -> bool:
+    """Whether a slot still waits for a sticker."""
+    return slot.ruid is None and not failed(slot.job_id) and played_on(slot.job_id) is None

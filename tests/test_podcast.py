@@ -326,6 +326,30 @@ class TestStickerTakenDuringARefresh:
         assert cloud.tag_entries[RUID]["source"] == "lib://Andere/Folge.taf"
 
 
+class TestTheFirstRefresh:
+    """Between subscribing and the first refresh the sticker can be given something else."""
+
+    def test_a_sticker_given_an_album_since_subscribing_is_left_alone(self, cloud, tmp_path):
+        subscription = Subscription(id="kakadu", feed="https://example.org/feed.xml", ruid=RUID,
+                                    keep=2, played_before="")
+        cloud.tag_entries[RUID]["source"] = "lib://Lichterkinder/Schlaflieder.taf"
+
+        with pytest.raises(FeedError) as caught:
+            refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
+
+        assert caught.value.key == "feed.sticker_reused"
+        assert cloud.tag_entries[RUID]["source"] == "lib://Lichterkinder/Schlaflieder.taf"
+
+    def test_a_sticker_chosen_while_it_played_something_is_taken_as_chosen(self, cloud, tmp_path):
+        cloud.tag_entries[RUID]["source"] = "lib://Lichterkinder/Schlaflieder.taf"
+        subscription = Subscription(id="kakadu", feed="https://example.org/feed.xml", ruid=RUID,
+                                    keep=2, played_before="lib://Lichterkinder/Schlaflieder.taf")
+
+        refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
+
+        assert cloud.tag_entries[RUID]["source"].startswith("lib://Podcasts/")
+
+
 class TestAnOldErrorClears:
     def test_a_refresh_that_works_clears_the_last_error_even_with_nothing_new(self, cloud, tmp_path):
         from tonie_studio.jobs import JobRunner

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Sequence
@@ -13,7 +14,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
-from ..album import Album, album_id, cover_candidates, read_album
+from ..album import Album, Track, album_id, cover_candidates, read_album
 from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
 from ..encode import taf_exists
@@ -25,6 +26,10 @@ from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from .common import UPLOAD, Context, Refused, is_audio_name, is_image_name, refused
 
 log = logging.getLogger(__name__)
+
+# Joins the occupied tafs in the value of the page's replace button. No library
+# path holds a newline, so the list comes back apart unchanged.
+REPLACE_SEPARATOR = "\n"
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -53,7 +58,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/upload")
-    async def upload(files: List[UploadFile]):
+    def upload(files: List[UploadFile]):
         """Spool a browser upload into its own folder, then treat it as an album.
 
         A picked folder that holds one folder per episode arrives as one
@@ -83,21 +88,22 @@ def register(app: FastAPI, ctx: Context) -> None:
                                 303)
 
 
-    def _album_page(request: Request, identifier: str, album: Album, conflict: str = "",
-                    replace_value: str = ""):
+    def _album_page(request: Request, identifier: str, album: Album, form: AlbumForm,
+                    occupied: Sequence[str] = ()):
         return templates.TemplateResponse(request, "album.html", {
             "id": identifier,
             "album": album,
-            "suggested_target": _suggest_target(album),
-            "conflict": conflict,
-            "replace_value": replace_value or conflict,
+            "form": form,
+            "conflict": ", ".join(occupied),
+            "replace_value": REPLACE_SEPARATOR.join(occupied),
             "most_chapters": MOST_CHAPTERS,
         })
 
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str):
-        return _album_page(request, identifier, read_album(catalogue.resolve(identifier)))
+        album = read_album(catalogue.resolve(identifier))
+        return _album_page(request, identifier, album, AlbumForm.defaults(album))
 
 
     @app.get("/album/{identifier}/cover")
@@ -150,11 +156,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         # to answer on the form, not a failure minutes later on a progress page.
         connection = client()
         occupied = [target for target in targets if taf_exists(connection, target)]
-        everything = "*"
-        overwrite = (replace == everything) or (len(targets) == 1 and replace == targets[0])
-        if occupied and not overwrite:
-            return _album_page(request, identifier, album, conflict=", ".join(occupied),
-                               replace_value=targets[0] if len(targets) == 1 else everything)
+        # Replacing is only ever the answer to the page that named these very
+        # tafs. A form changed since then names others and is asked again.
+        if occupied and replace.split(REPLACE_SEPARATOR) != occupied:
+            entered = AlbumForm.submitted(album, series, episode, order, selected, titles,
+                                          parts, cover_index, cover_zoom, cover_x, cover_y)
+            return _album_page(request, identifier, album, entered, occupied)
 
         # The cover is decided here, on the page that shows the album, and
         # carried to the model step as the picture it will actually be: a
@@ -243,8 +250,62 @@ def _base_name(name: Optional[str]) -> str:
     return "" if base in (".", "..") else base
 
 
-def _suggest_target(album: Album) -> Dict[str, str]:
-    """What to prefill the series and episode fields with."""
-    return {"series": album.artist or "", "episode": album.title}
+@dataclass
+class TrackRow:
+    """One row of the album page's track list."""
+
+    track: Track
+    title: str
+    checked: bool
+
+
+@dataclass
+class AlbumForm:
+    """What the album page's form shows: the album's suggestion, or what was sent."""
+
+    series: str
+    episode: str
+    rows: List[TrackRow]
+    parts: int = 1
+    cover_index: int = 0
+    cover_zoom: float = 1.0
+    cover_x: float = 0.0
+    cover_y: float = 0.0
+
+    @property
+    def order(self) -> str:
+        return ",".join(str(row.track.number) for row in self.rows)
+
+    @classmethod
+    def defaults(cls, album: Album) -> "AlbumForm":
+        """Artist as series, title as episode, every track but the karaoke takes."""
+        return cls(series=album.artist or "", episode=album.title,
+                   rows=[TrackRow(track, track.title, not track.extra) for track in album.tracks])
+
+    @classmethod
+    def submitted(cls, album: Album, series: str, episode: str, order: str,
+                  selected: Sequence[int], titles: Sequence[str], parts: int,
+                  cover_index: int, cover_zoom: float, cover_x: float,
+                  cover_y: float) -> "AlbumForm":
+        """The form as it was sent, read the way ``chosen_tracks`` reads it.
+
+        A track the order leaves out keeps its place at the end, unticked, so
+        no row of the album disappears from the page.
+        """
+        by_number = {track.number: track for track in album.tracks}
+        keep = set(selected)
+        rows, seen = [], set()
+        for position, part in enumerate(order.split(",")):
+            number = int(part) if part.strip().isdigit() else None
+            if number not in by_number or number in seen:
+                continue
+            seen.add(number)
+            title = titles[position] if position < len(titles) else by_number[number].title
+            rows.append(TrackRow(by_number[number], title, number in keep))
+        rows += [TrackRow(track, track.title, False)
+                 for number, track in by_number.items() if number not in seen]
+        return cls(series=series, episode=episode, rows=rows, parts=parts,
+                   cover_index=cover_index, cover_zoom=cover_zoom,
+                   cover_x=cover_x, cover_y=cover_y)
 
 

@@ -106,3 +106,43 @@ class TestPlacing:
 
         assert placing.reserve("t2", never) == (None, False)
         assert placing.waiting(never) is None
+
+
+class TestPlacingAroundHandAssignment:
+    """An episode given its sticker by hand is done; placing goes on without it."""
+
+    def _placing(self, *episodes):
+        from tonie_studio.batch import Placing, Slot
+
+        return Placing([Slot(job_id=f"j{n}", episode=name) for n, name in enumerate(episodes, 1)])
+
+    def test_the_next_sticker_skips_an_episode_assigned_by_hand(self):
+        placing = self._placing("Folge 1", "Folge 2")
+        played_on = {"j1": "hand"}.get
+
+        slot, _ = placing.reserve("t1", lambda job_id: False, played_on)
+
+        assert slot.episode == "Folge 2"
+
+    def test_a_sticker_reserved_for_it_is_free_again(self):
+        placing = self._placing("Folge 1", "Folge 2")
+        never = lambda job_id: False  # noqa: E731
+        placing.reserve("t1", never)
+
+        slot, _ = placing.reserve("t1", never, {"j1": "hand"}.get)
+
+        assert slot.episode == "Folge 2"
+
+    def test_the_page_names_the_episode_still_waiting(self):
+        placing = self._placing("Folge 1", "Folge 2")
+
+        assert placing.next_episode({"j1": "hand"}.get) == "Folge 2"
+
+    def test_a_sticker_that_plays_its_own_episode_keeps_it(self):
+        placing = self._placing("Folge 1", "Folge 2")
+        never = lambda job_id: False  # noqa: E731
+        placing.reserve("t1", never)
+
+        again, _ = placing.reserve("t1", never, {"j1": "t1"}.get)
+
+        assert again.episode == "Folge 1"

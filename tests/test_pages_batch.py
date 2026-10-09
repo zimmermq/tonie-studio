@@ -291,6 +291,21 @@ class TestPlacingStickers:
 
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Serie/Folge 1.taf"
 
+    def test_an_episode_assigned_by_hand_is_not_placed_again(self, client, runner, teddycloud):
+        group = start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+        first = next(job for job in runner.all() if job.result.episode == "Folge 1")
+        client.post(f"/job/{first.id}/assign", data={
+            "ruid": "deb4ed0e500304e0", "series": "Serie", "episode": "Folge 1"},
+            follow_redirects=False)
+
+        placed = place_sticker(client, group, "7ab4ed0e500304e0")
+
+        assert placed["status"] == "assigned" and placed["episode"] == "Folge 2"
+        assert len(teddycloud.custom_tonies()) == 2
+        assert placed["next"] is None
+
     def test_the_sticker_still_on_the_box_is_not_given_a_second_episode(self, client, runner,
                                                                          teddycloud):
         group = start_placing(client, runner)

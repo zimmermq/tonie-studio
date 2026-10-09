@@ -35,17 +35,17 @@
         {{ t("album.crop_hint") }}
       </p>
       <div class="row gap-8">
-        <input type="range" name="cover_zoom" id="zoom" min="0.5" max="2.5" step="0.02" value="1"
+        <input type="range" name="cover_zoom" id="zoom" min="0.5" max="2.5" step="0.02" value="{{ form.cover_zoom }}"
                style="flex: 1" aria-label="Zoom">
         <button type="button" class="small" id="coverreset">{{ t("album.crop_reset") }}</button>
       </div>
-      <input type="hidden" name="cover_index" id="cover_index" value="0">
-      <input type="hidden" name="cover_x" id="cx" value="0">
-      <input type="hidden" name="cover_y" id="cy" value="0">
+      <input type="hidden" name="cover_index" id="cover_index" value="{{ form.cover_index }}">
+      <input type="hidden" name="cover_x" id="cx" value="{{ form.cover_x }}">
+      <input type="hidden" name="cover_y" id="cy" value="{{ form.cover_y }}">
       {% if album.cover_candidates | length > 1 %}
       <div class="row wrap gap-6 mt-8">
         {% for candidate in album.cover_candidates %}
-        <img class="pick {% if loop.first %}chosen{% endif %}" data-index="{{ loop.index0 }}"
+        <img class="pick {% if loop.index0 == form.cover_index %}chosen{% endif %}" data-index="{{ loop.index0 }}"
              src="/album/{{ id }}/cover?index={{ loop.index0 }}&size=64"
              alt="{{ candidate.name }}" title="{{ candidate.name }}">
         {% endfor %}
@@ -56,11 +56,11 @@
     <div class="grow">
       <label class="field">
         <span>{{ t("album.series") }}</span>
-        <input type="text" name="series" value="{{ suggested_target.series }}">
+        <input type="text" name="series" value="{{ form.series }}">
       </label>
       <label class="field mb-0">
         <span>{{ t("album.episode") }}</span>
-        <input type="text" name="episode" value="{{ suggested_target.episode }}" required>
+        <input type="text" name="episode" value="{{ form.episode }}" required>
       </label>
     </div>
   </div>
@@ -75,15 +75,15 @@
       {% endif %}
       <span class="muted grow" id="chosen"></span>
     </p>
-    <input type="hidden" name="order" id="order" value="{{ album.tracks | map(attribute='number') | join(',') }}">
+    <input type="hidden" name="order" id="order" value="{{ form.order }}">
     <ol class="tracks" id="tracks">
-      {% for track in album.tracks %}
+      {% for row in form.rows %}{% set track = row.track %}
       <li data-number="{{ track.number }}" data-extra="{{ 'yes' if track.extra else 'no' }}"
           data-seconds="{{ track.duration or 0 }}">
         <input type="checkbox" name="selected" value="{{ track.number }}"
-               {% if not track.extra %}checked{% endif %}>
+               {% if row.checked %}checked{% endif %}>
         <span class="muted" style="width: 2em; text-align: right">{{ loop.index }}</span>
-        <input type="text" name="titles" value="{{ track.title }}" class="grow">
+        <input type="text" name="titles" value="{{ row.title }}" class="grow">
         <button type="button" class="small" data-move="up">&uarr;</button>
         <button type="button" class="small" data-move="down">&darr;</button>
       </li>
@@ -94,7 +94,7 @@
   <div class="card row wrap gap-12 items-center" id="partsrow">
     <label class="row gap-8">
       <span>{{ t("album.parts_before") }}</span>
-      <input type="number" name="parts" id="parts" value="1" min="1" max="20" style="width: 4.5em">
+      <input type="number" name="parts" id="parts" value="{{ form.parts }}" min="1" max="20" style="width: 4.5em">
       <span>{{ t("album.parts_after") }}</span>
     </label>
     <span class="muted grow" id="partshint"></span>

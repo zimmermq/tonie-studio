@@ -82,7 +82,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/tonies/{ruid}")
-    async def edit_tonie(
+    def edit_tonie(
         request: Request,
         ruid: str,
         series: str = Form(""),
@@ -210,7 +210,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/radio")
-    async def make_radio(
+    def make_radio(
         ruid: str = Form(...),
         url: str = Form(...),
         series: str = Form(""),

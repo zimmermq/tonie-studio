@@ -45,7 +45,8 @@
       <span>{{ t("podcasts.which_sticker") }}</span>
       <select class="wide" name="ruid" required>
         {% for tag in tags %}
-        <option value="{{ tag.ruid }}">
+        <option value="{{ tag.ruid }}"
+                {% if tag.assigned %}data-confirm="{{ t('assign.confirm_replace', label=tag.label) }}"{% endif %}>
           {% if tag.assigned %}{{ t("tag.replaced", label=tag.label) }}{% else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
         </option>
         {% endfor %}

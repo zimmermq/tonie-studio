@@ -134,6 +134,49 @@ class TestOccupiedName:
         assert teddycloud.files["/Lichterkinder/Halloween.taf"] != b"older"
 
 
+class TestConflictKeepsWhatWasEntered:
+    """The page that asks about an occupied name is the form as it was sent."""
+
+    def _conflict(self, client, teddycloud, **overrides):
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files["/Lichterkinder/Mein Name.taf"] = b"older"
+        data = {"series": "Lichterkinder", "episode": "Mein Name", "order": "3,1,2",
+                "selected": ["3", "1"], "titles": ["Drei neu", "Eins neu", "Zwei neu"],
+                "cover_zoom": "1.4", "cover_x": "0.25", "cover_y": "-0.5"}
+        data.update(overrides)
+        return client.post(f"/album/{first_album_id(client)}/encode", data=data,
+                           follow_redirects=False)
+
+    def test_names_order_and_choice_survive(self, client, teddycloud):
+        page = self._conflict(client, teddycloud).text
+
+        assert 'name="episode" value="Mein Name"' in page
+        assert 'name="order" id="order" value="3,1,2"' in page
+        assert page.index('value="Drei neu"') < page.index('value="Eins neu"') \
+            < page.index('value="Zwei neu"')
+        assert page.count("checked>") == 2
+
+    def test_the_cover_crop_survives(self, client, teddycloud):
+        page = self._conflict(client, teddycloud).text
+
+        assert 'id="cx" value="0.25"' in page and 'id="cy" value="-0.5"' in page
+        assert 'step="0.02" value="1.4"' in page
+
+    def test_replace_names_exactly_the_tafs_that_were_shown(self, client, teddycloud):
+        page = self._conflict(client, teddycloud).text
+
+        assert 'name="replace" value="/Lichterkinder/Mein Name.taf"' in page
+
+    def test_an_answer_about_other_tafs_replaces_nothing(self, client, teddycloud):
+        teddycloud.files["/Lichterkinder/Halloween.taf"] = b"older too"
+
+        # A blanket "all of them" must not reach a taf the page never named.
+        response = self._conflict(client, teddycloud, episode="Halloween", replace="*")
+
+        assert response.status_code == 200
+        assert teddycloud.files["/Lichterkinder/Halloween.taf"] == b"older too"
+
+
 class TestEncoding:
     def test_encodes_the_selected_tracks_into_one_taf(self, client, teddycloud, runner):
         identifier = first_album_id(client)
@@ -607,7 +650,7 @@ class TestParts:
 
         page = self._encode(client, parts="2").text
 
-        assert 'name="replace" value="*"' in page
+        assert f'name="replace" value="{library_path("Lichterkinder", "Halloween - Teil 1 von 2")}"' in page
 
 
 class TestHomePageWithoutTeddyCloud:

@@ -12,11 +12,11 @@ from ..album import read_album
 from ..albumnotes import albums_with_tonies
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
-from ..jobs import JobState, new_id
+from ..jobs import new_id
 from ..models import list_models
 from ..planning import plan_batch
-from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, place,
-                          put_on_sticker)
+from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, job_states,
+                          place, put_on_sticker)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from ..thumbnails import DEFAULT_SIZE
@@ -135,8 +135,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(404, "error.parts_gone")
         translate = translator(request)
         status, slot = place(client(), settings.data_dir, placing, ruid, jobs.get)
-        waiting = placing.waiting(lambda job_id: jobs.get(job_id) is None
-                                  or jobs.get(job_id).state is JobState.FAILED)
+        waiting = placing.waiting(*job_states(jobs.get))
         return JSONResponse({
             "status": status,
             "message": translate(PLACE_MESSAGES[status], episode=slot.episode if slot else ""),

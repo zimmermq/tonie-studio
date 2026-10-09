@@ -124,6 +124,10 @@ class Subscription:
     title: str = ""
     model: str = ""
     source: str = ""
+    # What the sticker played when it was chosen, so the first refresh can
+    # tell a sticker given something else meanwhile from the one chosen.
+    # None in a subscription stored without it: that refresh cannot tell.
+    played_before: Optional[str] = None
     guids: List[str] = field(default_factory=list)
     checked: str = ""
     updated: str = ""
@@ -309,8 +313,11 @@ def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None
     tag = find_tag(client, subscription.ruid)
     if tag is None:
         raise FeedError("feed.sticker_unknown")
-    playing = tag.source
-    if subscription.source and same(playing) != same(subscription.source):
+    expected = subscription.source or subscription.played_before
+    if expected is None:
+        return
+    playing = tag.source or ""
+    if same(playing) != same(expected):
         raise FeedError("feed.sticker_reused", playing=playing or "-")
 
 

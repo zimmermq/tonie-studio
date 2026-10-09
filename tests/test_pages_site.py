@@ -239,3 +239,20 @@ class TestConfirmations:
         page = client.get("/library").text
 
         assert 'data-confirm="Dieses Taf wird gespielt von:' in page
+
+
+class TestNoRouteBlocksTheLoop:
+    def test_every_route_runs_in_the_thread_pool(self, client):
+        # Every route here reaches teddyCloud or the disk with blocking calls.
+        # Run as a coroutine, one slow call would stall every other request,
+        # the health check included.
+        import inspect
+
+        ours = [route for route in client.app.routes
+                if getattr(route, "endpoint", None)
+                and route.endpoint.__module__.startswith("tonie_studio")]
+        coroutines = [route.path for route in ours if inspect.iscoroutinefunction(route.endpoint)]
+
+        assert len(ours) > 40
+
+        assert coroutines == []
