@@ -38,6 +38,7 @@
  "albums.empty": "No albums found. If the music is in the archive on the server, the archive cannot be reached right now; otherwise upload it below.",
  "albums.has_tonie": "has a tonie",
  "albums.intro": "Choose an album. Step by step it becomes a tonie: check, encode, put on a sticker, print the cover.",
+ "albums.loading": "Reading the albums ...",
  "albums.new": "new",
  "albums.no_cover": "no cover",
  "albums.no_match": "No album matches.",
@@ -115,6 +116,7 @@
  "batch.progress_intro_place": "No need to wait: put the stickers on while encoding runs. Each gets the next episode and is filled as soon as it is done.",
  "batch.progress_title": "Encode and place stickers",
  "batch.publish_failed": "It could not be put on the sticker.",
+ "batch.reuse": "already encoded, only needs a sticker",
  "batch.start": {
   "one": "Encode one album",
   "other": "Encode {count} albums"

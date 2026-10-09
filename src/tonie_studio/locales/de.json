@@ -38,6 +38,7 @@
  "albums.empty": "Keine Alben gefunden. Liegt die Musik im Archiv auf dem Server, ist das Archiv gerade nicht erreichbar; sonst lade sie unten hoch.",
  "albums.has_tonie": "hat einen Tonie",
  "albums.intro": "Wähl ein Album. Daraus wird Schritt für Schritt ein Tonie: prüfen, encodieren, auf einen Sticker legen, Cover drucken.",
+ "albums.loading": "Lese die Alben ein ...",
  "albums.new": "neu",
  "albums.no_cover": "kein Cover",
  "albums.no_match": "Kein Album passt dazu.",
@@ -115,6 +116,7 @@
  "batch.progress_intro_place": "Du musst nicht warten: leg die Sticker schon auf, während encodiert wird. Jeder bekommt die nächste Folge und wird gefüllt, sobald sie fertig ist.",
  "batch.progress_title": "Encodieren und Sticker auflegen",
  "batch.publish_failed": "Auf den Sticker ließ es sich nicht legen.",
+ "batch.reuse": "schon encodiert, bekommt nur noch einen Sticker",
  "batch.start": {
   "one": "Ein Album encodieren",
   "other": "{count} Alben encodieren"

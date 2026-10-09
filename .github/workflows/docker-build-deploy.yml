@@ -11,8 +11,12 @@ on:
     types: [published]
 
 jobs:
+  # Pinned rather than ubuntu-latest: setup-python needs a build of the exact
+  # Python version for the runner image, and a freshly switched image may not
+  # have one yet, which would fail a release for reasons outside this repo.
+  # Move it on deliberately when a newer image has been tried.
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -25,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest httpx
+          pip install -r requirements.txt pytest httpx2
 
       - name: Run tests
         run: |
@@ -37,7 +41,7 @@ jobs:
   build-validation:
     needs: test
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -55,7 +59,7 @@ jobs:
   build-and-deploy:
     needs: test
     if: github.event_name == 'release'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1

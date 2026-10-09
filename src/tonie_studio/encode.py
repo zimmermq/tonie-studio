@@ -228,6 +228,24 @@ def encode_files(
     )
 
 
+def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult]:
+    """A taf already in the library at ``target``, described as its encode would be.
+
+    For a taf that was encoded but never put on a tag, so it can be put on
+    one without encoding it again. None when there is no valid taf there.
+    """
+    header = (_find_entry(client, target) or {}).get("tafHeader") or {}
+    if not header.get("valid"):
+        return None
+    return EncodeResult(
+        target=target,
+        source=f"lib://{target.lstrip('/')}",
+        tracks=len(header.get("trackSeconds") or []),
+        audio_id=header.get("audioId"),
+        sha1=header.get("sha1Hash"),
+    )
+
+
 def remove_orphaned_staging(client: TeddyCloudClient) -> int:
     """Delete every staging folder left over, and report how many there were.
 

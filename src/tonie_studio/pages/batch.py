@@ -11,8 +11,9 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..album import Album, read_album
+from ..albumnotes import match_by_tracks
 from ..batch import AUTO, PLACE, Placing, Slot, allocate, episode_order
-from ..encode import EncodeError, library_path, taf_exists
+from ..encode import EncodeError, existing_taf, library_path, taf_exists
 from ..jobs import JobState, new_id
 from ..parts import fewest_parts, part_name, split
 from ..settings import Settings
@@ -45,8 +46,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not ids:
             raise Refused(400, "error.no_album")
         connection = client()
-        rows = _plan_batch(connection, settings, ids,
-                           tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
+        models = connection.custom_tonies()
+        rows = _plan_batch(connection, settings, ids, models=models,
+                           tonies=_albums_with_tonies(_catalogue(settings), models))
         # Whoever always hands out stickers the same way should not have to
         # choose it again each time; a newcomer starts with placing.
         how = request.cookies.get(HOW_COOKIE)
@@ -77,9 +79,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not ids:
             raise Refused(400, "error.no_album")
         connection = client()
+        models = connection.custom_tonies()
         rows = _plan_batch(connection, settings, ids, dict(zip(ids, series, strict=False)),
-                           dict(zip(ids, episodes, strict=False)),
-                           tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
+                           dict(zip(ids, episodes, strict=False)), models=models,
+                           tonies=_albums_with_tonies(_catalogue(settings), models))
         job_ids = []
         # Made before any encode is queued: one that finishes at once must
         # already find the slot it settles.
@@ -101,7 +104,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                              if ruid else None)
                 job_ids.append(jobs.submit("encode", target, job_id=job_id, work=_encode_job(
                     connection, [row.chosen[index] for index in indices], target,
-                    replace=False,
+                    replace=False, reuse=row.reusable,
                     carried={"series": row.series, "episode": episode,
                              "cover": str(row.album.cover_candidates[0])
                              if row.album.cover_candidates else None,
@@ -250,27 +253,36 @@ class BatchRow:
     occupied: bool
     # Whether a tag plays an existing taf; only meaningful when occupied.
     in_use: bool = False
+    # Its tafs are there, fit the album and no tag plays them: what an
+    # interrupted batch leaves behind. Such a row only needs its stickers.
+    reusable: bool = False
     # The model already made from this album, if any.
     tonie: str = ""
     tags: List[str] = field(default_factory=list)
 
     @property
     def skipped(self) -> bool:
-        """Left out of the encoding: its taf or its tonie exists already."""
-        return self.occupied or bool(self.tonie)
+        """Left out: its tonie exists, or its taf is there and cannot be reused."""
+        return bool(self.tonie) or (self.occupied and not self.reusable)
 
 
 def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[str],
                 series: Optional[Dict[str, str]] = None, episodes: Optional[Dict[str, str]] = None,
-                tonies: Optional[Dict[str, str]] = None) -> List[BatchRow]:
+                tonies: Optional[Dict[str, str]] = None,
+                models: Sequence[Dict] = ()) -> List[BatchRow]:
     """Each album with its default tracks, its taf paths and its stickers.
 
     Every album takes what its own page would offer untouched: the tracks
     that are not karaoke takes, in the album's order, the first cover, and as
-    few parts as teddyCloud allows. An album whose taf already exists, or
-    that a tonie was already made from (``tonies``, by album id), is left out
-    rather than encoded again: the name typed back then may differ from the
-    suggestion, and a second copy is a decision for the album's own page.
+    few parts as teddyCloud allows.
+
+    An album a tonie was already made from is left out: known from the
+    records (``tonies``, by album id) or recognised by its track list among
+    ``models``, since the name typed back then may differ from the
+    suggestion. A second copy is a decision for the album's own page. An
+    album whose tafs exist but play on no tag is not encoded again, only
+    given its stickers - if every part is there with as many chapters as the
+    part has tracks; anything else there is left alone.
 
     ``series`` and ``episodes`` hold what the page sent, by album id; an
     album missing from them gets the suggestion. A series sent empty stays
@@ -291,14 +303,15 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[
                        for number in range(1, parts + 1)]
         except EncodeError as error:
             raise Refused(400, "error.failed", detail=error) from error
+        groups = split([track.duration for track, _name in chosen], parts)
+        occupied = any(taf_exists(connection, target) for target in targets)
+        in_use = any(f"lib://{target.lstrip('/')}" in played for target in targets)
         rows.append(BatchRow(
             identifier=identifier, album=album, series=row_series, episode=episode,
-            chosen=chosen,
-            groups=split([track.duration for track, _name in chosen], parts),
-            targets=targets,
-            occupied=any(taf_exists(connection, target) for target in targets),
-            in_use=any(f"lib://{target.lstrip('/')}" in played for target in targets),
-            tonie=(tonies or {}).get(identifier, ""),
+            chosen=chosen, groups=groups, targets=targets, occupied=occupied, in_use=in_use,
+            reusable=occupied and not in_use and _tafs_fit(connection, targets, groups),
+            tonie=((tonies or {}).get(identifier)
+                   or match_by_tracks([track.title for track in album.tracks], models) or ""),
         ))
     # Grouped by series and in episode order within one, which is also the
     # order the stickers are handed out in.
@@ -309,6 +322,16 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[
                                            _free_tags(connection)), strict=True):
         row.tags = tags
     return rows
+
+
+def _tafs_fit(connection: TeddyCloudClient, targets: Sequence[str],
+              groups: Sequence[Sequence[int]]) -> bool:
+    """Whether every part's taf is there with exactly that part's tracks as chapters."""
+    for target, group in zip(targets, groups, strict=True):
+        found = existing_taf(connection, target)
+        if found is None or found.tracks != len(group):
+            return False
+    return True
 
 
 def _suggest_series(settings: Settings, album: Album) -> str:

@@ -56,6 +56,7 @@
 </div>
 <p class="muted" id="nohits" hidden>{{ t("albums.no_match") }}</p>
 {% if not albums %}<p class="warn">{{ t("albums.empty") }}</p>{% endif %}
+<div class="toast" id="loading" role="status" hidden>{{ t("albums.loading") }}</div>
 <form id="pick" method="get" action="/batch" class="pickbar" hidden>
   <span class="grow" id="pickcount"></span>
   <button class="primary" type="submit">{{ t("batch.pick") }}</button>
@@ -106,6 +107,19 @@
       : say(words['albums.shown_of'], {shown, count: rows.length});
     nohits.hidden = shown > 0;
   });
+
+  // Checking an album reads every track's tags, over a network share a
+  // second or more per album; without a word the click looks ignored.
+  const loading = document.getElementById('loading');
+  function showLoading() { loading.hidden = false; }
+  for (const link of document.querySelectorAll('#albums a.album')) {
+    link.addEventListener('click', event => {
+      if (!(event.metaKey || event.ctrlKey || event.shiftKey)) showLoading();
+    });
+  }
+  document.getElementById('pick').addEventListener('submit', showLoading);
+  // A page restored from the back/forward cache must not keep the hint.
+  window.addEventListener('pageshow', () => { loading.hidden = true; });
 
   // Ticking albums gathers them for one batch: a series of episodes set up
   // together instead of one album page after another.

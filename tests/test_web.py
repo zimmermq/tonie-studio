@@ -1937,8 +1937,9 @@ class TestSeveralFolders:
         page = client.get(response.headers["location"]).text
         assert page.count("data-job=") == 2
 
-    def test_an_album_already_encoded_is_skipped_not_overwritten(self, client, runner, teddycloud):
-        # No free sticker, so the first round leaves tafs and no tonies.
+    def test_an_encoded_album_without_a_sticker_only_gets_one(self, client, runner, teddycloud):
+        # No free sticker, so the first round leaves tafs and no tonies - the
+        # state a restart in the middle of placing leaves behind as well.
         for entry in teddycloud.tag_entries.values():
             entry["source"] = "lib://Andere/Folge.taf"
         ids = _batch_ids(_upload_series(client, episodes=2))
@@ -1946,12 +1947,38 @@ class TestSeveralFolders:
         teddycloud.add_tag("aaaaaaaaaaaaaaaa")
 
         page = client.get("/batch", params={"ids": ids}).text
-        again = client.post("/batch", data={"ids": ids, "series": ["Serie"] * len(ids)})
+        with patch("tonie_studio.pages.common.encode_files",
+                   side_effect=AssertionError("encoded again")):
+            _run_batch(client, runner, ids, series="Serie", stickers="auto")
 
+        assert page.count("schon encodiert, bekommt nur noch einen Sticker") == 2
+        assert teddycloud.tag_entries["aaaaaaaaaaaaaaaa"]["source"] == "lib://Serie/Folge 1.taf"
+        assert [model["episodes"] for model in teddycloud.custom_tonies()] == ["Folge 1"]
+
+    def test_an_encoded_album_a_sticker_plays_is_skipped(self, client, runner, teddycloud, settings):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        _run_batch(client, runner, ids, series="Serie")
+        # Neither recorded nor recognisable: only the taf and its sticker are left.
+        (settings.data_dir / "albums-made.json").write_text("{}")
+        for model in teddycloud.custom_models:
+            model["episodes"], model["tracks"] = "anders", ["x", "y"]
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.count("schon encodiert und auf einem Sticker") == 2
+
+    def test_a_taf_with_other_chapters_is_not_taken_for_the_album(self, client, runner, teddycloud):
+        for entry in teddycloud.tag_entries.values():
+            entry["source"] = "lib://Andere/Folge.taf"
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        _run_batch(client, runner, ids, series="Serie")
+        for header in teddycloud.taf_headers.values():
+            header["trackSeconds"] = [1, 2, 3, 4, 5]
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert "nur noch einen Sticker" not in page
         assert page.count("schon encodiert (liegt in der Library), aber kein Sticker spielt es") == 2
-        assert "Nichts Neues zu encodieren" in page and "0 Alben" not in page
-        assert again.status_code == 400
-        assert teddycloud.tag_entries["aaaaaaaaaaaaaaaa"]["source"] == ""
 
     def test_episode_ten_comes_after_episode_two(self, client):
         files = [("files", (f"Serie/Folge {n}/01-a.mp3", bytes([n]) * 8, "audio/mpeg"))
@@ -2336,3 +2363,51 @@ class TestWalkthroughHints:
         assert "zum ersten Mal" in client.get("/sheet").text
         client.post("/sheet/calibration", data={"left_mm": "31.5", "top_mm": "50.5"})
         assert "zum ersten Mal" not in client.get("/sheet").text
+
+
+class TestRecognisingTonies:
+    def _album_with(self, client, *names):
+        files = [("files", (f"Neu/Album/{n:02d}-{name}.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n, name in enumerate(names, 1)]
+        response = client.post("/upload", files=files, follow_redirects=False)
+        return response.headers["location"].split("ids=")[1]
+
+    def test_an_album_whose_tracks_a_tonie_already_has_is_recognised(self, client, teddycloud):
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "Unter meinem Bett",
+                                        "episodes": "Folge 1",
+                                        "tracks": ["Der Tee", "Immer muss ich", "Sommer lang"]})
+        identifier = self._album_with(client, "der_tee", "immer_muss_ich", "sommer_lang")
+
+        page = client.get("/batch", params={"ids": [identifier]}).text
+
+        assert "hat schon einen Tonie (TS-0042)" in page
+
+    def test_one_track_left_out_still_counts(self, client, teddycloud):
+        # Recorded without the advert at the start, as some tonies are.
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+                                        "tracks": ["Zwei", "Drei", "Vier", "Fuenf"]})
+        identifier = self._album_with(client, "werbung", "zwei", "drei", "vier", "fuenf")
+
+        assert "TS-0042" in client.get("/batch", params={"ids": [identifier]}).text
+
+    def test_numbered_chapters_alone_prove_nothing(self, client, teddycloud):
+        # Every audiobook calls its tracks "Kapitel 1" to "Kapitel n".
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+                                        "tracks": [f"Kapitel {n}" for n in range(1, 12)]})
+        identifier = self._album_with(client, *[f"kapitel_{n}" for n in range(1, 14)])
+
+        assert "TS-0042" not in client.get("/batch", params={"ids": [identifier]}).text
+
+    def test_a_different_album_is_not_mistaken(self, client, teddycloud):
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+                                        "tracks": ["Eins", "Zwei", "Drei"]})
+        identifier = self._album_with(client, "eins", "vier", "fuenf", "sechs")
+
+        assert "TS-0042" not in client.get("/batch", params={"ids": [identifier]}).text
+
+
+class TestLoadingHint:
+    def test_choosing_albums_says_it_is_reading_them(self, client):
+        page = client.get("/").text
+
+        assert 'id="loading"' in page and "Lese" in page

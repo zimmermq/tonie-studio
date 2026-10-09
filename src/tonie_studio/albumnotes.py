@@ -13,10 +13,11 @@ is worse than a missing one.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from .store import LOCK, read_json, write_json
 
@@ -121,6 +122,37 @@ def guess_made(albums: Sequence[tuple], models: Sequence[dict]) -> Dict[str, str
         if len(candidates) == 1:
             guesses.setdefault(candidates[0], str(model.get("model", "")))
     return guesses
+
+
+# Track names every audiobook shares, which say nothing about which one it is.
+_GENERIC_TITLE = re.compile(r"^(kapitel|chapter|track|titel|teil|part|folge)\s*\d+$")
+
+
+def match_by_tracks(titles: Sequence[str], models: Sequence[dict]) -> Optional[str]:
+    """The model whose track list is this album's, or None.
+
+    Stronger than the name, which a person may have typed differently: a
+    model counts when at least three quarters of the distinctive track
+    names of the longer list are shared, which allows for a track left out,
+    such as an advert at the start. Numbered chapters are ignored, and
+    fewer than two distinctive names prove nothing. Several matches are
+    the same recording made twice; the first by id is returned.
+    """
+    mine = _distinctive(titles)
+    if len(mine) < 2:
+        return None
+    found = []
+    for model in models:
+        theirs = _distinctive(model.get("tracks") or [])
+        shared = len(mine & theirs)
+        if len(theirs) >= 2 and shared >= 2 and shared >= 0.75 * max(len(mine), len(theirs)):
+            found.append(str(model.get("model", "")))
+    return min(found) if found else None
+
+
+def _distinctive(titles) -> set:
+    keys = {" ".join(re.sub(r"[^\w]+", " ", _fold(title)).split()) for title in titles}
+    return {key for key in keys if key and not _GENERIC_TITLE.match(key)}
 
 
 def _fold(text) -> str:

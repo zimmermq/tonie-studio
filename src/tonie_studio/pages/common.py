@@ -22,7 +22,7 @@ from ..album import AUDIO_EXTENSIONS, AlbumSummary, list_albums
 from ..albumnotes import remember_made
 from ..batch import Placing
 from ..boxstate import BoxWatcher
-from ..encode import encode_files
+from ..encode import EncodeError, encode_files, existing_taf
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import JobRunner, JobState
@@ -85,14 +85,16 @@ class Context:
 
 def _encode_job(connection: TeddyCloudClient, chosen: Sequence[Tuple[object, str]], target: str,
                 replace: bool, carried: Dict,
-                after: Optional[Callable[[Dict], None]] = None) -> Callable:
+                after: Optional[Callable[[Dict], None]] = None, reuse: bool = False) -> Callable:
     """The work of one encode, returning what the tag and model steps need.
 
     ``carried`` goes into the result unchanged: the names a person approved
     rather than the ones that were guessed, the cover, and what the printed
     text side and the album list read back. ``after`` runs once the taf
     exists and may add to the result; it must not raise for a failure the
-    encode itself does not share.
+    encode itself does not share. With ``reuse`` the taf already at
+    ``target`` is taken as it is; it fails if that taf has gone or no
+    longer has one chapter per track.
     """
     paths = [track.path for track, _name in chosen]
     names = [name for _track, name in chosen]
@@ -101,8 +103,13 @@ def _encode_job(connection: TeddyCloudClient, chosen: Sequence[Tuple[object, str
     playing_time = sum(track.duration or 0 for track, _name in chosen) or None
 
     def work(progress):
-        encoded = encode_files(connection, paths, target, progress=progress,
-                               replace=replace, total_seconds=playing_time)
+        if reuse:
+            encoded = existing_taf(connection, target)
+            if encoded is None or encoded.tracks != len(paths):
+                raise EncodeError(f"{target} is no longer the taf this album was planned with")
+        else:
+            encoded = encode_files(connection, paths, target, progress=progress,
+                                   replace=replace, total_seconds=playing_time)
         result = {"encode": encoded, "tracks": names, "seconds": playing_time, **carried}
         if after is not None:
             after(result)

@@ -175,6 +175,10 @@
   [hidden] { display: none !important; }
   /* Series and episode side by side, the series narrower: it repeats down a
      batch, the episode is what tells the rows apart. */
+  /* A short notice at the bottom of the window while the next page loads. */
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30;
+           padding: 10px 16px; border-radius: 10px; background: var(--ink); color: var(--card);
+           box-shadow: 0 6px 18px rgb(0 0 0 / 20%); }
   /* The path of a new tonie, one step per item, the current one stressed. */
   .steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0;
            margin: 0 0 14px; counter-reset: step; font-size: 14px; }
