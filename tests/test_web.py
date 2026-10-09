@@ -95,7 +95,7 @@ def client(settings, teddycloud, runner, tags, box):
 def _album_id(client):
     """The id the picker gave the one album in the archive."""
     page = client.get("/").text
-    start = page.index('href="/album/') + len('href="/album/')
+    start = page.index('name="ids" value="') + len('name="ids" value="')
     return page[start:page.index('"', start)]
 
 
@@ -391,7 +391,7 @@ class TestUpload:
         ], follow_redirects=False)
 
         assert response.status_code == 303
-        page = client.get(response.headers["location"]).text
+        page = _album_page_after_upload(client, response)
         assert "Eins" in page and "Zwei" in page
 
     def test_refuses_a_upload_without_audio(self, client):
@@ -410,7 +410,7 @@ class TestUpload:
             ("files", ("Lichterkinder-Album/02-zwei.mp3", b"\x02" * 8, "audio/mpeg")),
         ], follow_redirects=False)
 
-        page = client.get(response.headers["location"]).text
+        page = _album_page_after_upload(client, response)
         assert "Eins" in page and "Zwei" in page
 
     def test_offers_a_folder_picker(self, client):
@@ -595,7 +595,7 @@ class TestToniesPage:
 
         page = client.get("/tonies").text
 
-        assert "1 von 2 Tags bespielt" in page
+        assert "1 von 2 Sticker bespielt" in page
         assert "Lichterkinder - Halloween" in page
 
     def test_lists_free_tags_too(self, client):
@@ -1798,6 +1798,13 @@ class TestPrintedLanguage:
         assert _back_of(model, 1500, Translator("en")).language == "en"
 
 
+def _album_page_after_upload(client, response):
+    """The detailed page of the one album an upload made, reached the way a reader would."""
+    batch_page = client.get(response.headers["location"]).text
+    start = batch_page.index('href="/album/') + len('href="')
+    return client.get(batch_page[start:batch_page.index('"', start)]).text
+
+
 def _upload_series(client, episodes=3):
     """Upload a parent folder holding one subfolder per episode, as a browser sends it."""
     files = []
@@ -1835,13 +1842,6 @@ class TestSeveralFolders:
         assert len(_batch_ids(response)) == 3
         page = client.get("/").text
         assert "Folge 1" in page and "Folge 2" in page and "Folge 3" in page
-
-    def test_one_folder_still_opens_its_album_page(self, client):
-        response = client.post("/upload", files=[
-            ("files", ("Album/01-eins.mp3", b"\x01" * 8, "audio/mpeg")),
-        ], follow_redirects=False)
-
-        assert response.headers["location"].startswith("/album/")
 
     def test_the_batch_page_lists_the_episodes_in_order_with_their_stickers(self, client):
         ids = _batch_ids(_upload_series(client, episodes=2))
@@ -1948,7 +1948,7 @@ class TestSeveralFolders:
         page = client.get("/batch", params={"ids": ids}).text
         again = client.post("/batch", data={"ids": ids, "series": ["Serie"] * len(ids)})
 
-        assert page.count("Taf liegt schon in der Library, aber kein Sticker spielt es") == 2
+        assert page.count("schon encodiert (liegt in der Library), aber kein Sticker spielt es") == 2
         assert "Nichts Neues zu encodieren" in page and "0 Alben" not in page
         assert again.status_code == 400
         assert teddycloud.tag_entries["aaaaaaaaaaaaaaaa"]["source"] == ""
@@ -2191,3 +2191,148 @@ class TestNavigation:
         page = client.get(f"/album/{_album_id(client)}").text
 
         assert 'href="/" aria-current="page"' in page
+
+
+class TestWalkthrough:
+    """One path for a new tonie: choose, check, encode, sticker, print."""
+
+    def test_an_album_in_the_list_leads_to_checking_it(self, client):
+        identifier = _album_id(client)
+
+        assert f'href="/batch?ids={identifier}"' in client.get("/").text
+
+    def test_the_detailed_album_page_is_one_click_away(self, client):
+        identifier = _album_id(client)
+
+        page = client.get("/batch", params={"ids": [identifier]}).text
+
+        assert f'href="/album/{identifier}"' in page
+        assert client.get(f"/album/{identifier}").status_code == 200
+
+    def test_one_uploaded_folder_goes_to_checking_too(self, client):
+        response = client.post("/upload", files=[
+            ("files", ("Album/01-eins.mp3", b"\x01" * 8, "audio/mpeg")),
+        ], follow_redirects=False)
+
+        assert response.headers["location"].startswith("/batch?ids=")
+
+    def test_every_step_says_where_it_is(self, client, runner):
+        identifier = _album_id(client)
+
+        assert 'class="steps"' in client.get("/").text
+        assert _current_step(client.get("/").text) == "1"
+        assert _current_step(client.get("/batch", params={"ids": [identifier]}).text) == "2"
+        group = _start_placing_archive(client, identifier)
+        assert _current_step(client.get(f"/parts/{group}").text) in ("3", "4")
+
+    def test_after_the_stickers_comes_printing_exactly_these(self, client, runner, teddycloud):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        response = client.post("/batch", data={"ids": ids, "series": ["Serie"] * 2,
+                                               "stickers": "place"}, follow_redirects=False)
+        group = response.headers["location"].rsplit("/", 1)[1]
+        for job in runner.all():
+            assert job.done.wait(5)
+        _place(client, group, "deb4ed0e500304e0")
+        _place(client, group, "7ab4ed0e500304e0")
+
+        page = client.get(f"/parts/{group}").text
+        models = sorted(model["model"] for model in teddycloud.custom_tonies())
+
+        assert f'href="/sheet?model={models[0]}&amp;model={models[1]}"' in page
+        assert models == [job["model"] for job in sorted(
+            (client.get(f"/api/job/{job_id}").json() for job_id in _group_jobs(page)),
+            key=lambda job: job["model"])]
+
+    def test_the_sheet_takes_several_tonies_at_once(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+        model = teddycloud.custom_tonies()[0]["model"]
+
+        page = client.get("/sheet", params={"model": [model, "TS-9999"]}).text
+
+        assert page.count('class="want" checked') == 1
+        assert _current_step(page) == "5"
+
+    def test_the_sheet_without_a_walkthrough_has_no_steps(self, client):
+        assert 'class="steps"' not in client.get("/sheet").text
+
+    def test_a_free_sticker_on_the_box_is_chosen_on_the_assignment_page(self, client, runner, box):
+        job, _page = _encode_and_assign_page(client, runner)
+        assert _checked_ruid(client.get(f"/job/{job.id}/assign").text) != "deb4ed0e500304e0"
+        # The same sticker as uid; the tag index names it by its ruid.
+        box.handle("TagValid", "E00403500EEDB4DE")
+
+        page = client.get(f"/job/{job.id}/assign").text
+
+        assert _checked_ruid(page) == "deb4ed0e500304e0"
+
+
+def _current_step(page):
+    marker = 'aria-current="step" data-step="'
+    start = page.index(marker) + len(marker)
+    return page[start:page.index('"', start)]
+
+
+def _start_placing_archive(client, identifier):
+    response = client.post("/batch", data={"ids": [identifier], "series": ["L"],
+                                           "stickers": "place"}, follow_redirects=False)
+    return response.headers["location"].rsplit("/", 1)[1]
+
+
+def _group_jobs(page):
+    import re
+
+    return re.findall(r'data-job="([0-9a-f]+)"', page)
+
+
+def _checked_ruid(page):
+    import re
+
+    for match in re.finditer(r'<input type="radio" name="ruid" value="([0-9a-f]+)"[^>]*>', page, re.S):
+        if "checked" in match.group(0):
+            return match.group(1)
+    return None
+
+
+class TestWalkthroughHints:
+    def test_an_empty_album_list_says_why_and_what_to_do(self, settings, teddycloud, runner, tags, box,
+                                                         tmp_path):
+        import shutil
+
+        shutil.rmtree(settings.archive_dir)
+        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
+        with TestClient(app) as empty:
+            page = empty.get("/").text
+
+        assert "Keine Alben gefunden" in page
+
+    def test_the_album_list_explains_without_jargon(self, client):
+        page = client.get("/").text
+        intro = page[page.index('<p class="sub">'):page.index("</p>", page.index('<p class="sub">'))]
+
+        assert "Taf" not in intro and "Library" not in intro
+
+    def test_placing_says_there_is_no_need_to_wait(self, client, runner):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        response = client.post("/batch", data={"ids": ids, "series": ["S"] * 2, "stickers": "place"},
+                               follow_redirects=False)
+
+        page = client.get(response.headers["location"]).text
+
+        assert "nicht warten" in page
+
+    def test_the_last_way_of_handing_out_stickers_is_remembered(self, client, runner):
+        ids = _batch_ids(_upload_series(client, episodes=2))
+        assert 'value="place" checked' in client.get("/batch", params={"ids": ids}).text
+
+        client.post("/batch", data={"ids": ids, "series": ["S"] * 2, "stickers": "auto"},
+                    follow_redirects=False)
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert 'value="auto" checked' in page and 'value="place" checked' not in page
+
+    def test_printing_for_the_first_time_points_at_the_calibration(self, client, runner, teddycloud):
+        _publish(client, runner, teddycloud)
+
+        assert "zum ersten Mal" in client.get("/sheet").text
+        client.post("/sheet/calibration", data={"left_mm": "31.5", "top_mm": "50.5"})
+        assert "zum ersten Mal" not in client.get("/sheet").text

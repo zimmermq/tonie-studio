@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "_steps.html" import steps with context %}
 {% block title %}{{ t(title_key) }} - tonie-studio{% endblock %}
 
 {% block body %}
+{% if batch %}{{ steps("4" if finished else "3") }}{% endif %}
 <h1>{{ t(heading_key) }}</h1>
 <p class="sub">
   {{ t(intro_key) }}
@@ -33,17 +35,40 @@
 {% endfor %}
 </div>
 
+{% if batch %}
+<p id="printnext" {% if not (finished and print_href) %}hidden{% endif %}>
+  <a class="button primary" id="printlink" href="{{ print_href or '/sheet' }}">{{ t("steps.print_now") }}</a>
+</p>
+{% endif %}
+
 <script>
   // Updated in place rather than by reloading the page, which would throw it
   // back to the top every few seconds.
   const states = Object.fromEntries(Object.entries(
     {{ t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed") | tojson }}
   ).map(([key, text]) => [key.replace('job.state.', ''), text]));
+  // Once every encode has ended the walkthrough moves on to the stickers,
+  // and the tonies made so far can go to the sheet. While stickers are being
+  // placed the page keeps looking, because a tonie appears with each one.
+  const placingStickers = {{ placing | tojson }};
+  const printnext = document.getElementById('printnext');
+  function moveTo(step) {
+    for (const item of document.querySelectorAll('.steps li')) {
+      const here = item.dataset.step === step;
+      item.toggleAttribute('aria-current', here);
+      if (here) item.setAttribute('aria-current', 'step');
+      item.classList.toggle('done', Number(item.dataset.step) < Number(step));
+    }
+  }
   async function poll() {
     let running = false;
+    let waitingForSticker = false;
+    const models = [];
     for (const row of document.querySelectorAll('[data-job]')) {
       try {
         const job = await (await fetch(`/api/job/${row.dataset.job}`)).json();
+        if (job.model) models.push(job.model);
+        if (job.state === 'done' && !job.assigned) waitingForSticker = true;
         const text = states[job.state] || job.state;
         row.querySelector('.state').textContent =
           job.percent != null && job.state === 'running' ? `${text}, ${job.percent} %` : text;
@@ -55,7 +80,15 @@
         running = true;
       }
     }
-    if (running) setTimeout(poll, 3000);
+    if (!running) {
+      moveTo('4');
+      if (printnext && models.length) {
+        document.getElementById('printlink').href =
+          '/sheet?' + models.map(model => `model=${encodeURIComponent(model)}`).join('&');
+        printnext.hidden = false;
+      }
+    }
+    if (running || (placingStickers && waitingForSticker)) setTimeout(poll, 3000);
   }
   poll();
 

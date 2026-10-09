@@ -7,10 +7,11 @@ import math
 import uuid
 from typing import Dict, List, Optional, Sequence
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.background import BackgroundTask
 
+from ..calibration import FILE_NAME as CALIBRATION_FILE
 from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from ..i18n import DEFAULT as DEFAULT_LANGUAGE
 from ..i18n import Translator
@@ -32,11 +33,12 @@ def register(app: FastAPI, ctx: Context) -> None:
     client = ctx.client
 
     @app.get("/sheet", response_class=HTMLResponse)
-    def sheet_page(request: Request, model: str = "", calibrated: str = ""):
-        """The sheet, optionally with one motif already asked for.
+    def sheet_page(request: Request, model: List[str] = Query(default=[]), calibrated: str = ""):
+        """The sheet, optionally with motifs already asked for.
 
-        Coming from a tonie that was just recorded, hunting for it again in
-        this list is the step that was missing.
+        Coming from tonies that were just recorded, hunting for them again in
+        this list is the step that was missing. Asked for that way, the page
+        is the last step of the walkthrough and says so.
         """
         models = _printable_models(client())
         return templates.TemplateResponse(request, "sheet.html", {
@@ -44,13 +46,16 @@ def register(app: FastAPI, ctx: Context) -> None:
             "per_page": PER_PAGE,
             "fill": FILL,
             "fit": FIT,
-            "preset": model,
+            "preset": set(model),
             "backs": _back_preview(models, playing_times(settings.data_dir), translator(request)),
             "back_fade": BACK_FADE,
             "diameter_mm": DIAMETER_MM,
             "shift": read_shift(settings.data_dir),
             "expected": expected_first_centre(),
             "calibrated": bool(calibrated),
+            # Never calibrated: the first sheet would be cut wherever this
+            # printer happens to shift it.
+            "first_print": not (settings.data_dir / CALIBRATION_FILE).exists(),
         })
 
 

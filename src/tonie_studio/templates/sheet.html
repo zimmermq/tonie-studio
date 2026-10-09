@@ -1,11 +1,14 @@
 {% extends "base.html" %}
+{% from "_steps.html" import steps with context %}
 {% block title %}{{ t("tonies.print") }} - tonie-studio{% endblock %}
 
 {% block body %}
+{% if preset %}{{ steps("5") }}{% endif %}
 <h1>{{ t("sheet.heading") }}</h1>
 <p class="sub">
   {{ t("sheet.intro", count=per_page) }}
 </p>
+{% if first_print %}<div class="warn">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
 
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
   {% if models %}
@@ -21,7 +24,7 @@
   <div class="list">
     {% for model in models %}
     <div class="album sticker" data-src="/cover/custom/{{ model.image }}">
-      <input type="checkbox" class="want" {% if preset == model.model %}checked{% endif %}
+      <input type="checkbox" class="want" {% if model.model in preset %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
       <span class="grow truncate">
         <strong class="truncate">{{ model.series }}</strong>
@@ -56,7 +59,7 @@
         <span class="count">1</span>&times;
         <button type="button" class="small" data-step="1">+</button>
       </span>
-      <input type="hidden" name="counts" value="{{ 1 if preset == model.model else 0 }}">
+      <input type="hidden" name="counts" value="{{ 1 if model.model in preset else 0 }}">
     </div>
     {% else %}
     <div class="album muted">

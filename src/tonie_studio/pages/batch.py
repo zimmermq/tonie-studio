@@ -24,6 +24,9 @@ from .common import (Context, Refused, _catalogue, _encode_job, _free_tags, _pub
 
 log = logging.getLogger(__name__)
 
+# Remembers how the last batch handed out its stickers.
+HOW_COOKIE = "stickers"
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -44,8 +47,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         rows = _plan_batch(connection, settings, ids,
                            tonies=_albums_with_tonies(_catalogue(settings), connection.custom_tonies()))
+        # Whoever always hands out stickers the same way should not have to
+        # choose it again each time; a newcomer starts with placing.
+        how = request.cookies.get(HOW_COOKIE)
         return templates.TemplateResponse(request, "batch.html", {
             "rows": rows,
+            "how": how if how in (AUTO, PLACE) else PLACE,
             "free": len(_free_tags(connection)),
             "needed": sum(len(row.targets) for row in rows if not row.skipped),
             "thumb_size": DEFAULT_SIZE,
@@ -108,7 +115,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         batches.add(group)
         if placing is not None:
             placings[group] = placing
-        return RedirectResponse(f"/parts/{group}", 303)
+        response = RedirectResponse(f"/parts/{group}", 303)
+        response.set_cookie(HOW_COOKIE, PLACE if placing_wanted else AUTO,
+                            max_age=365 * 24 * 3600, samesite="lax")
+        return response
 
 
     @app.post("/api/batch/{group}/place")

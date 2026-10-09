@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_steps.html" import steps with context %}
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label') }}">
-<a class="album" href="/album/{{ id }}">
+<a class="album" href="/batch?ids={{ id }}">
   {% if album.has_cover %}
   <img src="/album/{{ id }}/cover?size={{ thumb_size }}" alt="" loading="lazy">
   {% else %}
@@ -25,6 +26,7 @@
 {%- endmacro %}
 
 {% block body %}
+{{ steps("1") }}
 <h1>{{ t("albums.title") }}</h1>
 <p class="sub">{{ t("albums.intro") }}</p>
 
@@ -53,6 +55,7 @@
   {% for id, album, origin in archive %}{{ album_row(id, album) }}{% endfor %}
 </div>
 <p class="muted" id="nohits" hidden>{{ t("albums.no_match") }}</p>
+{% if not albums %}<p class="warn">{{ t("albums.empty") }}</p>{% endif %}
 <form id="pick" method="get" action="/batch" class="pickbar" hidden>
   <span class="grow" id="pickcount"></span>
   <button class="primary" type="submit">{{ t("batch.pick") }}</button>

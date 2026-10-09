@@ -1,0 +1,12 @@
+{#- The path a new tonie takes, shown on every page along it. ``current`` is
+    the step number as text; earlier steps are marked done. Import it
+    "with context" so the macro can translate. -#}
+{% macro steps(current) -%}
+<ol class="steps">
+  {%- for number, key in [("1", "steps.choose"), ("2", "steps.check"), ("3", "steps.encode"),
+                          ("4", "steps.sticker"), ("5", "steps.print")] %}
+  <li {% if number == current %}aria-current="step" {% endif %}data-step="{{ number }}"
+      {%- if number | int < current | int %} class="done"{% endif %}>{{ t(key) }}</li>
+  {%- endfor %}
+</ol>
+{%- endmacro %}

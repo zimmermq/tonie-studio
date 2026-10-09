@@ -17,6 +17,7 @@ from ..album import Album, album_id, cover_candidates, read_album
 from ..albumnotes import first_sightings, is_new
 from ..batch import episode_order
 from ..encode import EncodeError, library_path, taf_exists
+from ..jobs import JobState
 from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
@@ -30,6 +31,7 @@ log = logging.getLogger(__name__)
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     settings = ctx.settings
+    box = ctx.box
     templates = ctx.templates
     jobs = ctx.jobs
     client = ctx.client
@@ -81,8 +83,6 @@ def register(app: FastAPI, ctx: Context) -> None:
         ids = [f"{UPLOAD}{album_id(settings.upload_dir, destination)}"
                for destination in sorted(destinations.values(),
                                          key=lambda path: episode_order(path.name))]
-        if len(ids) == 1:
-            return RedirectResponse(f"/album/{ids[0]}", 303)
         return RedirectResponse(f"/batch?{urlencode([('ids', identifier) for identifier in ids])}",
                                 303)
 
@@ -200,11 +200,20 @@ def register(app: FastAPI, ctx: Context) -> None:
         if group not in groups:
             raise Refused(404, "error.parts_gone")
         batch = group in batches
+        members = [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)]
+        made_models = [job.result["model"] for job in members
+                       if isinstance(job.result, dict) and job.result.get("model")]
         return templates.TemplateResponse(request, "parts.html", {
-            "jobs": [jobs.get(job_id) for job_id in groups[group] if jobs.get(job_id)],
+            "jobs": members,
+            "batch": batch,
+            "finished": all(job.state in (JobState.DONE, JobState.FAILED) for job in members),
+            # The last step of the walkthrough: print exactly what was made.
+            "print_href": "/sheet?" + urlencode([("model", model) for model in made_models])
+            if made_models else "",
             "title_key": "batch.progress_title" if batch else "parts.title",
             "heading_key": "batch.progress_title" if batch else "parts.heading",
-            "intro_key": "batch.progress_intro" if batch else "parts.intro",
+            "intro_key": ("batch.progress_intro_place" if group in placings
+                          else "batch.progress_intro" if batch else "parts.intro"),
             "placing": group in placings,
             "group": group,
             "next_episode": _next_to_place(placings.get(group)),
@@ -245,6 +254,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         # did not know; it is only honoured once that tag is really in the
         # index, so a stale link cannot preselect something that is not there.
         preselect = new if any(tag.ruid == new for tag in tags) else ""
+        # A free sticker lying on the box is the one being held up to be
+        # given this taf; choosing it for the reader saves matching ids.
+        state = box.state
+        if not preselect and state.known and state.on_box and any(
+                tag.ruid == state.ruid and not tag.assigned for tag in tags):
+            preselect = state.ruid
         return templates.TemplateResponse(request, "assign.html", {
             "job_id": job_id,
             "result": result,
@@ -299,6 +314,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "error": job.error,
             "target": job.label,
             "assigned": bool(result.get("model")),
+            "model": result.get("model") or None,
             # Why a batch encode did not get its sticker, for the reader.
             "note": translator(request)(result["assign_error"]) if result.get("assign_error") else "",
         })

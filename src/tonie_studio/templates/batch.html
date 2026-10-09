@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "_steps.html" import steps with context %}
 {% block title %}{{ t("batch.title") }} - tonie-studio{% endblock %}
 
 {% block body %}
+{{ steps("2") }}
 <h1>{{ t("batch.title") }}</h1>
 <p class="sub">{{ t("batch.intro") }}</p>
 {% set assigning = rows | selectattr("tags") | list %}
@@ -12,10 +14,10 @@
   <div class="card">
     <strong>{{ t("batch.how") }}</strong>
     <label class="block mt-8">
-      <input type="radio" name="stickers" value="place" checked> {{ t("batch.how_place") }}
+      <input type="radio" name="stickers" value="place" {% if how == "place" %}checked{% endif %}> {{ t("batch.how_place") }}
     </label>
     <label class="block">
-      <input type="radio" name="stickers" value="auto"> {{ t("batch.how_auto") }}
+      <input type="radio" name="stickers" value="auto" {% if how == "auto" %}checked{% endif %}> {{ t("batch.how_auto") }}
     </label>
     <p class="muted only-auto mb-0">
       {{ t("batch.free", count=free) }}
@@ -39,7 +41,8 @@
                placeholder="{{ t('field.episode') }}" {% if row.skipped %}readonly{% endif %}>
         <span class="muted truncate">
           {{- t("albums.tracks", count=row.chosen | length) }}
-          {%- if row.targets | length > 1 %} &middot; {{ t("batch.parts", count=row.targets | length) }}{% endif -%}
+          {%- if row.targets | length > 1 %} &middot; {{ t("batch.parts", count=row.targets | length) }}{% endif %}
+          &middot; <a href="/album/{{ row.identifier }}">{{ t("batch.details") }}</a>
         </span>
       </span>
       <span class="muted sticker right">

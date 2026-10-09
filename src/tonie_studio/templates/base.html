@@ -175,6 +175,14 @@
   [hidden] { display: none !important; }
   /* Series and episode side by side, the series narrower: it repeats down a
      batch, the episode is what tells the rows apart. */
+  /* The path of a new tonie, one step per item, the current one stressed. */
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0;
+           margin: 0 0 14px; counter-reset: step; font-size: 14px; }
+  .steps li { counter-increment: step; padding: 3px 10px; border-radius: 999px;
+              border: 1px solid var(--line); color: var(--muted); }
+  .steps li::before { content: counter(step) ". "; }
+  .steps li.done { color: var(--ink); }
+  .steps li[aria-current] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .batchnames { display: grid; grid-template-columns: 2fr 3fr; gap: 8px; }
   .batchnames > .muted { grid-column: 1 / -1; }
   a.album:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
