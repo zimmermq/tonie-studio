@@ -296,21 +296,16 @@ def register(app: FastAPI, ctx: Context) -> None:
         job = jobs.get(job_id)
         if job is None:
             raise Refused(404, "error.no_job")
-        outcome = job.result if isinstance(job.result, Outcome) else None
-        return JSONResponse({
-            "state": job.state.value,
-            "step": job.step,
-            "done": job.done_count,
-            "total": job.total,
-            "percent": job.percent,
-            "error": _error_text(job, translator(request)),
-            "target": job.label,
-            "assigned": bool(outcome and outcome.model),
-            "model": (outcome and outcome.model) or None,
-            # Why a batch encode did not get its sticker, for the reader.
-            "note": (translator(request)(outcome.assign_error)
-                     if outcome and outcome.assign_error else ""),
-        })
+        return JSONResponse(_job_json(job, translator(request)))
+
+    @app.get("/api/group/{group}")
+    def group_status(request: Request, group: str):
+        """Every job of a group in one answer, for the progress page."""
+        if group not in groups:
+            raise Refused(404, "error.parts_gone")
+        translate = translator(request)
+        members = [jobs.get(job_id) for job_id in groups[group]]
+        return JSONResponse({"jobs": [_job_json(job, translate) for job in members if job]})
 
 
 # --- helpers --------------------------------------------------------------
@@ -383,3 +378,22 @@ def _finished_outcome(jobs: JobRunner, job_id: str) -> Outcome:
 def _error_text(job: Job, translate: Translator) -> Optional[str]:
     """Why a job failed, in the reader's language when the app described it."""
     return job.problem.say(translate) if job.problem else job.error
+
+
+def _job_json(job: Job, translate: Translator) -> Dict:
+    """One job as the pages watching it read it."""
+    outcome = job.result if isinstance(job.result, Outcome) else None
+    return {
+        "id": job.id,
+        "state": job.state.value,
+        "step": job.step,
+        "done": job.done_count,
+        "total": job.total,
+        "percent": job.percent,
+        "error": _error_text(job, translate),
+        "target": job.label,
+        "assigned": bool(outcome and outcome.model),
+        "model": (outcome and outcome.model) or None,
+        # Why a batch encode did not get its sticker, for the reader.
+        "note": translate(outcome.assign_error) if outcome and outcome.assign_error else "",
+    }

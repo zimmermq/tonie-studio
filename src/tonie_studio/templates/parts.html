@@ -60,25 +60,24 @@
       item.classList.toggle('done', Number(item.dataset.step) < Number(step));
     }
   }
-  async function poll() {
+  const group = {{ group | tojson }};
+  every(3000, async () => {
+    const answer = await (await fetch(`/api/group/${group}`)).json();
     let running = false;
     let waitingForSticker = false;
     const models = [];
-    for (const row of document.querySelectorAll('[data-job]')) {
-      try {
-        const job = await (await fetch(`/api/job/${row.dataset.job}`)).json();
-        if (job.model) models.push(job.model);
-        if (job.state === 'done' && !job.assigned) waitingForSticker = true;
-        const text = states[job.state] || job.state;
-        row.querySelector('.state').textContent =
-          job.percent != null && job.state === 'running' ? `${text}, ${job.percent} %` : text;
-        row.querySelector('.assign').hidden = job.state !== 'done' || job.assigned;
-        row.querySelector('.assigned').hidden = !job.assigned;
-        row.querySelector('.note').textContent = job.note || '';
-        if (job.state === 'queued' || job.state === 'running') running = true;
-      } catch (error) {
-        running = true;
-      }
+    for (const job of answer.jobs) {
+      const row = document.querySelector(`[data-job="${job.id}"]`);
+      if (!row) continue;
+      if (job.model) models.push(job.model);
+      if (job.state === 'done' && !job.assigned) waitingForSticker = true;
+      const text = states[job.state] || job.state;
+      row.querySelector('.state').textContent =
+        job.percent != null && job.state === 'running' ? `${text}, ${job.percent} %` : text;
+      row.querySelector('.assign').hidden = job.state !== 'done' || job.assigned;
+      row.querySelector('.assigned').hidden = !job.assigned;
+      row.querySelector('.note').textContent = job.note || '';
+      if (job.state === 'queued' || job.state === 'running') running = true;
     }
     if (!running) {
       moveTo('4');
@@ -88,15 +87,13 @@
         printnext.hidden = false;
       }
     }
-    if (running || (placingStickers && waitingForSticker)) setTimeout(poll, 3000);
-  }
-  poll();
+    return running || (placingStickers && waitingForSticker);
+  });
 
   {% if placing %}
   // Each sticker put on the box goes to the next episode; the server decides,
   // the page only reports what the box sees. A sticker is asked about again
   // only after it was taken off, or while teddyCloud has not filed it yet.
-  const group = {{ group | tojson }};
   const placemsg = document.getElementById('placemsg');
   let lastSticker = null;
   // One sticker at a time: a box report arriving while the last placement is

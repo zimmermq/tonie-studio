@@ -662,3 +662,20 @@ class TestJobErrorsInTheReadersLanguage:
         assert runner.get(job_id).done.wait(5)
 
         assert client.get(f"/api/job/{job_id}").json()["error"] == "ffmpeg died"
+
+
+class TestGroupStatus:
+    def test_answers_every_job_of_a_group_at_once(self, client, runner):
+        response = client.post(f"/album/{first_album_id(client)}/encode", data={
+            "series": "S", "episode": "E", "order": "1,2,3", "selected": ["1", "2", "3"],
+            "titles": ["a", "b", "c"], "parts": "2",
+        }, follow_redirects=False)
+        group = response.headers["location"].rsplit("/", 1)[1]
+
+        answer = client.get(f"/api/group/{group}").json()
+
+        assert len(answer["jobs"]) == 2
+        assert {job["id"] for job in answer["jobs"]} == {job.id for job in runner.all()}
+
+    def test_an_unknown_group_is_refused(self, client):
+        assert client.get("/api/group/nope").status_code == 404

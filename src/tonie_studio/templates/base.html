@@ -15,6 +15,22 @@
     return String(text ?? '').replace(/\{(\w+)\}/g,
       (match, name) => (name in values ? values[name] : match));
   };
+
+  // Calls ``step`` now and again every ``ms`` for as long as it returns true.
+  // A step that fails - a dropped connection, a server restarting - is tried
+  // again rather than ending the loop: the work being watched goes on.
+  window.every = (ms, step) => {
+    const run = async () => {
+      let again = true;
+      try {
+        again = await step();
+      } catch (error) {
+        again = true;
+      }
+      if (again) setTimeout(run, ms);
+    };
+    run();
+  };
 </script>
 <style>
   :root {

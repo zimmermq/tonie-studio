@@ -46,17 +46,7 @@
     return `${data.step} ${data.done}/${data.total}`;
   }
 
-  async function poll() {
-    let data;
-    try {
-      const response = await fetch(`/api/job/${id}`);
-      if (!response.ok) return;
-      data = await response.json();
-    } catch (error) {
-      // A dropped poll says nothing about the job, which runs on the server.
-      return setTimeout(poll, 3000);
-    }
-
+  function show(data) {
     state.textContent = words[`job.state.${data.state}`] || data.state;
     fill.style.width = (data.percent ?? 0) + '%';
     detail.textContent = describe(data);
@@ -66,11 +56,17 @@
       document.getElementById('next').hidden = data.state !== 'done';
       message.textContent = data.error || words[{{ done_key | tojson }}];
       message.className = data.state === 'failed' ? 'state-failed' : 'state-done';
-      return;
+      return false;
     }
-    setTimeout(poll, 1000);
+    return true;
   }
 
-  if ({{ (job.state.value not in ('done', 'failed')) | tojson }}) poll();
+  if ({{ (job.state.value not in ('done', 'failed')) | tojson }}) {
+    every(1000, async () => {
+      const response = await fetch(`/api/job/${id}`);
+      // A job that is gone stays gone; there is nothing left to watch.
+      return response.ok ? show(await response.json()) : false;
+    });
+  }
 </script>
 {% endblock %}
