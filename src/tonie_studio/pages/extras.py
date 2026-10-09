@@ -14,7 +14,7 @@ from ..listening import summarise
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, Subscription, add_subscription,
                        load_subscriptions, parse_feed, remove_subscription)
 from ..runtimes import playing_times
-from ..tonie import find_tag, list_tags
+from ..tags import find_tag, list_tags
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)

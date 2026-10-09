@@ -6,8 +6,8 @@ import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Dict
 from pathlib import Path
+from typing import Dict
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -17,11 +17,12 @@ from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup,
                       plan_restore, read_backup)
 from ..checkup import examine, model_repairs, repaired
 from ..encode import EncodeError, delete_taf
+from ..models import find_model, remove_model, update_model
 from ..podcast import SERIES as PODCAST_SERIES
 from ..runtimes import forget
 from ..settings import Settings
+from ..tags import TonieError, find_tag
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import TonieError, find_model, find_tag, remove_model, update_model
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)

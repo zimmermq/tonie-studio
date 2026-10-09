@@ -15,12 +15,13 @@ from ..calibration import FILE_NAME as CALIBRATION_FILE
 from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from ..i18n import DEFAULT as DEFAULT_LANGUAGE
 from ..i18n import Translator
+from ..models import Model, fetch_cover, list_models
 from ..overview import Entry, build_overview
 from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
                      build_sheet)
+from ..tags import list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import Model, fetch_cover, list_models, list_tags
 from .common import Context, Refused, is_image_name, translator
 
 log = logging.getLogger(__name__)

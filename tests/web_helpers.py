@@ -95,7 +95,7 @@ def captured_sheet():
 
 
 def list_tags_of(teddycloud):
-    from tonie_studio.tonie import list_tags
+    from tonie_studio.tags import list_tags
 
     return list_tags(teddycloud)
 

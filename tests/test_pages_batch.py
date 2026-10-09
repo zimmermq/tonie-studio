@@ -49,7 +49,7 @@ class TestSeveralFolders:
         assert episodes == ["Folge 1", "Folge 2"]
 
     def test_the_first_free_tag_gets_the_first_episode(self, client, runner, teddycloud):
-        from tonie_studio.tonie import list_tags
+        from tonie_studio.tags import list_tags
 
         free = [tag.ruid for tag in list_tags(teddycloud) if not tag.assigned]
         ids = batch_ids(upload_series(client, episodes=2))

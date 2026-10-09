@@ -45,10 +45,12 @@ from .encode import EncodeError, delete_taf, encode_files, library_path
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
+from .models import find_model
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
+from .tags import find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import find_model, find_tag, list_tags, publish
+from .tonie import publish
 
 log = logging.getLogger(__name__)
 

@@ -19,13 +19,15 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .album import Track
 from .albumnotes import remember_made
-from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .batch import Placing, Slot
+from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .jobs import Job, JobState
+from .models import DEFAULT_CATEGORY
 from .runtimes import remember
+from .tags import TonieError, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .thumbnails import crop
-from .tonie import DEFAULT_CATEGORY, TonieError, find_tag, list_tags, publish
+from .tonie import publish
 
 log = logging.getLogger(__name__)
 

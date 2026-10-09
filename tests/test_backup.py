@@ -10,8 +10,8 @@ import json
 import zipfile
 
 import pytest
-
 from fake_teddycloud import FakeTeddyCloud
+
 from tonie_studio.backup import BackupError, apply_restore, create_backup, plan_restore, read_backup
 from tonie_studio.listening import FILE_NAME as LISTENING_FILE
 from tonie_studio.runtimes import FILE_NAME as TIMES_FILE

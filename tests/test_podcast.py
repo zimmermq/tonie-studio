@@ -3,8 +3,8 @@
 from datetime import datetime, timezone
 
 import pytest
-
 from fake_teddycloud import FakeTeddyCloud
+
 from tonie_studio.podcast import (LARGEST_FEED, FeedError, Subscription, check_public,
                                   load_subscriptions, newest, parse_feed, refresh,
                                   save_subscriptions)

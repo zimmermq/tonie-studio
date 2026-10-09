@@ -5,8 +5,8 @@ instance, so the fixtures reproduce those states rather than invented ones.
 """
 
 import pytest
-
 from fake_teddycloud import FakeTeddyCloud
+
 from tonie_studio.checkup import examine, repaired
 from tonie_studio.teddycloud import TeddyCloudError
 

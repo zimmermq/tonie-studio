@@ -32,10 +32,11 @@ from .encode import list_tafs
 from .i18n import Problem
 from .library import is_library, played, same
 from .listening import FILE_NAME as LISTENING_FILE
+from .models import Model, fetch_cover
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
+from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import Model, TonieTag, fetch_cover, list_tags
 
 log = logging.getLogger(__name__)
 

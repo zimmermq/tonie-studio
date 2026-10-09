@@ -11,19 +11,8 @@ import re
 import pytest
 from PIL import Image
 
-from tonie_studio.sheet import (
-    BLEED_MM,
-    FIT,
-    FIT_FACTOR,
-    COLUMNS,
-    DIAMETER_MM,
-    GAP_MM,
-    PER_PAGE,
-    ROWS,
-    Sticker,
-    build_sheet,
-    sticker_positions,
-)
+from tonie_studio.sheet import (BLEED_MM, COLUMNS, DIAMETER_MM, FIT, FIT_FACTOR, GAP_MM, PER_PAGE,
+                                ROWS, Sticker, build_sheet, sticker_positions)
 
 
 def _image(width=800, height=800, colour=(200, 60, 40)) -> bytes:
@@ -234,8 +223,7 @@ class TestBackSide:
     def test_nothing_sticks_out_of_the_circle(self):
         from reportlab.lib.units import mm
 
-        from tonie_studio.sheet import (Back, LEADING, back_lines, text_width_mm,
-                                        text_width)
+        from tonie_studio.sheet import LEADING, Back, back_lines, text_width, text_width_mm
 
         back = Back(title="Tierische Tierlieder", series="Lichterkinder",
                     notes=["12 Tracks - TS-0001"],

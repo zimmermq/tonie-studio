@@ -19,13 +19,13 @@ from ..batch import episode_order
 from ..encode import taf_exists
 from ..i18n import Problem, Translator
 from ..jobs import Job, JobRunner, JobState
+from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
 from ..parts import MOST_CHAPTERS
 from ..planning import chosen_tracks, plan_parts
 from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
+from ..tags import TonieError, list_tags
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
-from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
-from .common import (UPLOAD, Context, Refused, is_audio_name, is_image_name, refused,
-                     translator)
+from .common import UPLOAD, Context, Refused, is_audio_name, is_image_name, refused, translator
 
 log = logging.getLogger(__name__)
 

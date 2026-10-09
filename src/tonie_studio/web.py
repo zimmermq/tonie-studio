@@ -22,13 +22,13 @@ from .boxstate import BoxWatcher
 from .encode import remove_orphaned_staging
 from .jobs import JobRunner
 from .listening import ListeningLog
+from .models import ModelCache
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
 from .pages.common import TEMPLATES, Catalogue, Context, language_context
 from .pages.upkeep import clear_parked_restores
 from .podcast import Fetch, PodcastUpdater, download
 from .settings import Settings
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import ModelCache
 from .uploads import remove_old_uploads
 
 log = logging.getLogger(__name__)

@@ -19,8 +19,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from .models import Model
 from .store import LOCK, read_json, write_json
-from .tonie import Model
 
 SEEN_FILE = "albums-seen.json"
 MADE_FILE = "albums-made.json"

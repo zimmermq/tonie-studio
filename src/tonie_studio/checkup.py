@@ -28,8 +28,9 @@ from typing import Dict, Iterable, List, Optional
 
 from .encode import Taf, list_tafs
 from .library import is_library, played, same
+from .models import MODEL_PREFIX, Model, list_models
+from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import MODEL_PREFIX, Model, TonieTag, list_models, list_tags
 
 log = logging.getLogger(__name__)
 

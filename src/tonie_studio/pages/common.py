@@ -25,10 +25,10 @@ from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import JobRunner
 from ..listening import ListeningLog
+from ..models import ModelCache
 from ..podcast import Fetch, PodcastUpdater
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
-from ..tonie import ModelCache
 
 log = logging.getLogger(__name__)
 

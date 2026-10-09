@@ -10,18 +10,9 @@ from unittest.mock import patch
 
 import pytest
 
-from tonie_studio.album import (
-    BY_FILE_NUMBER,
-    BY_NAME,
-    BY_PLAYLIST,
-    BY_TRACK_TAG,
-    WARN_ARTEFACT_COVER,
-    WARN_NO_COVER,
-    TrackTags,
-    album_id,
-    list_albums,
-    read_album,
-)
+from tonie_studio.album import (BY_FILE_NUMBER, BY_NAME, BY_PLAYLIST, BY_TRACK_TAG,
+                                WARN_ARTEFACT_COVER, WARN_NO_COVER, TrackTags, album_id,
+                                list_albums, read_album)
 
 
 @pytest.fixture

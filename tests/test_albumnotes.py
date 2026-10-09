@@ -4,15 +4,9 @@ already became a tonie."""
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from tonie_studio.albumnotes import (
-    NEW_FOR,
-    first_sightings,
-    forget_model,
-    guess_made,
-    made,
-    remember_made,
-)
-from tonie_studio.tonie import Model
+from tonie_studio.albumnotes import (NEW_FOR, first_sightings, forget_model, guess_made, made,
+                                     remember_made)
+from tonie_studio.models import Model
 
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
 

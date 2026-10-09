@@ -5,18 +5,10 @@ real one, so a test that passes here would not have been rejected there.
 """
 
 import pytest
-
 from fake_teddycloud import FakeTeddyCloud
-from tonie_studio.encode import (
-    STAGING_ROOT,
-    delete_taf,
-    list_tafs,
-    taf_exists,
-    EncodeError,
-    encode_files,
-    library_path,
-    remove_orphaned_staging,
-)
+
+from tonie_studio.encode import (STAGING_ROOT, EncodeError, delete_taf, encode_files, library_path,
+                                 list_tafs, remove_orphaned_staging, taf_exists)
 from tonie_studio.teddycloud import TeddyCloudError
 
 
@@ -241,8 +233,9 @@ class TestEncodeProgress:
         assert seen[-1] == ("encode", 600, 600)
 
     def test_turns_a_growing_taf_into_a_position(self, teddycloud):
-        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
         import threading
+
+        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
 
         teddycloud.files["/a.taf"] = b"x" * int(ENCODE_BYTES_PER_SECOND * 120)
         seen = []
@@ -267,8 +260,9 @@ class TestEncodeProgress:
     def test_never_claims_to_be_finished(self, teddycloud):
         # The encode says when it is done. A bar sitting at 100 percent while
         # ffmpeg still runs is worse than one that stops a second short.
-        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
         import threading
+
+        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
 
         teddycloud.files["/a.taf"] = b"x" * int(ENCODE_BYTES_PER_SECOND * 9999)
         seen = []

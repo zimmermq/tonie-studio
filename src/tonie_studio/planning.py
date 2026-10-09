@@ -18,10 +18,11 @@ from .batch import allocate, episode_order
 from .encode import existing_taf, library_path, taf_exists
 from .i18n import Problem
 from .library import played, same, source_of
+from .models import Model
 from .parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from .publishing import free_tags
+from .tags import list_tags
 from .teddycloud import TeddyCloudClient
-from .tonie import Model, list_tags
 
 # A track and the name a person gave it, in the order it will play.
 Chosen = Tuple[Track, str]

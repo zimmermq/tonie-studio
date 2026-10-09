@@ -1,22 +1,13 @@
 """Tests for putting a taf on a tag and giving it a cover."""
 
 import pytest
-
 from fake_teddycloud import FakeTeddyCloud
+
 from tonie_studio.encode import EncodeResult
-from tonie_studio.tonie import (
-    MODEL_PREFIX,
-    TonieError,
-    copy_tag,
-    find_model,
-    find_model_by_audio,
-    list_tags,
-    next_model_id,
-    publish,
-    publish_stream,
-    remove_model,
-    update_model,
-)
+from tonie_studio.models import (MODEL_PREFIX, find_model, find_model_by_audio, next_model_id,
+                                 remove_model, update_model)
+from tonie_studio.tags import TonieError, list_tags
+from tonie_studio.tonie import copy_tag, publish, publish_stream
 
 
 @pytest.fixture

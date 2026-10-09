@@ -13,11 +13,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
+from ..models import (CATEGORIES, DEFAULT_CATEGORY, fetch_cover, find_model, remove_model,
+                      update_model)
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
+from ..tags import TonieError, list_tags
 from ..teddycloud import TeddyCloudError
-from ..tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, copy_tag, fetch_cover, find_model,
-                     list_tags, publish_stream, remove_model, update_model)
+from ..tonie import copy_tag, publish_stream
 from .common import Context, Refused, is_image_name
 
 log = logging.getLogger(__name__)

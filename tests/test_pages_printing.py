@@ -287,7 +287,7 @@ class TestPrintedLanguage:
     def test_the_back_side_speaks_the_readers_language(self):
         from tonie_studio.i18n import Translator
         from tonie_studio.pages.printing import _back_of
-        from tonie_studio.tonie import Model
+        from tonie_studio.models import Model
 
         # The release is 2019-01-01 in the catalogue's seconds-since-1970 form.
         model = Model(id="TS-0001", series="S", episode="E", release="1546300800",

@@ -14,12 +14,13 @@ from ..albumnotes import albums_with_tonies
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
 from ..jobs import JobState, new_id
+from ..models import list_models
 from ..planning import plan_batch
-from ..publishing import PLACE_RESULTS, place, Details, Outcome, encode_job, free_tags, put_on_sticker
+from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, place,
+                          put_on_sticker)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from ..thumbnails import DEFAULT_SIZE
-from ..tonie import list_models
 from .common import Context, Refused, refused, translator
 
 log = logging.getLogger(__name__)
