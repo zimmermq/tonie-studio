@@ -12,3 +12,5 @@ data/
 .git/
 .idea/
 .github/
+docs/
+README.md
