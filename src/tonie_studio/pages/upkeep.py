@@ -171,12 +171,12 @@ def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: s
         tag = find_tag(client, target)
         fixed = repaired(tag.source if tag else None)
         if not fixed:
-            raise ValueError(f"nothing to repair on {target}")
+            raise TonieError("checkup.nothing_to_repair", target=target)
         client.set_tag(target, source=fixed)
     elif fix == "repair_model":
         model = find_model(client, target)
         if model is None:
-            raise ValueError(f"there is no model {target}")
+            raise TonieError("tonie.model_missing", model=target)
         changes = model_repairs(model)
         update_model(client, target, series=changes.get("series"),
                      episode=changes.get("episode"), tracks=changes.get("tracks"))

@@ -2434,3 +2434,27 @@ class TestSpellingsOfAPath:
 
         assert page.count("schon encodiert und auf einem Sticker") == 1
         assert page.count("schon encodiert, bekommt nur noch einen Sticker") == 1
+
+
+class TestJobErrorsInTheReadersLanguage:
+    def test_a_failed_job_says_why_in_the_readers_language(self, client, runner):
+        from tonie_studio.encode import EncodeError
+
+        def fails(progress):
+            raise EncodeError("encode.no_tracks")
+
+        job_id = runner.submit("encode", "/X.taf", fails)
+        assert runner.get(job_id).done.wait(5)
+        client.cookies.set("lang", "de")
+
+        assert client.get(f"/api/job/{job_id}").json()["error"] == "Bitte mindestens einen Track auswählen."
+        assert "Bitte mindestens einen Track" in client.get(f"/job/{job_id}").text
+
+    def test_an_error_nobody_described_is_shown_as_it_came(self, client, runner):
+        def fails(progress):
+            raise RuntimeError("ffmpeg died")
+
+        job_id = runner.submit("encode", "/X.taf", fails)
+        assert runner.get(job_id).done.wait(5)
+
+        assert client.get(f"/api/job/{job_id}").json()["error"] == "ffmpeg died"

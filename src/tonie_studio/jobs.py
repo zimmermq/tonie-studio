@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from .i18n import Problem
+
 log = logging.getLogger(__name__)
 
 # One encode at a time. They compete for the same ffmpeg and the same disk, and
@@ -56,6 +58,7 @@ class Job:
     total: int = 0
     result: Any = None
     error: Optional[str] = None
+    problem: Optional[Problem] = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: Optional[datetime] = None
     # Set once the job stops, so a test or a caller can wait instead of poll.
@@ -136,6 +139,9 @@ class JobRunner:
             # would leave the page with a job that stopped for no stated reason.
             log.exception("job %s (%s) failed", job.id, job.label)
             job.error = str(error) or error.__class__.__name__
+            # Kept whole when a person is meant to read it, so a page can say
+            # it in the reader's language; ``error`` is the log's version.
+            job.problem = error if isinstance(error, Problem) else None
             job.state = JobState.FAILED
         finally:
             job.finished_at = datetime.now(timezone.utc)

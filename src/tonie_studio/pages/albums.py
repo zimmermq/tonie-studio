@@ -17,7 +17,8 @@ from ..album import Album, album_id, cover_candidates, read_album
 from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
 from ..encode import EncodeError, library_path, taf_exists
-from ..jobs import JobRunner, JobState
+from ..i18n import Translator
+from ..jobs import Job, JobRunner, JobState
 from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
@@ -236,6 +237,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             done_key, next_href, next_key = "job.taf_done", f"/job/{job.id}/assign", "job.to_assign"
         return templates.TemplateResponse(request, "job.html", {
             "job": job, "done_key": done_key, "next_href": next_href, "next_key": next_key,
+            "error": _error_text(job, translator(request)),
         })
 
 
@@ -310,7 +312,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "done": job.done_count,
             "total": job.total,
             "percent": job.percent,
-            "error": job.error,
+            "error": _error_text(job, translator(request)),
             "target": job.label,
             "assigned": bool(outcome and outcome.model),
             "model": (outcome and outcome.model) or None,
@@ -411,3 +413,8 @@ def _finished_outcome(jobs: JobRunner, job_id: str) -> Outcome:
     if job.state is not JobState.DONE or not isinstance(job.result, Outcome):
         raise Refused(409, "error.no_taf_yet")
     return job.result
+
+
+def _error_text(job: Job, translate: Translator) -> Optional[str]:
+    """Why a job failed, in the reader's language when the app described it."""
+    return job.problem.say(translate) if job.problem else job.error

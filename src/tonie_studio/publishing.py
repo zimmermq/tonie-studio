@@ -100,7 +100,7 @@ def encode_job(client: TeddyCloudClient, chosen: Sequence[Tuple[Track, str]], ta
         if reuse:
             encoded = existing_taf(client, target)
             if encoded is None or encoded.tracks != len(paths):
-                raise EncodeError(f"{target} is no longer the taf this album was planned with")
+                raise EncodeError("encode.changed", target=target)
         else:
             encoded = encode_files(client, paths, target, progress=progress,
                                    replace=replace, total_seconds=playing_time)

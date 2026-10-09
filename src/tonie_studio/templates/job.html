@@ -14,7 +14,7 @@
 
 <div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>
   <p id="message" class="{% if job.state.value == 'failed' %}state-failed{% else %}state-done{% endif %}">
-    {%- if job.error %}{{ job.error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif -%}
+    {%- if error %}{{ error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif -%}
   </p>
   <a class="button" id="next" href="{{ next_href }}"
      {% if job.state.value != 'done' %}hidden{% endif %}>{{ t(next_key) }}</a>

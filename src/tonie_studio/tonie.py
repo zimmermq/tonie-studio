@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Sequence, Union
 
 from .encode import EncodeResult, taf_exists
+from .i18n import Problem
 from .library import is_library
 from .teddycloud import TeddyCloudClient
 
@@ -54,8 +55,8 @@ DEFAULT_CATEGORY = "music"
 CATEGORIES = ("music", "audio-book", "audio-play", "audio-play-songs", "audio-book-songs")
 
 
-class TonieError(RuntimeError):
-    """Raised when a tag or a model cannot be written as asked."""
+class TonieError(Problem, RuntimeError):
+    """Raised when a tag or a model cannot be written as asked; a person reads it."""
 
 
 @dataclass
@@ -113,9 +114,7 @@ def require_tag(client: TeddyCloudClient, ruid: str) -> TonieTag:
     """The tag ``ruid``, or a TonieError saying how a sticker becomes known."""
     tag = find_tag(client, ruid)
     if tag is None:
-        raise TonieError(
-            f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
-        )
+        raise TonieError("tonie.unknown_tag", ruid=ruid)
     return tag
 
 
@@ -295,15 +294,13 @@ def publish(
 ) -> str:
     """Give the tag its audio and its identity, and return the model id used."""
     if not encoded.source:
-        raise TonieError("the encode produced no library path to point the tag at")
+        raise TonieError("tonie.no_source")
     # A tag pointing at a path that is not there plays nothing, and nothing
     # says so: teddyCloud stores whatever it is handed. This has happened once
     # already, from a source string that had been read with the wrong encoding
     # and written straight back.
     if is_library(encoded.source) and not taf_exists(client, encoded.target):
-        raise TonieError(
-            f"there is no taf at {encoded.target}; the tag would play nothing"
-        )
+        raise TonieError("tonie.no_taf", target=encoded.target)
     require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
@@ -358,9 +355,9 @@ def publish_stream(
     """
     url = (url or "").strip()
     if "://" not in url:
-        raise TonieError(f"a stream needs a URL, not {url!r}")
+        raise TonieError("tonie.not_a_url", url=url)
     if not url.lower().startswith(("http://", "https://")):
-        raise TonieError("only http and https streams are supported")
+        raise TonieError("tonie.only_http")
     require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
@@ -414,7 +411,7 @@ def update_model(
     """
     model = find_model(client, model_id)
     if model is None:
-        raise TonieError(f"there is no model {model_id}")
+        raise TonieError("tonie.model_missing", model=model_id)
 
     if series is not None:
         model.series = _series(series, model.id)
@@ -441,10 +438,10 @@ def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     fight about. Whatever the second sticker played before is replaced.
     """
     if from_ruid == to_ruid:
-        raise TonieError("a sticker cannot be copied onto itself")
+        raise TonieError("tonie.copy_onto_itself")
     original = find_tag(client, from_ruid)
     if original is None or not original.source:
-        raise TonieError(f"the tag {from_ruid} plays nothing to copy")
+        raise TonieError("tonie.nothing_to_copy", ruid=from_ruid)
     require_tag(client, to_ruid)
 
     client.set_tag(

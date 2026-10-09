@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
+from .i18n import Problem
 from .library import same, source_of
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -62,8 +63,8 @@ ENCODE_BYTES_PER_SECOND = 96_000 / 8
 GROWTH_POLL = 3.0
 
 
-class EncodeError(RuntimeError):
-    """Raised when a request cannot be encoded as asked."""
+class EncodeError(Problem, RuntimeError):
+    """Raised when a request cannot be encoded as asked; a person reads it."""
 
 
 @dataclass
@@ -107,7 +108,7 @@ def library_path(series: str, episode: str) -> str:
     """
     name = _safe_name(episode)
     if not name:
-        raise EncodeError("the taf needs a name")
+        raise EncodeError("encode.no_name")
 
     folder = _safe_name(series)
     return f"/{folder}/{name}{TAF_SUFFIX}" if folder else f"/{name}{TAF_SUFFIX}"
@@ -160,7 +161,7 @@ def delete_taf(client: TeddyCloudClient, path: str) -> None:
     exactly the intent.
     """
     if not path.endswith(TAF_SUFFIX):
-        raise EncodeError(f"that is not a {TAF_SUFFIX} file: {path}")
+        raise EncodeError("encode.not_a_taf", path=path)
     client.delete(path, special="library")
     log.info("deleted %s", path)
 
@@ -201,7 +202,7 @@ def encode_files(
     _ensure_parents(client, target)
     if _find_entry(client, target):
         if not replace:
-            raise EncodeError(f"a taf already exists at {target}; rename or delete it first")
+            raise EncodeError("encode.exists", target=target)
         log.info("replacing the taf at %s", target)
         client.delete(target, special="library")
 
@@ -305,13 +306,13 @@ def remove_orphaned_staging(client: TeddyCloudClient) -> int:
 
 def _check(sources: Sequence[Path], target: str) -> None:
     if not sources:
-        raise EncodeError("select at least one track")
+        raise EncodeError("encode.no_tracks")
     if not target.endswith(TAF_SUFFIX):
-        raise EncodeError(f"the target has to be a {TAF_SUFFIX} file, not {target}")
+        raise EncodeError("encode.target_not_taf", target=target)
 
     missing = [str(source) for source in sources if not source.is_file()]
     if missing:
-        raise EncodeError(f"cannot read: {', '.join(missing)}")
+        raise EncodeError("encode.unreadable", files=", ".join(missing))
 
 
 def _safe_name(text: str) -> str:
