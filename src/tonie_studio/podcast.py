@@ -29,9 +29,10 @@ import logging
 import re
 import shutil
 import socket
+import threading
 import xml.etree.ElementTree as ElementTree
 from dataclasses import asdict, dataclass, field, fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
 from typing import Callable, Dict, List, Optional
@@ -42,6 +43,7 @@ import requests
 from .album import AUDIO_EXTENSIONS
 from .encode import EncodeError, delete_taf, encode_files, library_path
 from .i18n import Problem
+from .jobs import JobRunner
 from .library import is_library, path_of, played, same
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
@@ -415,3 +417,83 @@ def _seconds(text: Optional[str]) -> Optional[int]:
     for part in text.strip().split(":"):
         total = total * 60 + int(part)
     return total or None
+
+
+# How often the updater wakes up, and how old a check has to be before it
+# looks again. Children's podcasts publish weekly at most; twice a day finds a
+# new episode before the next bedtime without asking a feed every hour.
+WAKE_SECONDS = 3600
+REFRESH_AFTER = timedelta(hours=12)
+
+
+class PodcastUpdater:
+    """Refreshes subscriptions as jobs: on request, and on its own now and then.
+
+    One refresh per subscription at a time, so a slow feed is not queued
+    twice. The podcast series folder is busy while any refresh runs, because
+    a refresh builds its taf under a name only known once it runs.
+    """
+
+    def __init__(self, client: Callable[[], TeddyCloudClient], data_dir: Path,
+                 jobs: JobRunner, fetch: Fetch):
+        self.client = client
+        self.data_dir = data_dir
+        self.jobs = jobs
+        self.fetch = fetch
+        self._in_flight: set = set()
+        self._lock = threading.Lock()
+
+    @property
+    def refreshing(self) -> bool:
+        with self._lock:
+            return bool(self._in_flight)
+
+    def queue(self, subscription_id: str) -> Optional[str]:
+        """Start a refresh as a job, unless one for it is already under way."""
+        with self._lock:
+            if subscription_id in self._in_flight:
+                return None
+            self._in_flight.add(subscription_id)
+        label = next((entry.title or entry.feed for entry in load_subscriptions(self.data_dir)
+                      if entry.id == subscription_id), subscription_id)
+        return self.jobs.submit("podcast", label, lambda progress: self._refresh(subscription_id))
+
+    def run(self, stop: threading.Event) -> None:
+        """Wake up now and then and refresh what has not been checked lately, until ``stop``."""
+        while not stop.wait(WAKE_SECONDS):
+            now = datetime.now(timezone.utc)
+            for subscription in load_subscriptions(self.data_dir):
+                try:
+                    checked = datetime.fromisoformat(subscription.checked)
+                except ValueError:
+                    checked = None
+                if checked is None or now - checked >= REFRESH_AFTER:
+                    self.queue(subscription.id)
+
+    def _refresh(self, subscription_id: str) -> Dict:
+        try:
+            subscription = next((entry for entry in load_subscriptions(self.data_dir)
+                                 if entry.id == subscription_id), None)
+            if subscription is None:
+                return {"changed": False}
+            try:
+                changed = refresh(self.client(), subscription, self.data_dir, fetch=self.fetch)
+            except Exception as error:
+                # Kept on the subscription, so the podcast page can say why the
+                # episodes are old, not only the job list. A problem this app
+                # describes is kept as its key, to be said in the reader's
+                # language; anything else as it came.
+                if isinstance(error, Problem):
+                    subscription.error = ""
+                    subscription.error_key, subscription.error_params = error.key, error.params
+                else:
+                    subscription.error = str(error) or error.__class__.__name__
+                    subscription.error_key, subscription.error_params = "", {}
+                subscription.checked = datetime.now(timezone.utc).isoformat()
+                update_subscription(self.data_dir, subscription)
+                raise
+            update_subscription(self.data_dir, subscription)
+            return {"changed": changed}
+        finally:
+            with self._lock:
+                self._in_flight.discard(subscription_id)

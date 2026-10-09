@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
+from typing import Dict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -16,6 +17,7 @@ from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup,
                       plan_restore, read_backup)
 from ..checkup import examine, model_repairs, repaired
 from ..encode import EncodeError, delete_taf
+from ..podcast import SERIES as PODCAST_SERIES
 from ..runtimes import forget
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
@@ -30,7 +32,17 @@ def register(app: FastAPI, ctx: Context) -> None:
     settings = ctx.settings
     templates = ctx.templates
     client = ctx.client
-    work_in_progress = ctx.work_in_progress
+
+    def work_in_progress() -> Dict:
+        """What the checkup must not call left over: tafs jobs made or are making.
+
+        Encode jobs are labelled with their target. A podcast refresh builds
+        its taf under a name only known once it runs, so while one is under
+        way the whole podcast folder is spared.
+        """
+        busy = {job.label for job in ctx.jobs.all() if job.kind == "encode"}
+        folders = {f"/{PODCAST_SERIES}"} if ctx.podcasts.refreshing else set()
+        return {"busy": busy, "busy_folders": folders}
 
     @app.get("/checkup", response_class=HTMLResponse)
     def checkup_page(request: Request, done: str = "", stale: str = ""):

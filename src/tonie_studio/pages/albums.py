@@ -14,15 +14,15 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from ..album import Album, album_id, cover_candidates, read_album
-from ..albumnotes import first_sightings, is_new
+from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
 from ..encode import EncodeError, library_path, taf_exists
 from ..jobs import JobRunner, JobState
-from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
 from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
+from ..publishing import Crop, Details, Outcome, encode_job, publish_outcome
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
-from .common import (UPLOAD, Context, Refused, is_audio_name, is_image_name, translator)
+from .common import UPLOAD, Context, Refused, is_audio_name, is_image_name, translator
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,6 @@ def register(app: FastAPI, ctx: Context) -> None:
     templates = ctx.templates
     jobs = ctx.jobs
     client = ctx.client
-    _albums_with_tonies = ctx.albums_with_tonies
     groups = ctx.groups
     batches = ctx.batches
     placings = ctx.placings
@@ -52,7 +51,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "jobs": jobs.all()[:10],
             "thumb_size": DEFAULT_SIZE,
             "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
-            "done": _albums_with_tonies(albums),
+            "done": albums_with_tonies(settings.data_dir, albums, ctx.models.get()),
         })
 
 

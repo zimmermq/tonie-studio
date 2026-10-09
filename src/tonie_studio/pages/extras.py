@@ -31,7 +31,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     listening = ctx.listening
     client = ctx.client
     fetch = ctx.fetch
-    queue_podcast = ctx.queue_podcast
+    podcasts = ctx.podcasts
 
     @app.get("/listening", response_class=HTMLResponse)
     def listening_page(request: Request, period: str = "30"):
@@ -110,13 +110,13 @@ def register(app: FastAPI, ctx: Context) -> None:
         subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
                                     keep=max(1, min(keep, 20)), title=parsed.title)
         add_subscription(settings.data_dir, subscription)
-        job_id = queue_podcast(subscription.id)
+        job_id = podcasts.queue(subscription.id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
 
 
     @app.post("/podcasts/{subscription_id}/refresh")
     def refresh_now(subscription_id: str):
-        job_id = queue_podcast(subscription_id)
+        job_id = podcasts.queue(subscription_id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
 
 

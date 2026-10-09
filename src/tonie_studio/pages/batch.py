@@ -11,7 +11,7 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..album import Album, read_album
-from ..albumnotes import match_by_tracks
+from ..albumnotes import albums_with_tonies, match_by_tracks
 from ..batch import AUTO, PLACE, Placing, Slot, allocate, episode_order
 from ..encode import EncodeError, existing_taf, library_path, taf_exists
 from ..jobs import JobState, new_id
@@ -22,7 +22,7 @@ from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from ..thumbnails import DEFAULT_SIZE
 from ..tonie import Model, list_models, list_tags
-from .common import (Catalogue, Context, Refused, translator)
+from .common import Catalogue, Context, Refused, translator
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ def register(app: FastAPI, ctx: Context) -> None:
     templates = ctx.templates
     jobs = ctx.jobs
     client = ctx.client
-    _albums_with_tonies = ctx.albums_with_tonies
     groups = ctx.groups
     batches = ctx.batches
     placings = ctx.placings
@@ -50,7 +49,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         models = list_models(connection)
         rows = _plan_batch(connection, settings, catalogue, ids, models=models,
-                           tonies=_albums_with_tonies(catalogue.albums(), models))
+                           tonies=albums_with_tonies(settings.data_dir, catalogue.albums(), models))
         # Whoever always hands out stickers the same way should not have to
         # choose it again each time; a newcomer starts with placing.
         how = request.cookies.get(HOW_COOKIE)
@@ -84,7 +83,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         models = list_models(connection)
         rows = _plan_batch(connection, settings, catalogue, ids, dict(zip(ids, series, strict=False)),
                            dict(zip(ids, episodes, strict=False)), models=models,
-                           tonies=_albums_with_tonies(catalogue.albums(), models))
+                           tonies=albums_with_tonies(settings.data_dir, catalogue.albums(), models))
         job_ids = []
         # Both ways hand out stickers the same way: automatically, each slot
         # has its sticker reserved from the start; by hand, it gets one when

@@ -25,9 +25,10 @@ from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import JobRunner
 from ..listening import ListeningLog
-from ..podcast import Fetch
+from ..podcast import Fetch, PodcastUpdater
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
+from ..tonie import ModelCache
 
 log = logging.getLogger(__name__)
 
@@ -63,10 +64,8 @@ class Context:
     listening: ListeningLog
     client: Callable[[], TeddyCloudClient]
     fetch: Fetch
-    cached_models: Callable[[], Optional[List[Dict]]]
-    albums_with_tonies: Callable[..., Dict[str, str]]
-    work_in_progress: Callable[[], Dict]
-    queue_podcast: Callable[[str], Optional[str]]
+    models: ModelCache
+    podcasts: PodcastUpdater
     # Encodes that belong together, by group id: the parts of one album or
     # the albums of a batch.
     groups: Dict[str, List[str]] = field(default_factory=dict)

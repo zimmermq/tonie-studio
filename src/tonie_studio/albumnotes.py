@@ -102,6 +102,27 @@ def made(data_dir: Path) -> Dict[str, List[str]]:
     return records if isinstance(records, dict) else {}
 
 
+def albums_with_tonies(data_dir: Path, albums: Sequence[tuple],
+                       models: Optional[Sequence[Model]]) -> Dict[str, str]:
+    """Album id to the tonie made from it, recorded or matched by name.
+
+    What was recorded is trusted as it stands. The models may be a copy that
+    is a minute old, and checking a record against it would hide a tonie made
+    in that minute. A model deleted through this app takes its record with
+    it; one deleted in teddyCloud's own interface leaves the marker behind,
+    which costs a wrong label and nothing else. Without ``models`` only the
+    records count.
+    """
+    done = {identifier: models_made[-1] for identifier, models_made in made(data_dir).items()}
+    if models is None:
+        return done
+    recorded = set(done.values())
+    unrecorded = [model for model in models if model.id not in recorded]
+    for identifier, model_id in guess_made(albums, unrecorded).items():
+        done.setdefault(identifier, model_id)
+    return done
+
+
 def guess_made(albums: Sequence[tuple], models: Sequence[Model]) -> Dict[str, str]:
     """Album id to model id, for models whose album can only be one.
 
