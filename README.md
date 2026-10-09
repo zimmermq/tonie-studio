@@ -31,7 +31,8 @@ check the tracks, encode, lay the tag on the box, print the covers.
   the slots of a coin collector tin. The picture fills the circle or sits whole inside it, and it
   is printed a little past the cut line, so a slightly crooked cut shows no white edge. Optionally
   a back side with name, year, playing time and model number, an overview sheet of every tonie to
-  keep with the tin, and a calibration sheet that lines your printer up with the cut lines.
+  keep with the tin, and, for pre-cut round labels, a calibration sheet that lines your printer
+  up with them.
 - **Radio and podcasts.** Point a tag at a radio stream, or at a podcast whose newest episodes are
   fetched and encoded on their own.
 - **Upkeep.** What is on the box right now, a listening log, the TAF library with the tags that

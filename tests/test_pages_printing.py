@@ -367,3 +367,21 @@ class TestNoPdfIsLeftBehind:
         clear_old_pdfs(settings.data_dir)
 
         assert not old.exists() and new.exists()
+
+
+class TestPrintedCoversAreNotStickers:
+    """What comes out of the printer is a cover to cut out; a sticker is the NFC tag."""
+
+    def test_no_page_calls_the_printed_circle_an_aufkleber(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        for path in ("/sheet", "/tonies", "/checkup"):
+            assert "Aufkleber" not in client.get(path).text, path
+
+    def test_the_print_page_says_plain_paper_and_cutting_out(self, client):
+        client.cookies.set("lang", "en")
+
+        page = client.get("/sheet").text
+
+        assert "46 mm covers to cut out" in page
+        assert "46 mm stickers" not in page

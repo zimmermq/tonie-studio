@@ -485,12 +485,13 @@ class TestWalkthroughHints:
 
         assert 'value="auto" checked' in page and 'value="place" checked' not in page
 
-    def test_printing_for_the_first_time_points_at_the_calibration(self, client, runner, teddycloud):
+    def test_until_calibrated_the_print_page_points_at_the_calibration(self, client, runner,
+                                                                       teddycloud):
         publish_album(client, runner, teddycloud)
 
-        assert "zum ersten Mal" in client.get("/sheet").text
+        assert "vorgestanzte" in client.get("/sheet").text
         client.post("/sheet/calibration", data={"left_mm": "31.5", "top_mm": "50.5"})
-        assert "zum ersten Mal" not in client.get("/sheet").text
+        assert "vorgestanzte" not in client.get("/sheet").text
 
 
 class TestRecognisingTonies:
