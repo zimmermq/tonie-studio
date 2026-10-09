@@ -30,15 +30,16 @@ from typing import Dict, List, Optional
 
 from .encode import list_tafs
 from .i18n import Problem
+from .library import is_library, played, same
 from .listening import FILE_NAME as LISTENING_FILE
 from .runtimes import FILE_NAME as TIMES_FILE
+from .runtimes import add_missing
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import SYSTEM_RUID
+from .tonie import TonieTag, cover_name, fetch_cover, list_tags, model_label
 
 log = logging.getLogger(__name__)
 
 FORMAT = 1
-CUSTOM_IMG = "/custom_img/"
 
 # Far above any real backup - a few hundred kilobytes of covers per tonie -
 # and far below what would hurt the process holding it in memory.
@@ -107,8 +108,8 @@ def describe_backup(client: TeddyCloudClient, data_dir: Path) -> List[Part]:
     the zip and the JSON parts are small, so the sum is close to the file.
     """
     models = client.custom_tonies()
-    tags = [_tag_record(entry) for entry in client.tags() if _is_tag(entry)]
-    wanted = {_cover_name(model) for model in models} - {None}
+    tags = [_tag_record(tag) for tag in list_tags(client)]
+    wanted = {cover_name(model) for model in models} - {None}
     listed = {entry.get("name"): int(entry.get("size") or 0)
               for entry in client.list_dir("/", special="custom_img")
               if not entry.get("isDir")}
@@ -151,7 +152,7 @@ def _entries(path: Path, json_object: bool = False) -> list:
 def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
     """Everything except the audio, as the bytes of a zip file."""
     models = client.custom_tonies()
-    tags = [_tag_record(entry) for entry in client.tags() if _is_tag(entry)]
+    tags = [_tag_record(tag) for tag in list_tags(client)]
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -166,9 +167,9 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
         archive.writestr("models.json", _json(models))
         archive.writestr("tags.json", _json(tags))
 
-        for name in sorted({_cover_name(model) for model in models} - {None}):
+        for name in sorted({cover_name(model) for model in models} - {None}):
             try:
-                archive.writestr(f"covers/{name}", client.fetch(f"{CUSTOM_IMG}{name}"))
+                archive.writestr(f"covers/{name}", fetch_cover(client, name))
             except TeddyCloudError as error:
                 # A model whose picture is gone still has a name worth keeping.
                 log.warning("backup: cover %s cannot be read: %s", name, error)
@@ -246,7 +247,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
 
     for name, data in sorted(backup.covers.items()):
         try:
-            existing_cover: Optional[bytes] = client.fetch(f"{CUSTOM_IMG}{name}")
+            existing_cover: Optional[bytes] = fetch_cover(client, name)
         except TeddyCloudError:
             existing_cover = None
         action = NEW if existing_cover is None else (SAME if existing_cover == data else REPLACES)
@@ -255,18 +256,18 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
             lambda name=name, data=data: client.upload(io.BytesIO(data), name, path="/",
                                                        special="custom_img")))
 
-    known = {entry.get("ruid"): entry for entry in client.tags() if _is_tag(entry)}
+    known = {tag.ruid: tag for tag in list_tags(client)}
     present = _library_sources(client)
     for record in backup.tags:
         ruid = record["ruid"]
         label = record.get("label") or ruid
-        entry = known.get(ruid)
-        if entry is None:
+        tag = known.get(ruid)
+        if tag is None:
             steps.append(Step(TAG, label, SKIPPED, "restore.note.tag_unread"))
             continue
 
         wanted = _restorable(record)
-        current = _tag_record(entry)
+        current = _tag_record(tag)
         changed = {field: value for field, value in wanted.items() if current.get(field) != value}
         note = _missing_note(record.get("source") or "", present)
         steps.append(_attempt(write and bool(changed), TAG, label,
@@ -324,20 +325,10 @@ def _restore_times(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
         saved = json.loads(backup.times.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return [Step(TIMES, TIMES_FILE, SKIPPED, "restore.note.unreadable")]
-    path = data_dir / TIMES_FILE
-    try:
-        current = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    except (OSError, ValueError):
-        current = {}
-
-    merged = dict(saved)
-    merged.update(current)
-    if merged == current:
+    changed, had_times = add_missing(data_dir, saved, write=write)
+    if not changed:
         return [Step(TIMES, TIMES_FILE, SAME)]
-    if write:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(merged, indent=1, sort_keys=True), encoding="utf-8")
-    return [Step(TIMES, TIMES_FILE, NEW if not current else CHANGES)]
+    return [Step(TIMES, TIMES_FILE, CHANGES if had_times else NEW)]
 
 
 def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
@@ -359,48 +350,35 @@ def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step
 
 def _library_sources(client: TeddyCloudClient) -> Optional[set]:
     try:
-        return {taf["source"] for taf in list_tafs(client, strict=True)}
+        return played(taf["source"] for taf in list_tafs(client, strict=True))
     except TeddyCloudError:
         return None
 
 
 def _missing_note(source: str, present: Optional[set]) -> str:
-    if not source.startswith("lib://"):
+    if not is_library(source):
         return ""
     if present is None:
         return "restore.note.library_unreadable"
-    if source not in present:
+    if same(source) not in present:
         return "restore.note.taf_missing"
     return ""
 
 
-def _tag_record(entry: Dict) -> Dict:
-    info = entry.get("tonieInfo") or {}
-    series, episode = info.get("series") or "", info.get("episode") or ""
+def _tag_record(tag: TonieTag) -> Dict:
+    """A tag as the backup keeps it; the field names are the backup format."""
     return {
-        "ruid": entry.get("ruid"),
-        "label": f"{series} - {episode}".strip(" -") or entry.get("source") or entry.get("ruid"),
-        "source": entry.get("source") or "",
-        "tonie_model": info.get("model") or "",
-        "nocloud": bool(entry.get("nocloud")),
-        "live": bool(entry.get("live")),
+        "ruid": tag.ruid,
+        "label": tag.label,
+        "source": tag.source,
+        "tonie_model": tag.model,
+        "nocloud": tag.nocloud,
+        "live": tag.live,
     }
 
 
-def _is_tag(entry: Dict) -> bool:
-    return entry.get("ruid") != SYSTEM_RUID and entry.get("type") != "system"
-
-
-def _cover_name(model: Dict) -> Optional[str]:
-    picture = str(model.get("pic") or "")
-    if not picture.startswith(CUSTOM_IMG):
-        return None
-    name = picture[len(CUSTOM_IMG):]
-    return name if name and "/" not in name else None
-
-
 def _model_label(model: Dict) -> str:
-    return f"{model.get('model')}: {model.get('series', '')} - {model.get('episodes', '')}".strip(" -")
+    return f"{model.get('model')}: {model_label(model)}"
 
 
 def _json(value) -> str:

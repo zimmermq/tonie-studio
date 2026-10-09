@@ -43,9 +43,6 @@ ARCHIVE = "a"
 
 UPLOAD = "u"
 
-# Where teddyCloud serves the covers of custom models.
-CUSTOM_IMG_PREFIX = "/custom_img/"
-
 # How long a scan of the archive stays good enough to reuse. One page load is
 # one listing plus a preview request per album, and on a network share each of
 # those walks costs more than rendering the page does. Short enough that an
@@ -65,6 +62,7 @@ class Context:
 
     settings: Settings
     templates: Jinja2Templates
+    catalogue: "Catalogue"
     jobs: JobRunner
     box: BoxWatcher
     listening: ListeningLog
@@ -171,65 +169,65 @@ def _finished_result(jobs: JobRunner, job_id: str) -> Dict:
 
 # Keyed by the directories scanned, not only by `describe`: two apps in one
 # process - which is every test run - must not hand each other their archives.
-_catalogue_cache: Dict[Tuple, Tuple[float, List[Tuple[str, AlbumSummary, str]]]] = {}
+class Catalogue:
+    """Every album on offer, from the uploads and the archive.
 
-
-_catalogue_lock = Lock()
-
-
-def _forget_catalogue() -> None:
-    with _catalogue_lock:
-        _catalogue_cache.clear()
-
-
-def _catalogue(
-    settings: Settings, describe: bool = True,
-) -> List[Tuple[str, AlbumSummary, str]]:
-    """Cached front for _scan_albums; see CATALOGUE_TTL."""
-    key = (str(settings.archive_dir), str(settings.upload_dir), describe)
-    now = time.monotonic()
-    with _catalogue_lock:
-        cached = _catalogue_cache.get(key)
-        if cached and now - cached[0] < CATALOGUE_TTL:
-            return cached[1]
-
-    scanned = _scan_albums(settings, describe)
-    with _catalogue_lock:
-        _catalogue_cache[key] = (now, scanned)
-    return scanned
-
-
-def _scan_albums(
-    settings: Settings, describe: bool = True,
-) -> List[Tuple[str, AlbumSummary, str]]:
-    """Every album on offer, as (id, summary, where it came from).
-
-    Uploads come first: what was just added is what someone is looking for.
+    One per app. A scan is reused for CATALOGUE_TTL: one page load is a
+    listing plus a preview request per album, and over a network share each
+    walk costs more than rendering the page does. ``forget`` drops it at once,
+    for an upload that has to show up on the very next page.
     """
-    entries = []
-    for prefix, root, origin in (
-        (UPLOAD, settings.upload_dir, "upload"),
-        (ARCHIVE, settings.archive_dir, "archive"),
-    ):
-        if not root.is_dir():
-            continue
-        for summary in list_albums(root, describe=describe):
-            entries.append((f"{prefix}{summary.id}", summary, origin))
-    return entries
 
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self._scans: Dict[bool, Tuple[float, List[Tuple[str, AlbumSummary, str]]]] = {}
+        self._lock = Lock()
 
-def _resolve(settings: Settings, identifier: str) -> Path:
-    """Find the folder an album id names, or refuse.
+    def albums(self, describe: bool = True) -> List[Tuple[str, AlbumSummary, str]]:
+        """Every album as (id, summary, where it came from), uploads first.
 
-    Deliberately without the descriptions: the picker draws one preview per
-    album, and each of those requests lands here. Reading every album's tags
-    again for each of them turned a page load into seconds of network file
-    opens.
-    """
-    for candidate_id, summary, _origin in _catalogue(settings, describe=False):
-        if candidate_id == identifier:
-            return summary.path
-    raise Refused(404, "error.album_gone")
+        ``describe=False`` leaves out what only reading the tags tells: title,
+        artist, year and cover. Looking an album up by its id needs none of it.
+        """
+        now = time.monotonic()
+        with self._lock:
+            cached = self._scans.get(describe)
+            if cached and now - cached[0] < CATALOGUE_TTL:
+                return cached[1]
+        scanned = self._scan(describe)
+        with self._lock:
+            self._scans[describe] = (now, scanned)
+        return scanned
+
+    def resolve(self, identifier: str) -> Path:
+        """Find the folder an album id names, or refuse.
+
+        Deliberately without the descriptions: the picker draws one preview
+        per album, and each of those requests lands here. Reading every
+        album's tags again for each of them turned a page load into seconds
+        of network file opens.
+        """
+        for candidate_id, summary, _origin in self.albums(describe=False):
+            if candidate_id == identifier:
+                return summary.path
+        raise Refused(404, "error.album_gone")
+
+    def forget(self) -> None:
+        with self._lock:
+            self._scans.clear()
+
+    def _scan(self, describe: bool) -> List[Tuple[str, AlbumSummary, str]]:
+        # What was just added is what someone is looking for: uploads lead.
+        entries = []
+        for prefix, root, origin in (
+            (UPLOAD, self.settings.upload_dir, "upload"),
+            (ARCHIVE, self.settings.archive_dir, "archive"),
+        ):
+            if not root.is_dir():
+                continue
+            for summary in list_albums(root, describe=describe):
+                entries.append((f"{prefix}{summary.id}", summary, origin))
+        return entries
 
 
 class Refused(Problem):

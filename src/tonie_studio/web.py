@@ -30,7 +30,7 @@ from .i18n import Problem, catalogs
 from .jobs import JobRunner
 from .listening import ListeningLog
 from .pages import albums, batch, extras, printing, tonies, upkeep
-from .pages.common import TEMPLATES, Context, Refused, _language, translator
+from .pages.common import TEMPLATES, Catalogue, Context, Refused, _language, translator
 from .pages.upkeep import _clear_parked_restores
 from .podcast import SERIES as PODCAST_SERIES
 from .podcast import Fetch, download, load_subscriptions, refresh, update_subscription
@@ -61,6 +61,7 @@ def create_app(
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[_language])
     jobs = runner or JobRunner()
+    catalogue = Catalogue(settings)
     listening = ListeningLog(settings.data_dir)
     box = watcher if watcher is not None else BoxWatcher(settings.teddycloud_url, settings.overlay)
     # Whoever built the watcher decides how it connects; where its changes go
@@ -168,6 +169,7 @@ def create_app(
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
     app.state.settings = settings
+    app.state.catalogue = catalogue
     app.state.jobs = jobs
 
     @app.exception_handler(TeddyCloudError)
@@ -282,7 +284,7 @@ def create_app(
         return {"busy": busy, "busy_folders": {f"/{PODCAST_SERIES}"} if refreshing else set()}
 
     ctx = Context(
-        settings=settings, templates=templates, jobs=jobs, box=box, listening=listening,
+        settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box, listening=listening,
         client=client, fetch=fetch, cached_models=cached_models,
         albums_with_tonies=_albums_with_tonies, work_in_progress=work_in_progress,
         queue_podcast=queue_podcast,

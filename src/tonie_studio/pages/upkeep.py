@@ -19,7 +19,7 @@ from ..encode import EncodeError, delete_taf
 from ..runtimes import forget
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import TonieError, find_model, remove_model, update_model
+from ..tonie import TonieError, find_model, find_tag, remove_model, update_model
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -156,8 +156,8 @@ def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: s
     if fix == "nocloud":
         client.set_tag(target, nocloud=True)
     elif fix == "repair_source":
-        entry = next((tag for tag in client.tags() if tag.get("ruid") == target), None)
-        fixed = repaired((entry or {}).get("source"))
+        tag = find_tag(client, target)
+        fixed = repaired(tag.source if tag else None)
         if not fixed:
             raise ValueError(f"nothing to repair on {target}")
         client.set_tag(target, source=fixed)

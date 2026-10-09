@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import unicodedata
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
+from ..library import same
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..teddycloud import TeddyCloudError
-from ..tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, copy_tag, find_model, list_tags,
-                     publish_stream, remove_model, update_model)
+from ..tonie import (CATEGORIES, DEFAULT_CATEGORY, TonieError, copy_tag, fetch_cover, find_model,
+                     list_tags, publish_stream, remove_model, update_model)
 from .common import Context, Refused, _is_image_name
 
 log = logging.getLogger(__name__)
@@ -86,11 +86,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if tag is None or not tag.model:
             raise Refused(404, "error.no_model")
 
-        picture = None
-        suffix = "jpg"
-        if cover is not None and _is_image_name(cover.filename):
-            picture = cover.file.read()
-            suffix = Path(cover.filename).suffix.lstrip(".") or "jpg"
+        picture, suffix = _uploaded_cover(cover)
 
         try:
             update_model(connection, tag.model, series=series, episode=episode,
@@ -160,7 +156,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if "/" in name or ".." in name:
             raise Refused(400, "error.not_an_image")
         try:
-            data = client().fetch(f"/custom_img/{name}")
+            data = fetch_cover(client(), name)
         except TeddyCloudError as error:
             raise Refused(502, "error.failed", detail=error) from error
 
@@ -199,11 +195,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         category: str = Form(DEFAULT_CATEGORY),
         cover: Optional[UploadFile] = File(None),
     ):
-        picture = None
-        suffix = "jpg"
-        if cover is not None and _is_image_name(cover.filename):
-            picture = cover.file.read()
-            suffix = Path(cover.filename).suffix.lstrip(".") or "jpg"
+        picture, suffix = _uploaded_cover(cover)
         try:
             publish_stream(client(), ruid, url, series=series, episode=episode,
                            cover=picture, cover_name=suffix, category=category)
@@ -220,9 +212,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         users: Dict[str, List] = {}
         for tag in list_tags(connection):
             if tag.source:
-                users.setdefault(unicodedata.normalize("NFC", tag.source), []).append(tag)
+                users.setdefault(same(tag.source), []).append(tag)
         for taf in tafs:
-            taf["used_by"] = users.get(unicodedata.normalize("NFC", taf["source"]), [])
+            taf["used_by"] = users.get(same(taf["source"]), [])
         return templates.TemplateResponse(request, "library.html", {
             "tafs": tafs,
             "total": sum(taf["size"] for taf in tafs),
@@ -236,3 +228,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         except (EncodeError, TeddyCloudError) as error:
             raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/library", 303)
+
+
+def _uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
+    """The picture a form sent along, and the extension to store it under.
+
+    Anything that is not an image by its name is ignored rather than refused:
+    the cover is optional, and the rest of the form is still worth saving.
+    """
+    if cover is None or not _is_image_name(cover.filename):
+        return None, "jpg"
+    return cover.file.read(), Path(cover.filename).suffix.lstrip(".") or "jpg"

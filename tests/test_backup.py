@@ -251,3 +251,42 @@ class TestDescribing:
         real = len(create_backup(cloud, data_dir))
 
         assert abs(estimate - real) < 2048
+
+
+class TestRestoreSharesTheRecords:
+    def test_playing_times_are_merged_under_the_lock_every_record_write_takes(
+            self, cloud, data_dir, tmp_path):
+        # An encode finishing during a restore records its playing time at the
+        # same moment; both have to read, change and write one after the other.
+        import threading
+
+        from tonie_studio.store import LOCK
+
+        backup = read_backup(create_backup(cloud, data_dir))
+        target = tmp_path / "now"
+        target.mkdir()
+        (target / TIMES_FILE).write_text('{"TS-0002": 60}')
+
+        with LOCK:
+            worker = threading.Thread(target=apply_restore, args=(cloud, backup, target))
+            worker.start()
+            worker.join(0.3)
+            assert json.loads((target / TIMES_FILE).read_text()) == {"TS-0002": 60}
+        worker.join(5)
+
+        assert json.loads((target / TIMES_FILE).read_text()) == {"TS-0001": 5021, "TS-0002": 60}
+
+    def test_recording_a_playing_time_takes_that_lock_too(self, tmp_path):
+        import threading
+
+        from tonie_studio.runtimes import playing_times, remember
+        from tonie_studio.store import LOCK
+
+        with LOCK:
+            worker = threading.Thread(target=remember, args=(tmp_path, "TS-0001", 60))
+            worker.start()
+            worker.join(0.3)
+            assert worker.is_alive()
+        worker.join(5)
+
+        assert playing_times(tmp_path) == {"TS-0001": 60}

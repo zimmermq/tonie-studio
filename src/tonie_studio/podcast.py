@@ -29,7 +29,6 @@ import logging
 import re
 import shutil
 import socket
-import unicodedata
 import xml.etree.ElementTree as ElementTree
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
@@ -43,10 +42,11 @@ import requests
 from .album import AUDIO_EXTENSIONS
 from .encode import EncodeError, delete_taf, encode_files, library_path
 from .i18n import Problem
+from .library import is_library, path_of, played, same
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import find_model, publish
+from .tonie import find_model, find_tag, list_tags, publish
 
 log = logging.getLogger(__name__)
 
@@ -288,19 +288,19 @@ def refresh(
     subscription.guids = guids
     subscription.updated = now.isoformat()
     subscription.error, subscription.error_key, subscription.error_params = "", "", {}
-    if old and old != encoded.source and old.startswith("lib://") and not _still_played(client, old):
-        _delete_quietly(client, "/" + old[len("lib://"):], subscription.id)
+    if old and old != encoded.source and is_library(old) and not _still_played(client, old):
+        _delete_quietly(client, path_of(old), subscription.id)
     log.info("podcast %s now plays %d episodes from %s", subscription.id, len(chosen), feed.title)
     return True
 
 
 def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None:
     """Refuse to touch a sticker that now plays something else."""
-    entry = next((tag for tag in client.tags() if tag.get("ruid") == subscription.ruid), None)
-    if entry is None:
+    tag = find_tag(client, subscription.ruid)
+    if tag is None:
         raise FeedError("feed.sticker_unknown")
-    playing = entry.get("source") or ""
-    if subscription.source and _same(playing) != _same(subscription.source):
+    playing = tag.source
+    if subscription.source and same(playing) != same(subscription.source):
         raise FeedError("feed.sticker_reused", playing=playing or "-")
 
 
@@ -320,7 +320,7 @@ def _cover(client: TeddyCloudClient, subscription: Subscription, feed: Feed,
 
 def _still_played(client: TeddyCloudClient, source: str) -> bool:
     """Whether any sticker plays ``source``, such as a copy made for grandma's."""
-    return any(_same(tag.get("source") or "") == _same(source) for tag in client.tags())
+    return same(source) in played(tag.source for tag in list_tags(client))
 
 
 def _delete_quietly(client: TeddyCloudClient, path: str, subscription_id: str) -> None:
@@ -329,10 +329,6 @@ def _delete_quietly(client: TeddyCloudClient, path: str, subscription_id: str) -
     except (TeddyCloudError, EncodeError) as error:
         # A leftover file is for the checkup page, not a reason to fail.
         log.warning("podcast %s: %s stays: %s", subscription_id, path, error)
-
-
-def _same(source: str) -> str:
-    return unicodedata.normalize("NFC", source)
 
 
 def _picture_suffix(url: str) -> str:

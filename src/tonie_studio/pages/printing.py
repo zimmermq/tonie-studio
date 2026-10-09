@@ -20,8 +20,8 @@ from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
                      build_sheet)
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import list_tags, year_of
-from .common import CUSTOM_IMG_PREFIX, Context, Refused, _is_image_name, translator
+from ..tonie import cover_name, fetch_cover, list_tags, year_of
+from .common import Context, Refused, _is_image_name, translator
 
 log = logging.getLogger(__name__)
 
@@ -184,12 +184,11 @@ def _printable_models(client: TeddyCloudClient) -> List[Dict]:
 
 def _model_info(model: Dict) -> Dict:
     """What the printing pages need of one model; ``image`` is empty without a cover here."""
-    picture = str(model.get("pic") or "")
     return {
         "model": model.get("model", ""),
         "series": model.get("series", ""),
         "episodes": model.get("episodes", ""),
-        "image": picture[len(CUSTOM_IMG_PREFIX):] if picture.startswith(CUSTOM_IMG_PREFIX) else "",
+        "image": cover_name(model) or "",
         "tracks": [str(track) for track in model.get("tracks") or []],
         "year": year_of(model),
     }
@@ -210,7 +209,7 @@ def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
         image = None
         if info["image"]:
             try:
-                image = client.fetch(f"{CUSTOM_IMG_PREFIX}{info['image']}")
+                image = fetch_cover(client, info["image"])
             except TeddyCloudError as error:
                 log.warning("overview: no cover for %s: %s", info["model"], error)
         back = _back_of(info, times.get(info["model"]), translate)
@@ -268,7 +267,7 @@ def _model_picture(client: TeddyCloudClient, model_id: str) -> Optional[bytes]:
     for model in _printable_models(client):
         if model["model"] == model_id:
             try:
-                return client.fetch(f"{CUSTOM_IMG_PREFIX}{model['image']}")
+                return fetch_cover(client, model["image"])
             except TeddyCloudError as error:
                 log.warning("cannot read the cover of %s: %s", model_id, error)
                 return None

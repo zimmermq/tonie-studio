@@ -23,13 +23,13 @@ running the checks again so a stale finding can never be acted on.
 from __future__ import annotations
 
 import logging
-import unicodedata
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
 from .encode import list_tafs
+from .library import is_library, played, same
 from .teddycloud import TeddyCloudClient, TeddyCloudError
-from .tonie import MODEL_PREFIX, SYSTEM_RUID
+from .tonie import MODEL_PREFIX, TonieTag, list_tags, model_label
 
 log = logging.getLogger(__name__)
 
@@ -37,9 +37,6 @@ ERROR = "error"
 WARNING = "warning"
 NOTE = "note"
 SEVERITIES = (ERROR, WARNING, NOTE)
-
-LIBRARY = "lib://"
-
 
 @dataclass(frozen=True)
 class Finding:
@@ -94,8 +91,7 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     them. Nothing there is offered for deletion: played by nothing *yet* is not
     the same as left over.
     """
-    tags = [entry for entry in client.tags()
-            if entry.get("ruid") != SYSTEM_RUID and entry.get("type") != "system"]
+    tags = list_tags(client)
     models = client.custom_tonies()
     try:
         tafs: Optional[List[dict]] = list_tafs(client, strict=True)
@@ -119,16 +115,15 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     return sorted(findings, key=lambda finding: SEVERITIES.index(finding.severity))
 
 
-def _tag_findings(tags: List[dict], tafs: Optional[List[dict]]) -> List[Finding]:
+def _tag_findings(tags: List[TonieTag], tafs: Optional[List[dict]]) -> List[Finding]:
     findings = []
-    present = {_same(taf["source"]) for taf in tafs} if tafs is not None else None
+    present = played(taf["source"] for taf in tafs) if tafs is not None else None
 
-    for entry in tags:
-        source = entry.get("source") or ""
-        if not source.startswith(LIBRARY):
+    for tag in tags:
+        source = tag.source
+        if not is_library(source):
             continue
-        ruid = entry.get("ruid", "")
-        name = _tag_name(entry)
+        ruid, name = tag.ruid, tag.label
 
         if present is not None and _same(source) not in present:
             fixed = repaired(source)
@@ -144,14 +139,14 @@ def _tag_findings(tags: List[dict], tafs: Optional[List[dict]]) -> List[Finding]
                     detail="checkup.missing_taf", params={"source": source},
                 ))
 
-        if not entry.get("nocloud"):
+        if not tag.nocloud:
             findings.append(Finding(
                 kind="cloud_fallback", severity=WARNING, subject=name, target=ruid,
                 detail="checkup.cloud_fallback",
                 fix="nocloud", preview="nocloud: false \u2192 true",
             ))
 
-        if not (entry.get("tonieInfo") or {}).get("model"):
+        if not tag.model:
             findings.append(Finding(
                 kind="nameless", severity=NOTE, subject=name, target=ruid,
                 detail="checkup.nameless",
@@ -205,15 +200,15 @@ def _model_repairs(model: dict) -> List[tuple]:
     return changes
 
 
-def _leftovers(tags: List[dict], models: List[dict], tafs: Optional[List[dict]],
+def _leftovers(tags: List[TonieTag], models: List[dict], tafs: Optional[List[dict]],
                busy: set, busy_folders: tuple) -> List[Finding]:
     findings = []
-    played = {_same(entry.get("source") or "") for entry in tags}
-    named = {str((entry.get("tonieInfo") or {}).get("model") or "").lower() for entry in tags}
+    playing = played(tag.source for tag in tags)
+    named = {tag.model.lower() for tag in tags}
 
     for taf in tafs or []:
         path = _same(taf["path"])
-        if _same(taf["source"]) in played or path in busy or path.startswith(busy_folders):
+        if _same(taf["source"]) in playing or path in busy or path.startswith(busy_folders):
             continue
         findings.append(Finding(
             kind="orphan_taf", severity=NOTE, subject=taf["name"], target=taf["path"],
@@ -227,7 +222,7 @@ def _leftovers(tags: List[dict], models: List[dict], tafs: Optional[List[dict]],
             continue
         findings.append(Finding(
             kind="orphan_model", severity=NOTE,
-            subject=f"{model.get('series', '')} - {model.get('episodes', '')}".strip(" -"),
+            subject=model_label(model),
             target=model_id,
             detail="checkup.orphan_model", params={"model": model_id},
             fix="delete_model", preview_key="checkup.deletes_model",
@@ -235,18 +230,4 @@ def _leftovers(tags: List[dict], models: List[dict], tafs: Optional[List[dict]],
     return findings
 
 
-def _tag_name(entry: dict) -> str:
-    info = entry.get("tonieInfo") or {}
-    series, episode = info.get("series") or "", info.get("episode") or ""
-    if series and episode:
-        return f"{series} - {episode}"
-    return series or entry.get("source") or entry.get("uid") or entry.get("ruid", "")
-
-
-def _same(source: str) -> str:
-    """A library path in the form two spellings of it can be compared in.
-
-    The archive's names are decomposed and teddyCloud hands back whatever it
-    was given, so the same file can be named two ways that look identical.
-    """
-    return unicodedata.normalize("NFC", source)
+_same = same

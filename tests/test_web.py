@@ -345,12 +345,11 @@ class TestCatalogueCache:
     def test_scans_the_archive_once_for_a_whole_page_load(self, client, monkeypatch):
         # One page load is one listing plus a preview request per album. Over a
         # network share each of those walks costs more than rendering does.
-        import tonie_studio.pages.common as web
-
-        web._forget_catalogue()
+        catalogue = client.app.state.catalogue
+        catalogue.forget()
         scans = []
-        original = web._scan_albums
-        monkeypatch.setattr(web, "_scan_albums",
+        original = catalogue._scan
+        monkeypatch.setattr(catalogue, "_scan",
                             lambda *args, **kwargs: scans.append(1) or original(*args, **kwargs))
 
         identifier = _album_id(client)
@@ -1390,8 +1389,7 @@ class TestAlbumMarkers:
         later = archive / "Lichterkinder-Schlaflieder-2021"
         later.mkdir()
         (later / "01-guter_mond.flac").write_bytes(b"x")
-        from tonie_studio.pages.common import _forget_catalogue
-        _forget_catalogue()
+        client.app.state.catalogue.forget()
 
         page = client.get("/").text
 
@@ -2411,3 +2409,26 @@ class TestLoadingHint:
         page = client.get("/").text
 
         assert 'id="loading"' in page and "Lese" in page
+
+
+class TestSpellingsOfAPath:
+    def test_a_taf_played_under_the_other_spelling_of_an_umlaut_counts_as_played(
+            self, client, runner, teddycloud):
+        # A share hands back decomposed umlauts, teddyCloud keeps whatever it
+        # was given: the same path can arrive in two spellings.
+        import unicodedata
+
+        for entry in teddycloud.tag_entries.values():
+            entry["source"] = "lib://Andere/Folge.taf"
+        files = [("files", (f"B\u00e4r/Folge {n}/01-a.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n in (1, 2)]
+        ids = _batch_ids(client.post("/upload", files=files, follow_redirects=False))
+        _run_batch(client, runner, ids, series="B\u00e4r")
+        sticker = next(iter(teddycloud.tag_entries))
+        teddycloud.tag_entries[sticker]["source"] = unicodedata.normalize(
+            "NFD", "lib://B\u00e4r/Folge 1.taf")
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert page.count("schon encodiert und auf einem Sticker") == 1
+        assert page.count("schon encodiert, bekommt nur noch einen Sticker") == 1

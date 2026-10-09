@@ -20,13 +20,13 @@ from __future__ import annotations
 import logging
 import re
 import threading
-import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence, Tuple
 
-from tonie_studio.teddycloud import TeddyCloudClient, TeddyCloudError
+from .library import same, source_of
+from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
             header = entry.get("tafHeader") or {}
             found.append({
                 "path": full,
-                "source": f"lib://{full.lstrip('/')}",
+                "source": source_of(full),
                 "name": name[:-len(TAF_SUFFIX)],
                 "size": entry.get("size") or 0,
                 "audio_id": header.get("audioId"),
@@ -219,13 +219,7 @@ def encode_files(
         _remove_tree(client, staging)
 
     header = (_find_entry(client, target) or {}).get("tafHeader") or {}
-    return EncodeResult(
-        target=target,
-        source=f"lib://{target.lstrip('/')}",
-        tracks=len(sources),
-        audio_id=header.get("audioId"),
-        sha1=header.get("sha1Hash"),
-    )
+    return _result(target, header, tracks=len(sources))
 
 
 def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult]:
@@ -237,10 +231,15 @@ def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult
     header = (_find_entry(client, target) or {}).get("tafHeader") or {}
     if not header.get("valid"):
         return None
+    return _result(target, header, tracks=len(header.get("trackSeconds") or []))
+
+
+def _result(target: str, header: dict, tracks: int) -> EncodeResult:
+    """An encode's result from the header teddyCloud lists for the taf it wrote."""
     return EncodeResult(
         target=target,
-        source=f"lib://{target.lstrip('/')}",
-        tracks=len(header.get("trackSeconds") or []),
+        source=source_of(target),
+        tracks=tracks,
         audio_id=header.get("audioId"),
         sha1=header.get("sha1Hash"),
     )
@@ -311,8 +310,9 @@ def _ensure_parents(client: TeddyCloudClient, target: str) -> None:
 
 
 def _ensure_dir(client: TeddyCloudClient, path: str) -> None:
-    parent = path.rsplit("/", 1)[0] or "/"
-    name = path.rsplit("/", 1)[1]
+    # Lists without _entry on purpose: a folder that cannot be listed has to
+    # fail the encode here, not be taken for missing and created again.
+    parent, name = _split(path)
     for entry in client.list_dir(parent, special="library"):
         if entry.get("isDir") and _same_name(entry.get("name"), name):
             return
@@ -323,27 +323,30 @@ def _has_entry(
     client: TeddyCloudClient, parent: str, name: str, directory: bool = False,
 ) -> bool:
     """Whether ``parent`` holds an entry of that name, without listing it."""
-    try:
-        entries = client.list_dir(parent, special="library")
-    except TeddyCloudError:
-        return False
-    return any(bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)
-               for entry in entries)
+    return _entry(client, parent, name, directory) is not None
 
 
 def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:
-    """The listing entry for one path, or None when it is not there."""
-    parent = path.rsplit("/", 1)[0] or "/"
-    name = path.rsplit("/", 1)[1]
+    """The listing entry for the file at ``path``, or None when it is not there."""
+    return _entry(client, *_split(path))
+
+
+def _entry(client: TeddyCloudClient, parent: str, name: str,
+           directory: bool = False) -> Optional[dict]:
+    """The entry ``name`` in the listing of ``parent``; None if absent or unlistable."""
     try:
         entries = client.list_dir(parent, special="library")
     except TeddyCloudError:
         return None
+    return next((entry for entry in entries
+                 if bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)),
+                None)
 
-    for entry in entries:
-        if not entry.get("isDir") and _same_name(entry.get("name"), name):
-            return entry
-    return None
+
+def _split(path: str) -> Tuple[str, str]:
+    """A library path as its folder and its last name."""
+    parent, _, name = path.rpartition("/")
+    return parent or "/", name
 
 
 def _remove_tree(client: TeddyCloudClient, path: str) -> None:
@@ -387,9 +390,7 @@ def _is_parent_link(name: Optional[str]) -> bool:
 
 def _same_name(left: Optional[str], right: str) -> bool:
     """Compare names across the two spellings an umlaut has on a share."""
-    if left is None:
-        return False
-    return unicodedata.normalize("NFC", left) == unicodedata.normalize("NFC", right)
+    return left is not None and same(left) == same(right)
 
 
 def _watch_growth(

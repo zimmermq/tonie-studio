@@ -15,13 +15,14 @@ from ..albumnotes import match_by_tracks
 from ..batch import AUTO, PLACE, Placing, Slot, allocate, episode_order
 from ..encode import EncodeError, existing_taf, library_path, taf_exists
 from ..jobs import JobState, new_id
+from ..library import played, same, source_of
 from ..parts import fewest_parts, part_name, split
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..thumbnails import DEFAULT_SIZE
 from ..tonie import TonieError, list_tags
-from .common import (Context, Refused, _catalogue, _encode_job, _free_tags, _publish_result,
-                     _resolve, translator)
+from .common import (Catalogue, Context, Refused, _encode_job, _free_tags, _publish_result,
+                     translator)
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ HOW_COOKIE = "stickers"
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     settings = ctx.settings
+    catalogue = ctx.catalogue
     templates = ctx.templates
     jobs = ctx.jobs
     client = ctx.client
@@ -47,8 +49,8 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "error.no_album")
         connection = client()
         models = connection.custom_tonies()
-        rows = _plan_batch(connection, settings, ids, models=models,
-                           tonies=_albums_with_tonies(_catalogue(settings), models))
+        rows = _plan_batch(connection, settings, catalogue, ids, models=models,
+                           tonies=_albums_with_tonies(catalogue.albums(), models))
         # Whoever always hands out stickers the same way should not have to
         # choose it again each time; a newcomer starts with placing.
         how = request.cookies.get(HOW_COOKIE)
@@ -80,9 +82,9 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "error.no_album")
         connection = client()
         models = connection.custom_tonies()
-        rows = _plan_batch(connection, settings, ids, dict(zip(ids, series, strict=False)),
+        rows = _plan_batch(connection, settings, catalogue, ids, dict(zip(ids, series, strict=False)),
                            dict(zip(ids, episodes, strict=False)), models=models,
-                           tonies=_albums_with_tonies(_catalogue(settings), models))
+                           tonies=_albums_with_tonies(catalogue.albums(), models))
         job_ids = []
         # Made before any encode is queued: one that finishes at once must
         # already find the slot it settles.
@@ -266,7 +268,8 @@ class BatchRow:
         return bool(self.tonie) or (self.occupied and not self.reusable)
 
 
-def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[str],
+def _plan_batch(connection: TeddyCloudClient, settings: Settings, catalogue: Catalogue,
+                ids: Sequence[str],
                 series: Optional[Dict[str, str]] = None, episodes: Optional[Dict[str, str]] = None,
                 tonies: Optional[Dict[str, str]] = None,
                 models: Sequence[Dict] = ()) -> List[BatchRow]:
@@ -289,10 +292,10 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[
     empty, since that is a choice the album page allows too.
     """
     series, episodes = series or {}, episodes or {}
-    played = {tag.source for tag in list_tags(connection)}
+    playing = played(tag.source for tag in list_tags(connection))
     rows = []
     for identifier in dict.fromkeys(ids):
-        album = read_album(_resolve(settings, identifier))
+        album = read_album(catalogue.resolve(identifier))
         row_series = (series[identifier] if identifier in series
                       else _suggest_series(settings, album)).strip()
         episode = (episodes.get(identifier) or "").strip() or album.title
@@ -305,7 +308,7 @@ def _plan_batch(connection: TeddyCloudClient, settings: Settings, ids: Sequence[
             raise Refused(400, "error.failed", detail=error) from error
         groups = split([track.duration for track, _name in chosen], parts)
         occupied = any(taf_exists(connection, target) for target in targets)
-        in_use = any(f"lib://{target.lstrip('/')}" in played for target in targets)
+        in_use = any(same(source_of(target)) in playing for target in targets)
         rows.append(BatchRow(
             identifier=identifier, album=album, series=row_series, episode=episode,
             chosen=chosen, groups=groups, targets=targets, occupied=occupied, in_use=in_use,

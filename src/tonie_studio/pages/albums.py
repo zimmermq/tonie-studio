@@ -21,9 +21,8 @@ from ..jobs import JobState
 from ..parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from ..thumbnails import DEFAULT_SIZE, crop, thumbnail
 from ..tonie import CATEGORIES, DEFAULT_CATEGORY, TonieError, find_model_by_audio, list_tags
-from .common import (UPLOAD, Context, Refused, _catalogue, _encode_job, _finished_result,
-                     _forget_catalogue, _is_audio_name, _is_image_name, _next_to_place,
-                     _publish_result, _resolve, translator)
+from .common import (UPLOAD, Context, Refused, _encode_job, _finished_result, _is_audio_name,
+                     _is_image_name, _next_to_place, _publish_result, translator)
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +30,7 @@ log = logging.getLogger(__name__)
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     settings = ctx.settings
+    catalogue = ctx.catalogue
     box = ctx.box
     templates = ctx.templates
     jobs = ctx.jobs
@@ -42,7 +42,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
-        albums = _catalogue(settings)
+        albums = catalogue.albums()
         now = datetime.now(timezone.utc)
         sightings = first_sightings(settings.data_dir, [row[0] for row in albums], now)
         return templates.TemplateResponse(request, "index.html", {
@@ -79,7 +79,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                     shutil.copyfileobj(file.file, target)
 
         # The new folder has to show up at once, not in ten seconds.
-        _forget_catalogue()
+        catalogue.forget()
         ids = [f"{UPLOAD}{album_id(settings.upload_dir, destination)}"
                for destination in sorted(destinations.values(),
                                          key=lambda path: episode_order(path.name))]
@@ -101,7 +101,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str):
-        return _album_page(request, identifier, read_album(_resolve(settings, identifier)))
+        return _album_page(request, identifier, read_album(catalogue.resolve(identifier)))
 
 
     @app.get("/album/{identifier}/cover")
@@ -111,7 +111,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         The picker asks for a size; sixteen full covers would be two megabytes
         of JPEG to draw pictures the size of a stamp.
         """
-        candidates = cover_candidates(_resolve(settings, identifier))
+        candidates = cover_candidates(catalogue.resolve(identifier))
         if index >= len(candidates):
             raise Refused(404, "error.no_cover")
 
@@ -142,7 +142,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         cover_x: float = Form(0.0),
         cover_y: float = Form(0.0),
     ):
-        album = read_album(_resolve(settings, identifier))
+        album = read_album(catalogue.resolve(identifier))
         chosen = _chosen_tracks(album, order, selected, titles)
         if not chosen:
             raise Refused(400, "error.no_track")
@@ -290,7 +290,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     def crop_preview(identifier: str, index: int = 0, zoom: float = 1.0,
                      x: float = 0.0, y: float = 0.0, size: int = 256):
         """The cover as the round sticker will cut it."""
-        candidates = cover_candidates(_resolve(settings, identifier))
+        candidates = cover_candidates(catalogue.resolve(identifier))
         if index >= len(candidates):
             raise Refused(404, "error.no_cover")
         rendered = crop(candidates[index], zoom, x, y, max(32, min(size, 800)))

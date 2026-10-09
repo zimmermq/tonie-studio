@@ -14,7 +14,7 @@ from ..listening import summarise
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, Subscription, add_subscription,
                        load_subscriptions, parse_feed, remove_subscription)
 from ..runtimes import playing_times
-from ..tonie import list_tags
+from ..tonie import find_tag, list_tags
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "error.feed_unreadable", detail=error) from error
         if not parsed.episodes:
             raise Refused(400, "feed.no_audio")
-        if not any(tag.ruid == ruid for tag in list_tags(client())):
+        if find_tag(client(), ruid) is None:
             raise Refused(400, "error.no_tag")
 
         subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,

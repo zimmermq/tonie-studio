@@ -30,12 +30,17 @@ from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Union
 
 from .encode import EncodeResult, taf_exists
+from .library import is_library
 from .teddycloud import TeddyCloudClient
 
 log = logging.getLogger(__name__)
 
 # Namespace for the models this app creates.
 MODEL_PREFIX = "TS-"
+
+# Where teddyCloud serves the covers of custom models; a model's ``pic`` names
+# its cover by this path.
+CUSTOM_IMG = "/custom_img/"
 
 # teddyCloud's placeholder for a tag whose slot in the index is not a real tag.
 SYSTEM_RUID = "0000000000000000"
@@ -63,6 +68,8 @@ class TonieTag:
     episode: str
     picture: str
     claimed: bool
+    nocloud: bool = False
+    live: bool = False
 
     @property
     def assigned(self) -> bool:
@@ -71,9 +78,22 @@ class TonieTag:
     @property
     def label(self) -> str:
         """What to call this tag in a list."""
-        if self.series and self.episode:
-            return f"{self.series} - {self.episode}"
-        return self.series or self.source or self.uid
+        return label(self.series, self.episode) or self.source or self.uid or self.ruid
+
+
+def label(series: Optional[str], episode: Optional[str]) -> str:
+    """How a tonie is named in a list: series and episode, or whichever is there."""
+    return " - ".join(part for part in (series or "", episode or "") if part)
+
+
+def model_label(model: Dict[str, Any]) -> str:
+    """How a custom model is named in a list."""
+    return label(model.get("series"), model.get("episodes"))
+
+
+def is_real_tag(entry: Dict[str, Any]) -> bool:
+    """False for teddyCloud's placeholder entries in the tag index, which no sticker has."""
+    return entry.get("ruid") != SYSTEM_RUID and entry.get("type") != "system"
 
 
 def list_tags(client: TeddyCloudClient) -> List[TonieTag]:
@@ -83,22 +103,39 @@ def list_tags(client: TeddyCloudClient) -> List[TonieTag]:
     a fresh sticker is invisible until then. The empty ones lead because that
     is what a new traveltonie is looking for.
     """
-    tags = []
-    for entry in client.tags():
-        if entry.get("ruid") == SYSTEM_RUID or entry.get("type") == "system":
-            continue
-        info = entry.get("tonieInfo") or {}
-        tags.append(TonieTag(
-            ruid=entry.get("ruid", ""),
-            uid=entry.get("uid", ""),
-            source=entry.get("source") or "",
-            model=info.get("model") or "",
-            series=info.get("series") or "",
-            episode=info.get("episode") or "",
-            picture=info.get("picture") or "",
-            claimed=bool(entry.get("claimed")),
-        ))
+    tags = [_tag(entry) for entry in client.tags() if is_real_tag(entry)]
     return sorted(tags, key=lambda tag: (tag.assigned, tag.label.lower()))
+
+
+def find_tag(client: TeddyCloudClient, ruid: str) -> Optional[TonieTag]:
+    """One tag by its ruid, or None when teddyCloud does not know it."""
+    return next((tag for tag in list_tags(client) if tag.ruid == ruid), None)
+
+
+def require_tag(client: TeddyCloudClient, ruid: str) -> TonieTag:
+    """The tag ``ruid``, or a TonieError saying how a sticker becomes known."""
+    tag = find_tag(client, ruid)
+    if tag is None:
+        raise TonieError(
+            f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
+        )
+    return tag
+
+
+def _tag(entry: Dict[str, Any]) -> TonieTag:
+    info = entry.get("tonieInfo") or {}
+    return TonieTag(
+        ruid=entry.get("ruid", ""),
+        uid=entry.get("uid", ""),
+        source=entry.get("source") or "",
+        model=info.get("model") or "",
+        series=info.get("series") or "",
+        episode=info.get("episode") or "",
+        picture=info.get("picture") or "",
+        claimed=bool(entry.get("claimed")),
+        nocloud=bool(entry.get("nocloud")),
+        live=bool(entry.get("live")),
+    )
 
 
 def next_model_id(client: TeddyCloudClient) -> str:
@@ -132,14 +169,11 @@ def publish(
     # says so: teddyCloud stores whatever it is handed. This has happened once
     # already, from a source string that had been read with the wrong encoding
     # and written straight back.
-    if encoded.source.startswith("lib://") and not taf_exists(client, encoded.target):
+    if is_library(encoded.source) and not taf_exists(client, encoded.target):
         raise TonieError(
             f"there is no taf at {encoded.target}; the tag would play nothing"
         )
-    if not any(tag.ruid == ruid for tag in list_tags(client)):
-        raise TonieError(
-            f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
-        )
+    require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
     model = _model(model_id, series, episode, tracks, encoded, language, category, year)
@@ -201,20 +235,10 @@ def publish_stream(
         raise TonieError(f"a stream needs a URL, not {url!r}")
     if not url.lower().startswith(("http://", "https://")):
         raise TonieError("only http and https streams are supported")
-    if not any(tag.ruid == ruid for tag in list_tags(client)):
-        raise TonieError(
-            f"teddyCloud does not know the tag {ruid}; hold it against the box once first"
-        )
+    require_tag(client, ruid)
 
     model_id = model_id or next_model_id(client)
-    model: Dict[str, Any] = {
-        "model": model_id,
-        "series": series.strip() or model_id,
-        "episodes": episode.strip(),
-        "tracks": [],
-        "language": language,
-        "category": category if category in CATEGORIES else DEFAULT_CATEGORY,
-    }
+    model = _described(model_id, series, episode, (), language, category)
     if cover is not None:
         model["pic"] = _upload_cover(client, model_id, cover, cover_name)
 
@@ -268,13 +292,13 @@ def update_model(
         raise TonieError(f"there is no model {model_id}")
 
     if series is not None:
-        model["series"] = series.strip() or model_id
+        model["series"] = _series(series, model_id)
     if episode is not None:
         model["episodes"] = episode.strip()
     if tracks is not None:
-        model["tracks"] = [track for track in tracks if track]
+        model["tracks"] = _tracks(tracks)
     if category is not None:
-        model["category"] = category if category in CATEGORIES else DEFAULT_CATEGORY
+        model["category"] = _category(category)
     if cover is not None:
         model["pic"] = _upload_cover(client, model["model"], cover, cover_name)
 
@@ -293,24 +317,19 @@ def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     """
     if from_ruid == to_ruid:
         raise TonieError("a sticker cannot be copied onto itself")
-    entries = {entry.get("ruid"): entry for entry in client.tags()}
-    original = entries.get(from_ruid)
-    if original is None or not original.get("source"):
+    original = find_tag(client, from_ruid)
+    if original is None or not original.source:
         raise TonieError(f"the tag {from_ruid} plays nothing to copy")
-    if to_ruid not in entries or to_ruid == SYSTEM_RUID:
-        raise TonieError(
-            f"teddyCloud does not know the tag {to_ruid}; hold it against the box once first"
-        )
+    require_tag(client, to_ruid)
 
-    info = original.get("tonieInfo") or {}
     client.set_tag(
         to_ruid,
-        source=original["source"],
-        tonie_model=info.get("model") or "",
-        live=bool(original.get("live")),
+        source=original.source,
+        tonie_model=original.model,
+        live=original.live,
         # A library tag asking the cloud for content it will never have is
         # the one thing a copy must not inherit.
-        nocloud=True if not original.get("live") else bool(original.get("nocloud")),
+        nocloud=True if not original.live else original.nocloud,
     )
     log.info("tag %s now plays what %s plays", to_ruid, from_ruid)
 
@@ -338,14 +357,7 @@ def _model(
     year: Optional[Union[int, str]] = None,
 ) -> Dict[str, Any]:
     """The tonies.custom.json entry for this taf."""
-    model: Dict[str, Any] = {
-        "model": model_id,
-        "series": series.strip() or model_id,
-        "episodes": episode.strip(),
-        "tracks": [track for track in tracks if track],
-        "language": language,
-        "category": category if category in CATEGORIES else DEFAULT_CATEGORY,
-    }
+    model = _described(model_id, series, episode, tracks, language, category)
 
     released = _released(year)
     if released:
@@ -359,6 +371,33 @@ def _model(
         model["hash"] = [encoded.sha1.upper()]
 
     return model
+
+
+def _described(model_id: str, series: str, episode: str, tracks: Sequence[str],
+               language: str, category: str) -> Dict[str, Any]:
+    """What every model says about itself, whether it plays a taf or a stream."""
+    return {
+        "model": model_id,
+        "series": _series(series, model_id),
+        "episodes": episode.strip(),
+        "tracks": _tracks(tracks),
+        "language": language,
+        "category": _category(category),
+    }
+
+
+def _series(series: str, model_id: str) -> str:
+    # Without a series the model is listed under its own id, so every model
+    # has a name it can be told apart by.
+    return series.strip() or model_id
+
+
+def _tracks(tracks: Sequence[str]) -> List[str]:
+    return [track for track in tracks if track]
+
+
+def _category(category: str) -> str:
+    return category if category in CATEGORIES else DEFAULT_CATEGORY
 
 
 def _released(year: Optional[Union[int, str]]) -> Optional[str]:
@@ -410,9 +449,27 @@ def _upload_cover(
         name = f"{model_id}.{suffix.lstrip('.').lower()}"
         stream: BinaryIO = io.BytesIO(cover)
         client.upload(stream, name, path="/", special="custom_img")
-        return f"/custom_img/{name}"
+        return f"{CUSTOM_IMG}{name}"
 
     name = f"{model_id}{cover.suffix.lower()}"
     with cover.open("rb") as stream:
         client.upload(stream, name, path="/", special="custom_img")
-    return f"/custom_img/{name}"
+    return f"{CUSTOM_IMG}{name}"
+
+
+def cover_name(model: Dict[str, Any]) -> Optional[str]:
+    """The file name of a model's cover in custom_img, or None.
+
+    None as well for a picture hosted elsewhere, or a name with a path in it:
+    neither is a file this app can fetch, back up or print.
+    """
+    picture = str(model.get("pic") or "")
+    if not picture.startswith(CUSTOM_IMG):
+        return None
+    name = picture[len(CUSTOM_IMG):]
+    return name if name and "/" not in name else None
+
+
+def fetch_cover(client: TeddyCloudClient, name: str) -> bytes:
+    """The bytes of one cover in custom_img; raises TeddyCloudError when it cannot be read."""
+    return client.fetch(f"{CUSTOM_IMG}{name}")

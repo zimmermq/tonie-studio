@@ -14,40 +14,51 @@ a few bytes, so nothing goes hunting for them.
 
 from __future__ import annotations
 
-import json
-import logging
 from pathlib import Path
-from threading import Lock
-from typing import Dict, Optional
+from typing import Dict, Mapping, Optional, Tuple
 
-log = logging.getLogger(__name__)
+from .store import LOCK, read_json, write_json
 
 FILE_NAME = "playing-times.json"
-
-_lock = Lock()
 
 
 def remember(data_dir: Path, model_id: str, seconds: Optional[float]) -> None:
     """Record how long ``model_id`` plays, if it is known."""
     if not model_id or not seconds or seconds <= 0:
         return
-    with _lock:
+    with LOCK:
         times = _read(data_dir)
         times[model_id] = int(round(seconds))
-        _write(data_dir, times)
+        write_json(data_dir / FILE_NAME, times)
 
 
 def forget(data_dir: Path, model_id: str) -> None:
     """Drop one model's time, for when the model itself is deleted."""
-    with _lock:
+    with LOCK:
         times = _read(data_dir)
         if times.pop(model_id, None) is not None:
-            _write(data_dir, times)
+            write_json(data_dir / FILE_NAME, times)
+
+
+def add_missing(data_dir: Path, saved: Mapping, write: bool = True) -> Tuple[bool, bool]:
+    """Add the times in ``saved`` that this volume does not know yet.
+
+    A time recorded here wins over the saved one: it is the newer of the two.
+    Returns whether anything was or would be added, and whether there were
+    times here before. With ``write`` false nothing is written, for a preview.
+    """
+    with LOCK:
+        current = _read(data_dir)
+        merged = {**_valid(saved), **current}
+        changed = merged != current
+        if changed and write:
+            write_json(data_dir / FILE_NAME, merged)
+        return changed, bool(current)
 
 
 def playing_times(data_dir: Path) -> Dict[str, int]:
     """Every known playing time in seconds, by model id."""
-    with _lock:
+    with LOCK:
         return _read(data_dir)
 
 
@@ -63,28 +74,12 @@ def minutes(seconds: Optional[int]) -> Optional[int]:
 
 
 def _read(data_dir: Path) -> Dict[str, int]:
-    path = data_dir / FILE_NAME
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as error:
-        log.warning("cannot read %s, carrying on without playing times: %s", path, error)
-        return {}
-    if not isinstance(loaded, dict):
+    """Under LOCK, which the caller holds."""
+    return _valid(read_json(data_dir / FILE_NAME, {}))
+
+
+def _valid(loaded) -> Dict[str, int]:
+    if not isinstance(loaded, Mapping):
         return {}
     return {str(key): int(value) for key, value in loaded.items()
             if isinstance(value, (int, float))}
-
-
-def _write(data_dir: Path, times: Dict[str, int]) -> None:
-    path = data_dir / FILE_NAME
-    try:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        # Written beside the target and moved into place, so a crash halfway
-        # through leaves the previous file rather than half of a new one.
-        scratch = path.with_suffix(".tmp")
-        scratch.write_text(json.dumps(times, indent=1, sort_keys=True), encoding="utf-8")
-        scratch.replace(path)
-    except OSError as error:
-        log.warning("cannot store playing times in %s: %s", path, error)
