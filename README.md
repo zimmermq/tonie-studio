@@ -78,16 +78,19 @@ tonie starts at the box, not here.
 ## Quick start with Docker
 
 ```bash
-docker build -t tonie-studio .
 docker run -d --name tonie-studio -p 8080:8080 \
   -e TS_TEDDYCLOUD_URL=http://teddycloud:80 \
   -v /path/to/your/audio:/archive:ro \
   -v tonie-studio-data:/data \
-  tonie-studio
+  zimmermq/tonie-studio:latest
 ```
 
 Then open http://localhost:8080. The container has to reach teddyCloud's web interface; on the
 same Docker network or in the same Kubernetes namespace that is the service name.
+
+The image on [Docker Hub](https://hub.docker.com/r/zimmermq/tonie-studio) is built for amd64
+and arm64, so it runs on a Raspberry Pi as well. Pin a version tag such as `v0.1.9` instead of
+`latest` to update deliberately. To build it yourself: `docker build -t tonie-studio .`
 
 ### Configuration
 

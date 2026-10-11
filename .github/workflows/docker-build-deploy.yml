@@ -62,15 +62,21 @@ jobs:
           docker build -t tonie-studio:validation .
           echo "Build validation successful"
 
-  # On a published release, build + push to ECR and open a PR bumping the image
-  # tag in homelab-iac.
+  # On a published release, build the image for amd64 and arm64 (a Raspberry
+  # Pi runs teddyCloud as often as a server does), push it to Docker Hub, and
+  # open a PR in homelab-iac pointing the deployment at it.
   build-and-deploy:
     needs: test
     if: github.event_name == 'release'
     runs-on: ubuntu-26.04
+    env:
+      IMAGE: docker.io/zimmermq/tonie-studio
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4.4.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.4.1
@@ -82,36 +88,30 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.3.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.6.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1
-
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2.1.7
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: tonie-studio
-          IMAGE_TAG: ${{ steps.version.outputs.version }}
-        run: |
-          docker build --platform linux/amd64 \
-            --build-arg TS_VERSION=$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "Pushed image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: TS_VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
 
       - name: Update homelab-iac repository
         env:
           GITHUB_TOKEN: ${{ secrets.HOMELAB_PAT }}
           VERSION: ${{ steps.version.outputs.version }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           git clone https://x-access-token:$GITHUB_TOKEN@github.com/JonasHess/homelab-iac.git
           cd homelab-iac
@@ -122,9 +122,10 @@ jobs:
           git config user.name "tonie-studio-bot"
           git config user.email "noreply@github.com"
 
-          # Pure-generic app: the image tag is inline in generic.deployment.image
-          # (registry/tonie-studio:<tag>), so bump just the tag suffix.
-          sed -i "s#\(image:[[:space:]]*.*tonie-studio\):.*#\1:$VERSION#" apps/tonie-studio/values.yaml
+          # Pure-generic app: the image is inline in generic.deployment.image.
+          # The whole reference is written, registry included, so a deployment
+          # still pointing at an older registry moves along with the tag.
+          sed -i "s#image:[[:space:]]*.*tonie-studio:.*#image: $IMAGE:$VERSION#" apps/tonie-studio/values.yaml
 
           # If the chart already pins this tag (e.g. the very first release), there
           # is nothing to change - succeed without opening an empty PR.
@@ -138,7 +139,7 @@ jobs:
           git commit -m "chore: Update tonie-studio to $VERSION
 
           Automated update from tonie-studio release
-          - Image: $ECR_REGISTRY/tonie-studio:$VERSION"
+          - Image: $IMAGE:$VERSION"
 
           git push origin $BRANCH_NAME
 
@@ -150,5 +151,5 @@ jobs:
               \"title\": \"Update tonie-studio to $VERSION\",
               \"head\": \"$BRANCH_NAME\",
               \"base\": \"main\",
-              \"body\": \"Automated update of the tonie-studio container image to $VERSION.\\n\\n- Updated apps/tonie-studio/values.yaml image tag\\n- Image: $ECR_REGISTRY/tonie-studio:$VERSION\"
+              \"body\": \"Automated update of the tonie-studio container image to $VERSION.\\n\\n- Updated apps/tonie-studio/values.yaml image tag\\n- Image: $IMAGE:$VERSION\"
             }"
