@@ -358,3 +358,17 @@ class TestOnlyOwnCoversAreLinked:
         publish_album(client, runner, teddycloud)
 
         assert "/cover/custom/TS-0001." in client.get("/tonies").text
+
+
+class TestBoxSaysWhyItIsDisconnected:
+    def test_a_silent_stream_is_reported_as_such(self, client, box):
+        box._state.connected = False
+        box._state.silent = True
+
+        assert client.get("/api/box").json()["silent"] is True
+
+    def test_a_connected_stream_is_never_silent(self, client, box):
+        box._state.connected = True
+        box._state.silent = True
+
+        assert client.get("/api/box").json()["silent"] is False

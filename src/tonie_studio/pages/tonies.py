@@ -164,6 +164,8 @@ def register(app: FastAPI, ctx: Context) -> None:
             "since": state.since.isoformat() if state.since and state.known else None,
             "stale": state.stale,
             "connected": state.connected,
+            # Why it is not: teddyCloud is up, but its event stream went quiet.
+            "silent": state.silent and not state.connected,
             # A tag teddyCloud does not know: a fresh sticker, just held
             # against the box. The assignment page waits for this.
             "unknown_ruid": state.fresh_unknown,

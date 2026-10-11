@@ -354,3 +354,32 @@ class TestAStickerPlacedAfterAnUnknownOne:
 
         assert watcher.state.fresh_unknown is None
         assert watcher.state.ruid == "a9c9ed0e500304e0"
+
+
+class TestHowTheStreamFailed:
+    """A stream teddyCloud accepted and then left silent is not teddyCloud being away."""
+
+    def _fail_once(self, error):
+        watcher = BoxWatcher("http://teddycloud.test")
+
+        def listen():
+            watcher._stop.set()
+            raise error
+
+        watcher._listen = listen
+        watcher._run()
+        return watcher.state
+
+    def test_a_stream_that_goes_silent_is_told_apart(self):
+        import requests
+
+        state = self._fail_once(requests.exceptions.ReadTimeout("Read timed out"))
+
+        assert state.connected is False and state.silent is True
+
+    def test_a_teddycloud_that_is_not_there_is_not_silent(self):
+        import requests
+
+        state = self._fail_once(requests.exceptions.ConnectionError("Connection refused"))
+
+        assert state.connected is False and state.silent is False

@@ -143,6 +143,7 @@
  },
  "box.on_box": "auf der Box:",
  "box.playing": "spielt:",
+ "box.silent": "Box-Ereignisse hängen - teddyCloud neu starten",
  "box.unreachable": "teddyCloud antwortet nicht",
  "calibration.hint": "Einmal das Kalibrierblatt drucken, mit dem Lineal die Mitte von Kreuz 1 nachmessen und hier eintragen. Soll: {left} mm vom linken, {top} mm vom oberen Rand.",
  "calibration.left": "gemessen von links (mm)",

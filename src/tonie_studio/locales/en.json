@@ -143,6 +143,7 @@
  },
  "box.on_box": "on the box:",
  "box.playing": "playing:",
+ "box.silent": "Box events are stuck - restart teddyCloud",
  "box.unreachable": "teddyCloud is not answering",
  "calibration.hint": "Print the calibration sheet once, measure the centre of cross 1 with a ruler and enter it here. It should be {left} mm from the left and {top} mm from the top edge.",
  "calibration.left": "measured from the left (mm)",

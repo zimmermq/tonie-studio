@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
       slot.classList.toggle('off', known.connected === false);
       if (known.connected === false) {
         slot.hidden = false;
-        slot.textContent = words['box.unreachable'];
+        slot.textContent = words[known.silent ? 'box.silent' : 'box.unreachable'];
         return;
       }
       if (known.on_box && known.label) {

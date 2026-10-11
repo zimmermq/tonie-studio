@@ -26,10 +26,14 @@ export function element(id, text = '', { dataset = {}, children = {} } = {}) {
 
 // ``ids`` are the elements the page has; ``pageData`` is what the server puts
 // in #page-data; ``answers`` maps a fetched URL to the JSON it answers with;
-// ``queries`` maps a selector to the elements document.querySelectorAll finds.
+// ``queries`` maps a selector to the elements document.querySelectorAll finds;
+// ``texts`` gives elements by id with their content, such as other JSON blocks;
+// ``prepared`` gives elements by id built with ``element``, children and all.
 export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
-                                         queries = {} } = {}) {
+                                         queries = {}, texts = {}, prepared = {} } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, element(id)]));
+  for (const [id, text] of Object.entries(texts)) elements[id] = element(id, text);
+  Object.assign(elements, prepared);
   elements['page-data'] = element('page-data', JSON.stringify(pageData));
   // Every step a script schedules for later; a test reads whether it goes on.
   const timers = [];
@@ -43,12 +47,15 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
     dispatchEvent() {},
   };
+  class CustomEvent {
+    constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
+  }
   class FormData {
     constructor() { this.fields = {}; }
     append(name, value) { this.fields[name] = value; }
   }
   const context = {
-    document, console, JSON, Math, Promise, URLSearchParams, FormData,
+    document, console, JSON, Math, Promise, URLSearchParams, FormData, CustomEvent,
     setTimeout: step => timers.push(step),
     fetch: async (url, options = {}) => {
       fetched.push({ url, method: options.method || 'GET', body: options.body });
@@ -57,6 +64,8 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
   };
   context.window = context;
   context.addEventListener = () => {};
+  // A touch screen: hover-only extras such as the cover preview stay off.
+  context.matchMedia = () => ({ matches: false });
   vm.createContext(context);
   for (const name of scripts) {
     vm.runInContext(readFileSync(STATIC + name, 'utf8'), context, { filename: name });

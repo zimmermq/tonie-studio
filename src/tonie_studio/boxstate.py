@@ -88,6 +88,11 @@ class BoxState:
     since: Optional[datetime] = None
     last_event: Optional[datetime] = None
     connected: bool = False
+    # The last stream was accepted and then fell silent for READ_TIMEOUT. A
+    # healthy stream sends signs of life far more often, so teddyCloud is up
+    # but its event stream is stuck, which a teddyCloud restart clears. False
+    # when teddyCloud could not be reached at all.
+    silent: bool = False
 
     @property
     def stale(self) -> bool:
@@ -338,6 +343,8 @@ class BoxWatcher:
                 # Any failure here is a connection that went away, which is
                 # normal. Losing the thread over it would not be.
                 log.info("event stream from %s ended: %s", self.base_url, error)
+                with self._lock:
+                    self._state.silent = isinstance(error, requests.exceptions.ReadTimeout)
             with self._lock:
                 self._state.connected = False
             self._stop.wait(RECONNECT_DELAY)
@@ -355,6 +362,7 @@ class BoxWatcher:
             response.encoding = "utf-8"
             with self._lock:
                 self._state.connected = True
+                self._state.silent = False
             log.info("following the box on %s/api/sse", self.base_url)
 
             for line in response.iter_lines(decode_unicode=True):
