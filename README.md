@@ -23,10 +23,12 @@ check the tracks, encode, lay the tag on the box, print the covers.
 - **Put it on a tag.** The tag lying on the box is preselected. A tag that already plays something
   is only replaced after you confirm.
 - **Several albums at once.** Pick ten episodes of a series and they are encoded one after
-  another. Free tags are handed out automatically, or one by one in the order you lay them on the
-  box.
+  another. Search for a series and select all of it, or only what has no tonie yet, or what is
+  new in the archive. Free tags are handed out automatically, or one by one in the order you lay
+  them on the box.
 - **Custom tonies with covers.** Every tag gets a custom model in teddyCloud with the cover, the
-  series, the episode and the track names.
+  series, the episode and the track names. Deleting a tonie frees its tag and removes its model
+  and TAF in one step, unless another tag still uses them.
 - **Print the covers.** Round 46 mm covers, 20 to a plain A4 page, to cut out, for example for
   the slots of a coin collector tin. The picture fills the circle or sits whole inside it, and it
   is printed a little past the cut line, so a slightly crooked cut shows no white edge. Optionally
