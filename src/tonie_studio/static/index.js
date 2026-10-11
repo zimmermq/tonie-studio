@@ -56,7 +56,9 @@ document.getElementById('albums').addEventListener('change', updatePick);
 
 // The quick picks act on the rows the search left visible, so a search for
 // a series followed by "without tonie" picks what is still missing of it.
-// They add to what is ticked; only "none" takes ticks away, from every row.
+// A pick sets those rows to exactly what it matches: "all" and then "without
+// tonie" leaves the albums without one. Hidden rows keep their tick, so two
+// searches can be combined; "none" clears every row.
 const picks = [...document.querySelectorAll('[data-pick]')];
 const matches = {
   all: () => true,
@@ -75,7 +77,7 @@ function refreshPicks() {
 for (const button of picks) {
   button.addEventListener('click', () => {
     const match = matches[button.dataset.pick];
-    for (const row of match ? visible().filter(match) : rows) boxOf(row).checked = Boolean(match);
+    for (const row of match ? visible() : rows) boxOf(row).checked = Boolean(match && match(row));
     updatePick();
   });
 }

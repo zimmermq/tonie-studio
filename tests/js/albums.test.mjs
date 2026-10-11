@@ -45,6 +45,29 @@ async function page(rows) {
   assert.deepEqual(ticked(), [true, false, true]);
 }
 
+// A pick sets the selection of the visible rows rather than adding to it:
+// "all" and then "without a tonie" leaves only the albums without one.
+{
+  const rows = [row(false), row(true), row(false, true)];
+  const { press, ticked, elements } = await page(rows);
+  press('all');
+  press('without');
+  assert.deepEqual(ticked(), [true, false, true]);
+  assert.equal(elements.pickcount.textContent, '2 albums');
+  press('new');
+  assert.deepEqual(ticked(), [false, false, true]);
+}
+
+// Rows the search hides keep their tick, so two searches can be combined.
+{
+  const rows = [row(true), row(false)];
+  const { press, ticked } = await page(rows);
+  rows[0].querySelector('input[name=ids]').checked = true;
+  rows[0].hidden = true;
+  press('without');
+  assert.deepEqual(ticked(), [true, true]);
+}
+
 // "New" picks the new ones; "none" clears everything.
 {
   const rows = [row(false, true), row(false), row(true, true)];
