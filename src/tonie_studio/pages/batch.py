@@ -8,7 +8,7 @@ from typing import Callable, List
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from ..album import read_album
+from ..album import read_albums
 from ..albumnotes import albums_with_tonies
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
@@ -39,8 +39,9 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     def _plan(connection, ids, series=None, episodes=None, models=()):
         """The batch for these album ids, or the reason it cannot be made."""
-        albums = [(identifier, read_album(catalogue.resolve(identifier)))
-                  for identifier in dict.fromkeys(ids)]
+        unique = list(dict.fromkeys(ids))
+        albums = list(zip(unique, read_albums([catalogue.resolve(identifier)
+                                               for identifier in unique]), strict=True))
         try:
             return plan_batch(connection, albums, settings.archive_dir, settings.upload_dir,
                               series, episodes, models=models,

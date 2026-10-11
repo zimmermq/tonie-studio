@@ -402,3 +402,33 @@ class TestAlbumId:
         decomposed = tmp_path / "Siebenschla\u0308fer"
 
         assert album_id(tmp_path, composed) == album_id(tmp_path, decomposed)
+
+
+class TestReadingSeveralAlbums:
+    """Over a network share each album costs about a second, mostly waiting; a batch reads several at once."""
+
+    def test_reads_them_side_by_side_and_keeps_their_order(self, tmp_path, monkeypatch):
+        import threading
+        import time
+
+        import tonie_studio.album as album_module
+
+        running, most = [0], [0]
+        lock = threading.Lock()
+
+        def slow_read(path):
+            with lock:
+                running[0] += 1
+                most[0] = max(most[0], running[0])
+            time.sleep(0.05)
+            with lock:
+                running[0] -= 1
+            return path.name
+
+        monkeypatch.setattr(album_module, "read_album", slow_read)
+        paths = [tmp_path / f"album-{number}" for number in range(8)]
+
+        read = album_module.read_albums(paths)
+
+        assert read == [path.name for path in paths]
+        assert most[0] > 1

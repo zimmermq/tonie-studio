@@ -18,9 +18,10 @@ import hashlib
 import logging
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import mutagen
 
@@ -46,6 +47,10 @@ AUDIO_EXTENSIONS = frozenset({
     ".mp3", ".aac", ".m4a", ".wav", ".flac", ".ogg", ".opus",
     ".aiff", ".aif", ".wma", ".ac3", ".dts", ".mp4",
 })
+
+# How many albums are read at once for a batch. Enough to hide the share's
+# latency; more would only queue on the same disk.
+ALBUM_READERS = 6
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"})
 
@@ -221,6 +226,17 @@ def cover_candidates(path: Path) -> List[Path]:
     tracks of an album to draw one thumbnail.
     """
     return _cover_candidates(_entries(path))
+
+
+def read_albums(paths: Sequence[Path]) -> List[Album]:
+    """``read_album`` for each path, ALBUM_READERS at a time, in the order given.
+
+    Over a network share reading one album is about a second, nearly all of
+    it waiting on file opens, so several readers at once cost the share little
+    and cut a batch of twenty from twenty seconds to a few.
+    """
+    with ThreadPoolExecutor(max_workers=ALBUM_READERS, thread_name_prefix="album") as pool:
+        return list(pool.map(read_album, paths))
 
 
 def read_album(path: Path) -> Album:
