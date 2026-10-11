@@ -26,9 +26,11 @@ service off any untrusted network.
 
 from __future__ import annotations
 
+import io
 import logging
 import re
-from typing import Any, BinaryIO, Dict, Iterable, List, Optional
+import time
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -48,6 +50,16 @@ ENCODE_TIMEOUT = 1800
 # answers. Twice covers a connection closed under it; more would only delay
 # the failure of a teddyCloud that is really gone.
 UPLOAD_ATTEMPTS = 2
+
+# How long, in seconds, an upload's header goes ahead of its body.
+# teddyCloud 0.7.0 reads the request header line by line from a 32 KB buffer.
+# When its first read fills that buffer with header and body together, it
+# takes the whole buffer for the request line, never finds the end of the
+# header, and closes the connection without an answer. That happens whenever
+# the body has arrived before teddyCloud gets to read, which under load is
+# often. Sent alone first, the header is read on its own. Costs this long per
+# track; harmless against a teddyCloud without the bug.
+HEAD_START = 0.05
 
 # A tag is addressed by its reversed UID: 16 hex digits, lower case as
 # teddyCloud writes them into the content tree.
@@ -125,21 +137,21 @@ class TeddyCloudClient:
         if "/" in filename or "\\" in filename:
             raise ValueError(f"upload name must not contain a path separator: {filename!r}")
 
-        # Each upload on a connection of its own: teddyCloud closes kept-alive
-        # connections on its side, and an upload sent down one at that moment
-        # dies without an answer. A dropped connection is tried once more with
-        # the whole file; the staged name is simply written again. An answer
-        # from teddyCloud, even a refusal, is never repeated.
+        # The body follows the header only after HEAD_START, on a connection of
+        # its own. A connection that still drops is tried once more with the
+        # whole file; the staged name is simply written again. An answer from
+        # teddyCloud, even a refusal, is never repeated.
         start = stream.tell()
         for attempt in range(1, UPLOAD_ATTEMPTS + 1):
             stream.seek(start)
+            body, content_type = _multipart(filename, stream)
             try:
                 response = self._request(
                     "POST",
                     "/api/fileUpload",
                     params=self._params(path=path, special=special),
-                    files={"file": (filename, stream)},
-                    headers={"Connection": "close"},
+                    data=_AfterHeadStart(body),
+                    headers={"Content-Type": content_type, "Connection": "close"},
                     timeout=ENCODE_TIMEOUT,
                 )
                 break
@@ -296,6 +308,35 @@ class TeddyCloudClient:
         body = (response.text or "").strip()
         if body != COMMAND_OK:
             raise TeddyCloudError(f"teddyCloud refused {path}: {body[:200] or 'empty answer'}")
+
+
+def _multipart(filename: str, stream: BinaryIO) -> Tuple[bytes, str]:
+    """The multipart body of one file upload and its content type, as requests builds it."""
+    prepared = requests.Request("POST", "http://teddycloud.invalid/",
+                                files={"file": (filename, stream)}).prepare()
+    return prepared.body, prepared.headers["Content-Type"]
+
+
+class _AfterHeadStart:
+    """A request body that holds its first byte back for HEAD_START.
+
+    File-like and with a length, so requests sends it with a Content-Length
+    rather than in chunks.
+    """
+
+    def __init__(self, body: bytes):
+        self._body = io.BytesIO(body)
+        self._length = len(body)
+        self._started = False
+
+    def __len__(self) -> int:
+        return self._length
+
+    def read(self, size: int = -1) -> bytes:
+        if not self._started:
+            self._started = True
+            time.sleep(HEAD_START)
+        return self._body.read(size)
 
 
 def _form_value(value: Any) -> str:

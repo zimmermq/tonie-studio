@@ -22,6 +22,16 @@ def _ok():
     return response
 
 
+def _body(data):
+    """Everything an upload body object hands out, read the way the connection reads it."""
+    chunks = []
+    while True:
+        chunk = data.read(8192)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+
+
 def _json(payload):
     """A response carrying a JSON document."""
     response = Mock()
@@ -111,8 +121,10 @@ class TestDelete:
 
 class TestUpload:
     def test_posts_the_file_under_the_given_name(self, client, request_mock):
+        import io
+
         request_mock.return_value = _ok()
-        stream = Mock()
+        stream = io.BytesIO(b"audio")
 
         client.upload(stream, "01-track.flac", path="/_staging/job-1", special="library")
 
@@ -121,7 +133,10 @@ class TestUpload:
         assert request_mock.call_args.kwargs["params"] == {
             "path": "/_staging/job-1", "special": "library",
         }
-        assert request_mock.call_args.kwargs["files"] == {"file": ("01-track.flac", stream)}
+        body = _body(request_mock.call_args.kwargs["data"])
+        assert b'filename="01-track.flac"' in body and b"audio" in body
+        assert request_mock.call_args.kwargs["headers"]["Content-Type"].startswith(
+            "multipart/form-data; boundary=")
 
     def test_rejects_a_name_containing_a_path_separator(self, client, request_mock):
         # teddyCloud stores the multipart filename verbatim and refuses
@@ -381,7 +396,8 @@ class TestUploadSurvivesADroppedConnection:
         bodies = []
 
         def send(method, url, **kwargs):
-            bodies.append(kwargs["files"]["file"][1].read())
+            body = _body(kwargs["data"])
+            bodies.append(body.split(b"\r\n\r\n", 1)[1].split(b"\r\n--", 1)[0])
             if len(bodies) == 1:
                 raise self._dropped()
             return _ok()
@@ -407,3 +423,39 @@ class TestUploadSurvivesADroppedConnection:
                 client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
 
         assert sent.call_count == 1
+
+
+
+class TestUploadGivesTeddyCloudAHeadStart:
+    """teddyCloud 0.7.0 loses an upload whose header and body arrive in its first read together."""
+
+    def _sent(self, client, monkeypatch):
+        import io
+
+        import tonie_studio.teddycloud as teddycloud
+
+        waits = []
+        monkeypatch.setattr(teddycloud.time, "sleep", waits.append)
+        with patch.object(client.session, "request", return_value=_ok()) as sent:
+            client.upload(io.BytesIO(b"audio" * 1000), "001.flac", path="/s", special="library")
+        return sent.call_args, waits
+
+    def test_the_body_waits_before_its_first_byte(self, client, monkeypatch):
+        from tonie_studio.teddycloud import HEAD_START
+
+        call, waits = self._sent(client, monkeypatch)
+
+        assert waits == []
+        _body(call.kwargs["data"])
+        assert waits == [HEAD_START]
+
+    def test_it_goes_out_with_its_length_not_in_chunks(self, client, monkeypatch):
+        import requests
+
+        call, _waits = self._sent(client, monkeypatch)
+        prepared = client.session.prepare_request(requests.Request(
+            call.args[0], call.args[1], params=call.kwargs["params"],
+            data=call.kwargs["data"], headers=call.kwargs["headers"]))
+
+        assert "Transfer-Encoding" not in prepared.headers
+        assert int(prepared.headers["Content-Length"]) == len(_body(call.kwargs["data"]))
