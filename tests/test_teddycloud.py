@@ -355,3 +355,55 @@ class TestTwin:
 
         assert (twin.base_url, twin.overlay, twin.timeout) == ("https://teddycloud.test", "abc", 7)
         assert twin.session is not original.session
+
+
+class TestUploadSurvivesADroppedConnection:
+    """teddyCloud may close a kept-alive connection just as the next upload goes out."""
+
+    @staticmethod
+    def _dropped():
+        import requests
+
+        return requests.exceptions.ConnectionError(
+            "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))")
+
+    def test_each_upload_asks_for_a_connection_of_its_own(self, client):
+        import io
+
+        with patch.object(client.session, "request", return_value=_ok()) as sent:
+            client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+        assert sent.call_args.kwargs["headers"]["Connection"] == "close"
+
+    def test_a_dropped_connection_is_tried_once_more_with_the_whole_file(self, client):
+        import io
+
+        bodies = []
+
+        def send(method, url, **kwargs):
+            bodies.append(kwargs["files"]["file"][1].read())
+            if len(bodies) == 1:
+                raise self._dropped()
+            return _ok()
+
+        with patch.object(client.session, "request", side_effect=send):
+            client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+        assert bodies == [b"audio", b"audio"]
+
+    def test_a_second_drop_gives_up(self, client):
+        import io
+
+        with patch.object(client.session, "request", side_effect=[self._dropped()] * 2):
+            with pytest.raises(TeddyCloudError):
+                client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+    def test_an_answer_from_teddycloud_is_not_tried_again(self, client):
+        import io
+
+        refused = Mock(status_code=500, text="disk full")
+        with patch.object(client.session, "request", return_value=refused) as sent:
+            with pytest.raises(TeddyCloudError):
+                client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+        assert sent.call_count == 1

@@ -44,6 +44,11 @@ REQUEST_TIMEOUT = 30
 # album legitimately takes minutes. teddyCloud reports no progress meanwhile.
 ENCODE_TIMEOUT = 1800
 
+# How often one file is sent when the connection drops before teddyCloud
+# answers. Twice covers a connection closed under it; more would only delay
+# the failure of a teddyCloud that is really gone.
+UPLOAD_ATTEMPTS = 2
+
 # A tag is addressed by its reversed UID: 16 hex digits, lower case as
 # teddyCloud writes them into the content tree.
 RUID_PATTERN = re.compile(r"^[0-9a-f]{16}$")
@@ -120,13 +125,29 @@ class TeddyCloudClient:
         if "/" in filename or "\\" in filename:
             raise ValueError(f"upload name must not contain a path separator: {filename!r}")
 
-        response = self._request(
-            "POST",
-            "/api/fileUpload",
-            params=self._params(path=path, special=special),
-            files={"file": (filename, stream)},
-            timeout=ENCODE_TIMEOUT,
-        )
+        # Each upload on a connection of its own: teddyCloud closes kept-alive
+        # connections on its side, and an upload sent down one at that moment
+        # dies without an answer. A dropped connection is tried once more with
+        # the whole file; the staged name is simply written again. An answer
+        # from teddyCloud, even a refusal, is never repeated.
+        start = stream.tell()
+        for attempt in range(1, UPLOAD_ATTEMPTS + 1):
+            stream.seek(start)
+            try:
+                response = self._request(
+                    "POST",
+                    "/api/fileUpload",
+                    params=self._params(path=path, special=special),
+                    files={"file": (filename, stream)},
+                    headers={"Connection": "close"},
+                    timeout=ENCODE_TIMEOUT,
+                )
+                break
+            except TeddyCloudError as error:
+                dropped = isinstance(error.__cause__, requests.exceptions.ConnectionError)
+                if not dropped or attempt == UPLOAD_ATTEMPTS:
+                    raise
+                log.warning("upload of %s dropped, trying again: %s", filename, error)
         self._expect_ok(response, "/api/fileUpload")
 
     def encode(
