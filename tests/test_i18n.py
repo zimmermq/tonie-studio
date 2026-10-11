@@ -16,7 +16,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 # names them in full. Each has a test below that every value is covered.
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
-           "place.assigned", "place.complete", "place.failed")
+           "place.assigned", "place.complete", "place.none_waiting", "place.failed")
 
 
 def placeholders(text):

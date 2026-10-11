@@ -336,7 +336,12 @@
  "place.assigned": "{episode} ist jetzt auf diesem Sticker. Nimm ihn runter.",
  "place.complete": "Alle Folgen haben schon einen Sticker; dieser bleibt frei.",
  "place.failed": "{episode} ließ sich nicht auf diesen Sticker legen.",
+ "place.failed_left": {
+  "one": "Eine Folge ist fehlgeschlagen und bekommt keinen Sticker; warum, steht in ihren Details.",
+  "other": "{count} Folgen sind fehlgeschlagen und bekommen keinen Sticker; warum, steht in ihren Details."
+ },
  "place.next": "Der nächste bekommt: {episode}.",
+ "place.none_waiting": "Keine Folge wartet mehr auf einen Sticker: die übrigen sind fehlgeschlagen. Dieser bleibt frei.",
  "place.prompt": "Leg einen freien Sticker auf die Box.",
  "place.reserved": "Dieser Sticker bekommt {episode}, sobald die Folge encodiert ist. Nimm ihn runter.",
  "place.taken": "Dieser Sticker spielt schon etwas und bleibt, wie er ist.",

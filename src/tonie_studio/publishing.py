@@ -196,8 +196,9 @@ TAKEN = "taken"          # it plays something else and is left as it is
 RESERVED = "reserved"    # it waits for its episode's encode to finish
 ASSIGNED = "assigned"    # it plays its episode now
 COMPLETE = "complete"    # every episode has a sticker already
+NONE_WAITING = "none_waiting"  # nothing left to fill: the remaining encodes failed
 FAILED = "failed"        # it could not be written
-PLACE_RESULTS = (UNKNOWN, TAKEN, RESERVED, ASSIGNED, COMPLETE, FAILED)
+PLACE_RESULTS = (UNKNOWN, TAKEN, RESERVED, ASSIGNED, COMPLETE, NONE_WAITING, FAILED)
 
 
 def job_states(job_of: Callable[[str], Optional[Job]]
@@ -238,7 +239,8 @@ def place(client: TeddyCloudClient, data_dir: Path, placing: Placing, ruid: str,
 
     slot, settled = placing.reserve(ruid, failed, played_on)
     if slot is None:
-        return COMPLETE, None
+        gave_up = any(failed(other.job_id) for other in placing.slots)
+        return (NONE_WAITING if gave_up else COMPLETE), None
     if not settled:
         return RESERVED, slot
     job = job_of(slot.job_id)

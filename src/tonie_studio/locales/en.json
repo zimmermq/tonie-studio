@@ -336,7 +336,12 @@
  "place.assigned": "{episode} is now on this sticker. Take it off.",
  "place.complete": "Every episode already has a sticker; this one stays free.",
  "place.failed": "{episode} could not be put on this sticker.",
+ "place.failed_left": {
+  "one": "One episode failed and gets no sticker; its details say why.",
+  "other": "{count} episodes failed and get no sticker; their details say why."
+ },
  "place.next": "The next one gets: {episode}.",
+ "place.none_waiting": "No episode is waiting for a sticker any more: the rest failed. This one stays free.",
  "place.prompt": "Put a free sticker on the box.",
  "place.reserved": "This sticker gets {episode} as soon as the episode is encoded. Take it off.",
  "place.taken": "This sticker already plays something and stays as it is.",

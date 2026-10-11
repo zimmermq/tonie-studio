@@ -141,11 +141,14 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(404, "error.parts_gone")
         translate = translator(request)
         status, slot = place(client(), settings.data_dir, placing, ruid, jobs.get)
-        waiting = placing.waiting(*job_states(jobs.get))
+        failed, played_on = job_states(jobs.get)
+        waiting = placing.waiting(failed, played_on)
+        failures = sum(failed(other.job_id) for other in placing.slots)
         return JSONResponse({
             "status": status,
             "message": translate(PLACE_MESSAGES[status], episode=slot.episode if slot else ""),
             "then": (translate("place.next", episode=waiting.episode) if waiting
+                     else translate("place.failed_left", count=failures) if failures
                      else translate("place.all_done")),
             "episode": slot.episode if slot else None,
             "job": slot.job_id if slot else None,

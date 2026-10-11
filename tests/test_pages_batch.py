@@ -579,3 +579,32 @@ class TestALongBatchKeepsItsJobs:
         answer = place_sticker(client, group, "deb4ed0e500304e0")
 
         assert answer["status"] == "assigned" and answer["episode"] == "Folge 1"
+
+
+class TestPlacingAfterEncodesFailed:
+    """A sticker placed when nothing is left to fill says why, not that all is done."""
+
+    def test_when_every_episode_failed_the_sticker_hears_that(self, client, runner, teddycloud):
+        teddycloud.encode_fails = "ffmpeg died"
+        group = start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        placed = place_sticker(client, group, "deb4ed0e500304e0")
+
+        assert placed["status"] == "none_waiting"
+        assert "fehlgeschlagen" in placed["message"] and "schon einen Sticker" not in placed["message"]
+        assert "2 Folgen sind fehlgeschlagen" in placed["then"]
+
+    def test_when_every_episode_has_its_sticker_it_still_says_so(self, client, runner, teddycloud):
+        group = start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+        place_sticker(client, group, "deb4ed0e500304e0")
+        place_sticker(client, group, "7ab4ed0e500304e0")
+        teddycloud.add_tag("1111ed0e500304e0")
+
+        placed = place_sticker(client, group, "1111ed0e500304e0")
+
+        assert placed["status"] == "complete"
+        assert placed["then"] == "Alle Folgen haben einen Sticker."
