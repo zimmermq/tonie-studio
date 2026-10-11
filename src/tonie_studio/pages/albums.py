@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -19,10 +19,11 @@ from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..batch import episode_order
 from ..encode import taf_exists
 from ..i18n import Problem
+from ..library import same
 from ..models import is_cover_name
 from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
-from ..planning import chosen_tracks, plan_parts
+from ..planning import chosen_tracks, expected_targets, plan_parts
 from ..publishing import Crop, Details, encode_job
 from .common import UPLOAD, Context, Refused, is_audio_name, refused
 
@@ -52,6 +53,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         albums = catalogue.albums()
         now = datetime.now(timezone.utc)
         sightings = first_sightings(settings.data_dir, [row[0] for row in albums], now)
+        done = albums_with_tonies(settings.data_dir, albums, ctx.models.get())
         return templates.TemplateResponse(request, "index.html", {
             "albums": albums,
             "archive": [row for row in albums if row[2] == "archive"],
@@ -60,7 +62,9 @@ def register(app: FastAPI, ctx: Context) -> None:
             "thumb_size": DEFAULT_SIZE,
             "slow_pick": SLOW_PICK,
             "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
-            "done": albums_with_tonies(settings.data_dir, albums, ctx.models.get()),
+            "done": done,
+            "in_library": _in_library(albums, done, ctx.library.get(),
+                                      settings.archive_dir, settings.upload_dir),
         })
 
 
@@ -206,6 +210,21 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
 # --- helpers --------------------------------------------------------------
+
+
+def _in_library(albums, done: Dict[str, str], library: Optional[Set[str]],
+                archive_dir: Path, upload_dir: Path) -> Optional[Set[str]]:
+    """Ids of the albums that are encoded, or None while the library is not known.
+
+    An album with a tonie counts as encoded; any other counts when a taf sits
+    where the batch page would put it.
+    """
+    if library is None:
+        return None
+    return {identifier for identifier, summary, _origin in albums
+            if identifier in done
+            or any(same(target) in library
+                   for target in expected_targets(summary, archive_dir, upload_dir))}
 
 
 def _upload_folders(files: Sequence[UploadFile]) -> Dict[str, List[UploadFile]]:

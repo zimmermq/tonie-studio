@@ -61,3 +61,31 @@ class TestSuggestSeries:
                       artist=None, year=None, tracks=[], cover=None)
 
         assert suggest_series(album, tmp_path / "archive", tmp_path / "uploads") == ""
+
+
+class TestExpectedTargets:
+    """Where an album would land in the library if set up untouched, from its summary alone."""
+
+    def _summary(self, path, title, artist, tracks):
+        from tonie_studio.album import AlbumSummary
+
+        return AlbumSummary(id="x", path=path, name=path.name, track_count=tracks,
+                            has_cover=False, title=title, artist=artist)
+
+    def test_one_part_lands_under_series_and_title(self, tmp_path):
+        from tonie_studio.planning import expected_targets
+
+        summary = self._summary(tmp_path / "archive" / "Bobo" / "Folge 1", "Folge 1", "Bobo", 12)
+
+        assert expected_targets(summary, tmp_path / "archive", tmp_path / "uploads") == [
+            "/Bobo/Folge 1.taf"]
+
+    def test_too_many_tracks_land_in_parts(self, tmp_path):
+        from tonie_studio.parts import MOST_CHAPTERS
+        from tonie_studio.planning import expected_targets
+
+        summary = self._summary(tmp_path / "archive" / "Hoerbuch", "Lang", "Autor",
+                                MOST_CHAPTERS + 1)
+
+        assert expected_targets(summary, tmp_path / "archive", tmp_path / "uploads") == [
+            "/Autor/Lang - Teil 1 von 2.taf", "/Autor/Lang - Teil 2 von 2.taf"]

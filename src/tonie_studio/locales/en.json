@@ -44,6 +44,7 @@
  "albums.no_match": "No album matches.",
  "albums.pick_label": "Select:",
  "albums.pick_new": "new",
+ "albums.pick_not_in_library": "not in the library",
  "albums.pick_slow": "Setting up reads every album one by one; with {count} albums that takes a while.",
  "albums.pick_without": "without a tonie",
  "albums.running": "Running now",

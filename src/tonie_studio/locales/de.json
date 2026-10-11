@@ -44,6 +44,7 @@
  "albums.no_match": "Kein Album passt dazu.",
  "albums.pick_label": "Auswählen:",
  "albums.pick_new": "neue",
+ "albums.pick_not_in_library": "nicht in der Bibliothek",
  "albums.pick_slow": "Das Anlegen liest jedes Album einzeln, bei {count} Alben dauert das etwas.",
  "albums.pick_without": "ohne Tonie",
  "albums.running": "Läuft gerade",

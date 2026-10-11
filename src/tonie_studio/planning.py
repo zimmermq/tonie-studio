@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from .album import Album, Track
+from .album import Album, AlbumSummary, Track
 from .albumnotes import match_by_tracks
 from .batch import allocate, episode_order
 from .encode import existing_taf, library_path, taf_exists
@@ -171,7 +171,24 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
     return rows
 
 
-def suggest_series(album: Album, archive_dir: Path, upload_dir: Path) -> str:
+def expected_targets(album: AlbumSummary, archive_dir: Path, upload_dir: Path) -> List[str]:
+    """The library paths the album would be encoded to on the batch page, untouched.
+
+    From the album list's summary alone, so the list can tell which albums
+    are encoded without reading every track. The parts are counted from all
+    tracks while a batch leaves karaoke takes out; right at the chapter limit
+    the two can differ, and the album then looks not encoded. A name changed
+    on the album page is not known here either.
+    """
+    series = suggest_series(album, archive_dir, upload_dir)
+    episode = album.title or album.name
+    parts = fewest_parts(album.track_count)
+    return [library_path(series, part_name(episode, number, parts))
+            for number in range(1, parts + 1)]
+
+
+def suggest_series(album: Union[Album, AlbumSummary], archive_dir: Path,
+                   upload_dir: Path) -> str:
     """The series an album most likely belongs to.
 
     Its artist when the tags name one; otherwise the folder holding it, the

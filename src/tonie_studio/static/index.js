@@ -63,6 +63,8 @@ const picks = [...document.querySelectorAll('[data-pick]')];
 const matches = {
   all: () => true,
   without: row => row.dataset.tonie !== 'yes',
+  // "unknown" until the server has a copy of the library: then nothing is picked.
+  library: row => row.dataset.library === 'no',
   new: row => row.dataset.new === 'yes',
 };
 const visible = () => rows.filter(row => !row.hidden);

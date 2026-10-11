@@ -20,8 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .boxstate import BoxWatcher
-from .encode import remove_orphaned_staging
+from .cache import BackgroundCache
+from .encode import list_tafs, remove_orphaned_staging
 from .jobs import Groups, JobRunner
+from .library import same
 from .listening import ListeningLog
 from .models import ModelCache, cover_name
 from .pages import albums, batch, extras, printing, site, tonies, upkeep
@@ -40,6 +42,10 @@ log = logging.getLogger(__name__)
 # How often, in seconds, old uploads, unconfirmed restores and stray PDFs are
 # cleared while the app runs. They age in days, so once a day loses nothing.
 HOUSEKEEPING_EVERY = 86400.0
+
+# How old the album list's copy of the library may get, in seconds, before a
+# page view starts a refresh. Walking the library is one request per folder.
+LIBRARY_TTL = 60.0
 
 def create_app(
     settings: Settings,
@@ -72,6 +78,12 @@ def create_app(
         return TeddyCloudClient(settings.teddycloud_url, overlay=settings.overlay)
 
     models = ModelCache(client)
+    # Every taf path in the library, for the album list to tell which albums
+    # are encoded. Strict: a folder it cannot read leaves the copy unknown
+    # rather than making every taf in it look missing.
+    library = BackgroundCache(
+        lambda: {same(taf.path) for taf in list_tafs(client(), strict=True)},
+        name="library", ttl=LIBRARY_TTL)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
     stopping = threading.Event()
 
@@ -88,6 +100,7 @@ def create_app(
         # Starts the background load now, so the first page after a restart
         # already shows which albums have a tonie.
         models.get()
+        library.get()
         try:
             yield
         finally:
@@ -103,7 +116,7 @@ def create_app(
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
-        groups=groups,
+        groups=groups, library=library,
     )
     for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing):
         part.register(app, ctx)

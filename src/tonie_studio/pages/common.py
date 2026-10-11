@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
@@ -24,6 +24,7 @@ from fastapi.templating import Jinja2Templates
 from .. import encode
 from ..album import AUDIO_EXTENSIONS, AlbumSummary, list_albums
 from ..boxstate import BoxWatcher
+from ..cache import BackgroundCache
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..jobs import Groups, JobRunner
@@ -75,6 +76,8 @@ class Context:
     models: ModelCache
     podcasts: PodcastUpdater
     groups: Groups
+    # Normalised paths of every taf in the library, or None before the first copy.
+    library: BackgroundCache[Set[str]]
 
 
 class Catalogue:

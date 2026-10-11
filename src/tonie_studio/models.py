@@ -10,13 +10,12 @@ from __future__ import annotations
 import io
 import logging
 import re
-import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Sequence, Union
 
+from .cache import BackgroundCache
 from .tags import TonieError, label
 from .teddycloud import TeddyCloudClient
 
@@ -153,48 +152,14 @@ def find_model(client: TeddyCloudClient, model_id: str) -> Optional[Model]:
                  if model.id.lower() == model_id.lower()), None)
 
 
-class ModelCache:
+class ModelCache(BackgroundCache[List[Model]]):
     """The models teddyCloud holds, as a copy that is never waited for.
 
-    For pages that only decorate with the models, such as the album list: a
-    teddyCloud that does not answer holds a request for its whole timeout,
-    three times with retries. A stale copy starts one refresh in the
-    background and is handed out as it is; the page after next shows the
-    newer one. A failed refresh is not retried for ``ttl`` either, so an
-    absent teddyCloud is asked once a minute rather than on every page.
+    For pages that only decorate with the models, such as the album list.
     """
 
     def __init__(self, client: Callable[[], TeddyCloudClient], ttl: float = 60.0):
-        self.client = client
-        self.ttl = ttl
-        self._models: Optional[List[Model]] = None
-        self._at = float("-inf")
-        self._loading = False
-        self._lock = threading.Lock()
-
-    def get(self) -> Optional[List[Model]]:
-        """The last models seen, or None before the first answer; never blocks."""
-        with self._lock:
-            start = time.monotonic() - self._at > self.ttl and not self._loading
-            if start:
-                self._loading = True
-            models = self._models
-        if start:
-            threading.Thread(target=self._load, name="models", daemon=True).start()
-        return models
-
-    def _load(self) -> None:
-        models = None
-        try:
-            models = list_models(self.client())
-        except Exception as error:  # whatever it is, the page simply goes without
-            log.info("the models are not to be had this time: %s", error)
-        finally:
-            with self._lock:
-                if models is not None:
-                    self._models = models
-                self._at = time.monotonic()
-                self._loading = False
+        super().__init__(lambda: list_models(client()), name="models", ttl=ttl)
 
 
 def next_model_id(client: TeddyCloudClient) -> str:

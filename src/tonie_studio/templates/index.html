@@ -3,7 +3,8 @@
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
-     data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}">
+     data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}"
+     data-library="{{ 'unknown' if in_library is none else ('yes' if id in in_library else 'no') }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label') }}">
 <a class="album" href="/batch?ids={{ id }}">
   {% if album.has_cover %}
@@ -55,6 +56,7 @@
   <span class="muted">{{ t("albums.pick_label") }}</span>
   <button type="button" class="small" data-pick="all">{{ t("common.all") }}</button>
   <button type="button" class="small" data-pick="without">{{ t("albums.pick_without") }}</button>
+  <button type="button" class="small" data-pick="library">{{ t("albums.pick_not_in_library") }}</button>
   <button type="button" class="small" data-pick="new">{{ t("albums.pick_new") }}</button>
   <button type="button" class="small" data-pick="none">{{ t("common.none") }}</button>
 </p>

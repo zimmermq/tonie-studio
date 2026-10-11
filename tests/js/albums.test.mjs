@@ -2,17 +2,17 @@
 import assert from 'node:assert/strict';
 import { element, runPage } from './page.mjs';
 
-function row(tonie, isNew = false) {
+function row(tonie, isNew = false, library = 'no') {
   const box = element('');
   return element('', '', {
-    dataset: { search: 'x', tonie: tonie ? 'yes' : 'no', new: isNew ? 'yes' : 'no' },
+    dataset: { search: 'x', tonie: tonie ? 'yes' : 'no', new: isNew ? 'yes' : 'no', library },
     children: { 'input[name=ids]': box },
   });
 }
 const button = pick => element('', '', { dataset: { pick } });
 
 async function page(rows) {
-  const buttons = ['all', 'without', 'new', 'none'].map(button);
+  const buttons = ['all', 'without', 'library', 'new', 'none'].map(button);
   const elements = await runPage(['app.js', 'index.js'], {
     ids: ['search', 'count', 'nohits', 'loading', 'pick', 'pickcount', 'albums', 'upload',
           'picked', 'send'],
@@ -66,6 +66,19 @@ async function page(rows) {
   rows[0].hidden = true;
   press('without');
   assert.deepEqual(ticked(), [true, true]);
+}
+
+// "Not in the library" picks what is not encoded yet; without a copy of the
+// library ("unknown") there is nothing it could pick.
+{
+  const rows = [row(false, false, 'no'), row(false, false, 'yes'), row(true, false, 'yes')];
+  const { press, ticked } = await page(rows);
+  press('library');
+  assert.deepEqual(ticked(), [true, false, false]);
+}
+{
+  const { buttons } = await page([row(false, false, 'unknown'), row(false, false, 'unknown')]);
+  assert.equal(buttons.find(b => b.dataset.pick === 'library').disabled, true);
 }
 
 // "New" picks the new ones; "none" clears everything.

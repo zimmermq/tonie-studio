@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from web_helpers import (album_page_after_upload, checked_ruid, encode_and_assign_page, finish_job,
-                         first_album_id, page_script, publish_album, upload_series, write_jpeg)
+                         eventually, first_album_id, page_script, publish_album, upload_series,
+                         write_jpeg)
 
 from tonie_studio.album import TrackTags
 from tonie_studio.jobs import JobState
@@ -815,3 +816,54 @@ class TestTonieRecognisedByItsTracks:
         client.get("/batch", params={"ids": first_album_id(client)})
 
         assert made(settings.data_dir) == {}
+
+
+class TestNotInTheLibrary:
+    """Each row says whether its album is already encoded, from a copy of the library."""
+
+    def _rows(self, client):
+        import re
+
+        page = client.get("/").text
+        return dict((ident, state) for state, ident in re.findall(
+            r'data-library="(\w+)"[^>]*>\s*<input type="checkbox" name="ids" value="(\w+)"', page))
+
+    def test_an_encoded_album_is_in_it_and_the_others_are_not(self, settings, runner, teddycloud,
+                                                             box, tags, monkeypatch):
+        from tonie_studio import web
+        from tonie_studio.planning import expected_targets
+
+        monkeypatch.setattr(web, "LIBRARY_TTL", 0)
+        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
+        with TestClient(app) as client:
+            upload_series(client, episodes=2)
+            uploads = [(ident, summary) for ident, summary, _origin
+                       in app.state.catalogue.albums() if ident.startswith("u")]
+            (encoded, summary), (missing, _summary) = uploads
+            for target in expected_targets(summary, settings.archive_dir, settings.upload_dir):
+                folder = target.rsplit("/", 1)[0] or "/"
+                if folder not in teddycloud.dirs:
+                    teddycloud.create_dir(folder)
+                teddycloud.files[target] = b"taf"
+                teddycloud.taf_headers[target] = {"valid": True}
+
+            eventually(lambda: self._rows(client).get(encoded) == "yes")
+            assert self._rows(client)[missing] == "no"
+
+    def test_without_a_copy_of_the_library_nothing_is_claimed(self, settings, runner, teddycloud,
+                                                              box, tags):
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        def unreachable(*args, **kwargs):
+            raise TeddyCloudError("no answer")
+
+        # Before the app starts, which is when it first asks for the library.
+        teddycloud.list_dir = unreachable
+        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
+        with TestClient(app) as client:
+            assert set(self._rows(client).values()) == {"unknown"}
+
+    def test_offers_the_pick(self, client):
+        upload_series(client, episodes=2)
+
+        assert 'data-pick="library"' in client.get("/").text
