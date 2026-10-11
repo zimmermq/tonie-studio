@@ -1,8 +1,8 @@
 """Backs up and restores what makes a tonie a tonie.
 
 teddyCloud keeps the custom models, their covers and every tag's assignment in
-its own storage, and this app keeps the playing times and the listening log on
-its volume. Lose either and the audio is still there to rebuild, but every name
+its own storage, and this app keeps the playing times, the listening log and
+which album each tonie was made from on its volume. Lose either and the audio is still there to rebuild, but every name
 typed, every cover cropped and every sticker paired with its album is gone.
 
 A backup is one zip: the models and tag assignments as JSON, the covers as the
@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .albumnotes import MADE_FILE, add_made
 from .encode import list_tafs
 from .i18n import Problem
 from .library import is_library, played, same
@@ -61,12 +62,12 @@ KEPT = "kept"
 FAILED = "failed"
 ACTIONS = (SAME, NEW, CHANGES, REPLACES, SKIPPED, KEPT, FAILED)
 
-MODEL, COVER, TAG, TIMES, LISTENING = "model", "cover", "tag", "times", "listening"
-KINDS = (MODEL, COVER, TAG, TIMES, LISTENING)
+MODEL, COVER, TAG, TIMES, LISTENING, MADE = "model", "cover", "tag", "times", "listening", "made"
+KINDS = (MODEL, COVER, TAG, TIMES, LISTENING, MADE)
 
 # The parts of a backup as the backup page lists them; texts in backup.part.*.
 PART_MODELS, PART_TAGS, PART_COVERS = "models", "tags", "covers"
-PARTS = (PART_MODELS, PART_TAGS, PART_COVERS, TIMES, LISTENING)
+PARTS = (PART_MODELS, PART_TAGS, PART_COVERS, TIMES, LISTENING, MADE)
 
 
 class BackupError(Problem, ValueError):
@@ -81,6 +82,8 @@ class Backup:
     covers: Dict[str, bytes]
     times: Optional[bytes]
     listening: Optional[bytes]
+    # Which album each tonie was made from; absent from backups made before.
+    made: Optional[bytes] = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,8 @@ def describe_backup(client: TeddyCloudClient, data_dir: Path) -> List[Part]:
     parts.append(Part(TIMES, len(_entries(times, json_object=True)), _size(times)))
     listening = data_dir / LISTENING_FILE
     parts.append(Part(LISTENING, len(_entries(listening)), _size(listening)))
+    made = data_dir / MADE_FILE
+    parts.append(Part(MADE, len(_entries(made, json_object=True)), _size(made)))
     return parts
 
 
@@ -178,7 +183,7 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
                 # A model whose picture is gone still has a name worth keeping.
                 log.warning("backup: cover %s cannot be read: %s", name, error)
 
-        for file_name in (TIMES_FILE, LISTENING_FILE):
+        for file_name in (TIMES_FILE, LISTENING_FILE, MADE_FILE):
             path = data_dir / file_name
             if path.is_file():
                 archive.write(path, file_name)
@@ -234,6 +239,7 @@ def read_backup(data: bytes) -> Backup:
             covers=covers,
             times=archive.read(TIMES_FILE) if TIMES_FILE in names else None,
             listening=archive.read(LISTENING_FILE) if LISTENING_FILE in names else None,
+            made=archive.read(MADE_FILE) if MADE_FILE in names else None,
         )
 
 
@@ -290,6 +296,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
 
     steps += _restore_times(backup, data_dir, write)
     steps += _restore_listening(backup, data_dir, write)
+    steps += _restore_made(backup, data_dir, write)
     if write:
         log.info("restored a backup from %s", backup.manifest.get("created"))
     return steps
@@ -342,6 +349,20 @@ def _restore_times(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     if not changed:
         return [Step(TIMES, TIMES_FILE, SAME)]
     return [Step(TIMES, TIMES_FILE, CHANGES if had_times else NEW)]
+
+
+def _restore_made(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
+    """Album records the backup knows and this volume does not are added."""
+    if backup.made is None:
+        return []
+    try:
+        saved = json.loads(backup.made.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return [Step(MADE, MADE_FILE, SKIPPED, "restore.note.unreadable")]
+    changed, had_records = add_made(data_dir, saved, write=write)
+    if not changed:
+        return [Step(MADE, MADE_FILE, SAME)]
+    return [Step(MADE, MADE_FILE, CHANGES if had_records else NEW)]
 
 
 def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step]:

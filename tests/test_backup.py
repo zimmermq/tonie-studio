@@ -352,3 +352,50 @@ class TestPlayingTimesFromABackup:
         add_missing(tmp_path, {"TS-0001": float("inf"), "TS-0002": float("nan"), "TS-0003": 600})
 
         assert playing_times(tmp_path) == {"TS-0003": 600}
+
+
+class TestWhichAlbumBecameWhichTonie:
+    """The records of which album a tonie was made from travel with the backup."""
+
+    @pytest.fixture
+    def recorded(self, data_dir):
+        from tonie_studio.albumnotes import remember_made
+
+        remember_made(data_dir, "a1234", "TS-0001")
+        return data_dir
+
+    def test_the_backup_holds_them(self, cloud, recorded):
+        from tonie_studio.albumnotes import MADE_FILE
+
+        archive = zipfile.ZipFile(io.BytesIO(create_backup(cloud, recorded)))
+
+        assert MADE_FILE in archive.namelist()
+
+    def test_a_lost_volume_gets_them_back(self, cloud, recorded, tmp_path):
+        from tonie_studio.albumnotes import made
+
+        backup = read_backup(create_backup(cloud, recorded))
+        empty = tmp_path / "fresh-data"
+
+        apply_restore(wiped(cloud), backup, empty)
+
+        assert made(empty) == {"a1234": ["TS-0001"]}
+
+    def test_records_made_since_are_kept_beside_them(self, cloud, recorded, tmp_path):
+        from tonie_studio.albumnotes import made, remember_made
+
+        backup = read_backup(create_backup(cloud, recorded))
+        now = tmp_path / "now"
+        remember_made(now, "a1234", "TS-0007")
+        remember_made(now, "b5678", "TS-0002")
+
+        apply_restore(cloud, backup, now)
+
+        assert made(now) == {"a1234": ["TS-0007", "TS-0001"], "b5678": ["TS-0002"]}
+
+    def test_the_backup_page_lists_them(self, cloud, recorded):
+        from tonie_studio.backup import describe_backup
+
+        parts = {part.what: part.count for part in describe_backup(cloud, recorded)}
+
+        assert parts["made"] == 1

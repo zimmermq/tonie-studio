@@ -17,7 +17,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .models import Model
 from .store import LOCK, read_json, write_json
@@ -93,6 +93,33 @@ def forget_model(data_dir: Path, model_id: str) -> None:
                 del records[album_id]
         if changed:
             write_json(path, records)
+
+
+def add_made(data_dir: Path, saved: Mapping, write: bool = True) -> Tuple[bool, bool]:
+    """Add the records in ``saved`` that this volume does not have; none are dropped.
+
+    For a restore: a tonie recorded here since the backup was made stays
+    beside the saved ones. Returns whether anything was or would be added,
+    and whether there were records here before. With ``write`` false nothing
+    is written, for a preview. Entries of the wrong shape are skipped.
+    """
+    path = data_dir / MADE_FILE
+    with LOCK:
+        records = read_json(path, {})
+        records = records if isinstance(records, dict) else {}
+        had = bool(records)
+        changed = False
+        for album_id, models in (saved.items() if isinstance(saved, Mapping) else ()):
+            if not isinstance(album_id, str) or not isinstance(models, list):
+                continue
+            for model_id in models:
+                if isinstance(model_id, str) and model_id \
+                        and model_id not in records.get(album_id, []):
+                    records.setdefault(album_id, []).append(model_id)
+                    changed = True
+        if changed and write:
+            write_json(path, records)
+    return changed, had
 
 
 def made(data_dir: Path) -> Dict[str, List[str]]:
