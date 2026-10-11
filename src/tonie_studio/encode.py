@@ -397,7 +397,17 @@ def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:
 
 def _entry(client: TeddyCloudClient, parent: str, name: str,
            directory: bool = False) -> Optional[dict]:
-    """The entry ``name`` in the listing of ``parent``; None if absent or unlistable."""
+    """The entry ``name`` in the listing of ``parent``; None if absent or unlistable.
+
+    ``parent`` is only listed once its own parent shows it, up to the root:
+    teddyCloud answers a listing of a folder that is not there by closing the
+    connection, which costs retries and leaves an error in its log for every
+    taf looked for in a series folder not made yet.
+    """
+    if parent != "/":
+        grandparent, folder = _split(parent)
+        if _entry(client, grandparent, folder, directory=True) is None:
+            return None
     try:
         entries = client.list_dir(parent, special="library")
     except TeddyCloudError:

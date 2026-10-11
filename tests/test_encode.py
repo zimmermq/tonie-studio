@@ -454,3 +454,36 @@ class TestTheCopyBesideIsNeverSomeoneElses:
         assert teddycloud.files["/a.new.taf"] == b"what the stickers play"
         assert sorted(path for path in teddycloud.files if path.endswith(".taf")) == [
             "/a.new.taf", "/a.taf"]
+
+
+class TestMissingFoldersAreNotAskedFor:
+    """teddyCloud closes the connection when asked to list a folder that is not there."""
+
+    def _listed(self, teddycloud):
+        asked = []
+        original = teddycloud.list_dir
+
+        def listing(path="/", special=None):
+            asked.append(path)
+            return original(path, special)
+
+        teddycloud.list_dir = listing
+        return asked
+
+    def test_a_taf_in_a_missing_folder_is_known_absent_from_its_parent(self, teddycloud):
+        asked = self._listed(teddycloud)
+
+        assert not taf_exists(teddycloud, "/Andy Weir/Der Astronaut - Teil 1 von 3.taf")
+        assert "/Andy Weir" not in asked
+
+    def test_nested_folders_are_checked_from_the_top(self, teddycloud):
+        teddycloud.create_dir("/Serie")
+        asked = self._listed(teddycloud)
+
+        assert not taf_exists(teddycloud, "/Serie/Staffel 2/Folge.taf")
+        assert "/Serie/Staffel 2" not in asked
+
+    def test_a_taf_that_is_there_is_still_found(self, teddycloud, sources):
+        encode_files(teddycloud, sources, "/Lichterkinder/Eins.taf")
+
+        assert taf_exists(teddycloud, "/Lichterkinder/Eins.taf")
