@@ -320,3 +320,17 @@ class TestProgressInWords:
 
     def test_before_the_first_step(self):
         assert self._say(None, 0, 0) == self._say("", 0, 0) != ""
+
+
+class TestModelsAreLoadedAtStartup:
+    def test_the_first_page_after_a_restart_already_knows_the_models(self, settings, runner,
+                                                                      teddycloud, box, tags):
+        # The cache fills in the background; started only by the first page,
+        # that page would go without the "has a tonie" markers.
+        asked = []
+        original = teddycloud.custom_tonies
+        teddycloud.custom_tonies = lambda: asked.append(1) or original()
+        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
+
+        with TestClient(app):
+            eventually(lambda: asked)

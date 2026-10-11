@@ -85,6 +85,9 @@ def create_app(
         box.start()
         threading.Thread(target=podcasts.run, args=(stopping,),
                          name="podcasts", daemon=True).start()
+        # Starts the background load now, so the first page after a restart
+        # already shows which albums have a tonie.
+        models.get()
         try:
             yield
         finally:
