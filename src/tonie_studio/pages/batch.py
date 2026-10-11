@@ -9,7 +9,7 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..album import read_albums
-from ..albumnotes import albums_with_tonies
+from ..albumnotes import albums_with_tonies, remember_made
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
 from ..jobs import new_id
@@ -42,13 +42,18 @@ def register(app: FastAPI, ctx: Context) -> None:
         unique = list(dict.fromkeys(ids))
         albums = list(zip(unique, read_albums([catalogue.resolve(identifier)
                                                for identifier in unique]), strict=True))
+        known = albums_with_tonies(settings.data_dir, catalogue.albums(), models)
         try:
-            return plan_batch(connection, albums, settings.archive_dir, settings.upload_dir,
-                              series, episodes, models=models,
-                              tonies=albums_with_tonies(settings.data_dir, catalogue.albums(),
-                                                        models))
+            rows = plan_batch(connection, albums, settings.archive_dir, settings.upload_dir,
+                              series, episodes, models=models, tonies=known)
         except Problem as problem:
             raise refused(problem) from problem
+        # A tonie found by its track list, which the album list's name guess
+        # missed, is written down: from then on the list marks that album too.
+        for row in rows:
+            if row.tonie and row.identifier not in known:
+                remember_made(settings.data_dir, row.identifier, row.tonie)
+        return rows
 
     @app.get("/batch", response_class=HTMLResponse)
     def batch_page(request: Request, ids: List[str] = Query(default=[])):

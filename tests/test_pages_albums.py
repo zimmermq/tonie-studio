@@ -782,3 +782,36 @@ class TestQuickPicks:
         from tonie_studio.pages.albums import SLOW_PICK
 
         assert f'"slowPick": {SLOW_PICK}' in client.get("/").text
+
+
+class TestTonieRecognisedByItsTracks:
+    """A tonie whose name says nothing about its album is still known by its tracks."""
+
+    def _tonie_under_another_name(self, client, runner, teddycloud, settings):
+        from tonie_studio.album import read_album
+
+        album = read_album(next(settings.archive_dir.iterdir()))
+        publish_album(client, runner, teddycloud)
+        model = teddycloud.custom_models[0]
+        model["tracks"] = [track.title for track in album.tracks]
+        model["series"], model["episodes"] = "Ganz", "Anders"
+        (settings.data_dir / "albums-made.json").unlink()
+
+    def test_opening_it_once_marks_the_album_for_good(self, client, runner, teddycloud,
+                                                       settings):
+        self._tonie_under_another_name(client, runner, teddycloud, settings)
+        assert "hat einen Tonie" not in client.get("/").text
+
+        client.get("/batch", params={"ids": first_album_id(client)})
+
+        assert "hat einen Tonie" in client.get("/").text
+
+    def test_a_guess_by_name_is_not_written_down(self, client, runner, teddycloud, settings):
+        from tonie_studio.albumnotes import made
+
+        publish_album(client, runner, teddycloud)
+        (settings.data_dir / "albums-made.json").unlink()
+
+        client.get("/batch", params={"ids": first_album_id(client)})
+
+        assert made(settings.data_dir) == {}
