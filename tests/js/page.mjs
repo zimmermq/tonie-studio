@@ -9,17 +9,26 @@ import vm from 'node:vm';
 
 const STATIC = fileURLToPath(new URL('../../src/tonie_studio/static/', import.meta.url));
 
-function element(id, text = '') {
+// A stand-in element. ``children`` maps a selector to what querySelector
+// answers inside it; ``fire`` hands an event to its listeners.
+export function element(id, text = '', { dataset = {}, children = {} } = {}) {
+  const listeners = {};
   return {
-    id, textContent: text, hidden: false, className: '', style: {}, dataset: {},
+    id, textContent: text, hidden: false, className: '', style: {}, dataset,
+    checked: false, disabled: false,
     classList: { toggle() {}, add() {}, remove() {} },
-    addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
+    addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
+    fire(type, event = {}) { for (const listener of listeners[type] || []) listener(event); },
+    querySelector: selector => children[selector] || null,
+    querySelectorAll() { return []; },
   };
 }
 
 // ``ids`` are the elements the page has; ``pageData`` is what the server puts
-// in #page-data; ``answers`` maps a fetched URL to the JSON it answers with.
-export async function runPage(scripts, { ids = [], pageData = {}, answers = {} } = {}) {
+// in #page-data; ``answers`` maps a fetched URL to the JSON it answers with;
+// ``queries`` maps a selector to the elements document.querySelectorAll finds.
+export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
+                                         queries = {} } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, element(id)]));
   elements['page-data'] = element('page-data', JSON.stringify(pageData));
   // Every step a script schedules for later; a test reads whether it goes on.
@@ -30,7 +39,7 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {} }
   const document = {
     getElementById: id => elements[id] || null,
     querySelector: () => null,
-    querySelectorAll: () => [],
+    querySelectorAll: selector => queries[selector] || [],
     addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
     dispatchEvent() {},
   };
@@ -47,6 +56,7 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {} }
     },
   };
   context.window = context;
+  context.addEventListener = () => {};
   vm.createContext(context);
   for (const name of scripts) {
     vm.runInContext(readFileSync(STATIC + name, 'utf8'), context, { filename: name });

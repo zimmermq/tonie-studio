@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 # path holds a newline, so the list comes back apart unchanged.
 REPLACE_SEPARATOR = "\n"
 
+# From how many ticked albums the list warns that setting them up takes a
+# while: the batch page reads every album's tags, about a second each over a
+# network share.
+SLOW_PICK = 20
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -53,6 +58,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "uploads": [row for row in albums if row[2] == "upload"],
             "jobs": jobs.all()[:10],
             "thumb_size": DEFAULT_SIZE,
+            "slow_pick": SLOW_PICK,
             "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
             "done": albums_with_tonies(settings.data_dir, albums, ctx.models.get()),
         })

@@ -2,7 +2,8 @@
 {% from "_steps.html" import steps with context %}
 
 {% macro album_row(id, album) -%}
-<div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}">
+<div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
+     data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label') }}">
 <a class="album" href="/batch?ids={{ id }}">
   {% if album.has_cover %}
@@ -49,6 +50,15 @@
          autocomplete="off" aria-label="{{ t('albums.search_label') }}">
   <span class="muted" id="count">{{ t("albums.count", count=albums | length) }}</span>
 </div>
+{% if albums | length > 1 %}
+<p class="row wrap gap-8 mt-0" id="quickpick">
+  <span class="muted">{{ t("albums.pick_label") }}</span>
+  <button type="button" class="small" data-pick="all">{{ t("common.all") }}</button>
+  <button type="button" class="small" data-pick="without">{{ t("albums.pick_without") }}</button>
+  <button type="button" class="small" data-pick="new">{{ t("albums.pick_new") }}</button>
+  <button type="button" class="small" data-pick="none">{{ t("common.none") }}</button>
+</p>
+{% endif %}
 
 <div class="list" id="albums">
   {% for id, album, origin in uploads %}{{ album_row(id, album) }}{% endfor %}
@@ -84,6 +94,6 @@
   </form>
 </div>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("albums.count", "albums.shown_of", "upload.picked", "batch.picked")} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("albums.count", "albums.shown_of", "upload.picked", "batch.picked", "albums.pick_slow"), "slowPick": slow_pick} | tojson }}</script>
 <script src="{{ asset('index.js') }}"></script>
 {% endblock %}

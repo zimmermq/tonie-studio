@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from web_helpers import (album_page_after_upload, checked_ruid, encode_and_assign_page, finish_job,
-                         first_album_id, page_script, publish_album, write_jpeg)
+                         first_album_id, page_script, publish_album, upload_series, write_jpeg)
 
 from tonie_studio.album import TrackTags
 from tonie_studio.jobs import JobState
@@ -752,3 +752,33 @@ class TestCoverIndexOutOfRange:
         assert client.get(f"/album/{identifier}/cover", params={"index": -1}).status_code == 404
         assert client.get(f"/album/{identifier}/cover", params={"index": -5}).status_code == 404
         assert client.get(f"/album/{identifier}/crop", params={"index": -5}).status_code == 404
+
+
+class TestQuickPicks:
+    """Buttons that tick several albums at once; the page script does the ticking."""
+
+    def test_one_album_needs_no_quick_picks(self, client):
+        assert 'data-pick="without"' not in client.get("/").text
+
+    def test_several_albums_offer_all_without_new_and_none(self, client):
+        upload_series(client, episodes=2)
+
+        page = client.get("/").text
+
+        for pick in ("all", "without", "new", "none"):
+            assert f'data-pick="{pick}"' in page
+
+    def test_each_row_says_whether_it_has_a_tonie_and_is_new(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        upload_series(client, episodes=2)
+
+        page = client.get("/").text
+
+        assert page.count('data-tonie="yes"') == 1
+        assert page.count('data-tonie="no"') == 2
+        assert 'data-new="' in page
+
+    def test_the_page_says_from_how_many_albums_setting_up_is_slow(self, client):
+        from tonie_studio.pages.albums import SLOW_PICK
+
+        assert f'"slowPick": {SLOW_PICK}' in client.get("/").text
