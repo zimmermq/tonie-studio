@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # The audio archive is mounted read-only at /archive and browser uploads are
 # spooled under /data; both come from volumes. Europe/Berlin so a job timestamp
