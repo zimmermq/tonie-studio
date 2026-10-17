@@ -131,6 +131,23 @@ class TestImportOne:
 
         assert raised.value.key == "import.not_cached"
 
+    def test_waits_for_the_move_into_the_library_rather_than_report_the_file_beside(
+            self, teddycloud):
+        # teddyCloud renames the finished taf next to the JSON first and moves it
+        # into the library a moment later; asked in between, it is beside the JSON.
+        teddycloud.settings["cloud.cacheToLibrary"] = "false"
+
+        def move_into_library(seconds):
+            path = "/11DFC517/500304E0"
+            if path in teddycloud.files:
+                teddycloud.files["/by/audioID/7.taf"] = teddycloud.files.pop(path)
+                entry = json.loads(teddycloud.files[path + ".json"])
+                entry["source"] = "lib://by/audioID/7.taf"
+                teddycloud.files[path + ".json"] = json.dumps(entry).encode()
+
+        assert import_one(teddycloud, WOLF_RUID, AUTH, sleep=move_into_library) == \
+            "lib://by/audioID/7.taf"
+
     def test_without_the_library_the_taf_stays_beside_its_json(self, teddycloud):
         teddycloud.settings["cloud.cacheToLibrary"] = "false"
 

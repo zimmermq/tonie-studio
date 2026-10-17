@@ -50,6 +50,9 @@ log = logging.getLogger(__name__)
 
 FILE_NAME = "import.json"
 
+# How cached_at names a taf that lies beside its content JSON.
+BESIDE = "content/"
+
 # Item states. NEW items have not been checked against teddyCloud yet.
 NEW, PENDING, CACHED, IMPORTED, FAILED, DUPLICATE, UNREADABLE = (
     "new", "pending", "cached", "imported", "failed", "duplicate", "unreadable")
@@ -72,6 +75,13 @@ CHECKS_PER_WRITE = 25
 # download whether it kept the taf. It moves the taf into the library right
 # after the last byte, so a few are plenty; the rest covers a busy disk.
 SETTLE_SECONDS = 30
+
+# How many of those times a taf found beside its JSON is given to move into
+# the library. teddyCloud renames the finished download next to the JSON
+# first and only then moves it, so a look in between finds it there; with
+# cloud.cacheToLibrary off it stays, and after this long that is taken as
+# its place.
+BESIDE_GRACE_SECONDS = 5
 
 # A pause after an unexpected error in the worker, so a fault that repeats
 # does not spin.
@@ -174,7 +184,7 @@ def cached_at(client: TeddyCloudClient, ruid: str) -> str:
         return ""
     if any(item.get("name") == file and not item.get("isDir") and item.get("size")
            for item in listing):
-        return f"content/{folder}/{file}"
+        return f"{BESIDE}{folder}/{file}"
     return ""
 
 
@@ -204,9 +214,9 @@ def import_one(client: TeddyCloudClient, ruid: str, auth: str,
     if client.cache_content(folder, file) == 0:
         raise ImportProblem("import.no_taf")
 
-    for _ in range(SETTLE_SECONDS):
+    for waited in range(SETTLE_SECONDS):
         where = cached_at(client, ruid)
-        if where:
+        if where and (not where.startswith(BESIDE) or waited >= BESIDE_GRACE_SECONDS):
             return where
         sleep(1)
     raise ImportProblem("import.not_cached")
