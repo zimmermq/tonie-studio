@@ -48,14 +48,14 @@
     </div>
   {% endfor %}
   </div>
-  <div class="row wrap gap-12">
+  <div class="row wrap gap-12 mt-14">
     {% if run.active and run.paused or run.phase == "given_up" %}
     <form method="post" action="/import/resume">
       <button type="submit" class="primary">{{ t("import.resume") }}</button>
     </form>
     {% elif run.active %}
     <form method="post" action="/import/pause">
-      <button type="submit">{{ t("import.pause") }}</button>
+      <button type="submit" class="primary">{{ t("import.pause") }}</button>
     </form>
     {% endif %}
     {% if run.active %}
