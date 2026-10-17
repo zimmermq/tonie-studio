@@ -16,7 +16,8 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 # names them in full. Each has a test below that every value is covered.
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
-           "place.assigned", "place.complete", "place.none_waiting", "place.failed")
+           "place.assigned", "place.complete", "place.none_waiting", "place.failed",
+           "import.phase.", "import.state.")
 
 
 def placeholders(text):
@@ -73,6 +74,15 @@ class TestCatalogs:
 
         keys = set(catalogs()[DEFAULT])
         assert {f"job.state.{state.value}" for state in JobState} <= keys
+
+        from tonie_studio import importing
+
+        assert {f"import.phase.{phase}" for phase in (
+            importing.FETCHING, importing.CHECKING, importing.RUNNING, importing.FINISHED,
+            importing.STOPPED, importing.GIVEN_UP)} <= keys
+        assert {f"import.state.{state}" for state in (
+            importing.PENDING, importing.IMPORTED, importing.CACHED, importing.FAILED,
+            importing.DUPLICATE, importing.UNREADABLE)} <= keys
 
         from tonie_studio.album import ORDERINGS
 

@@ -37,6 +37,10 @@ check the tracks, encode, lay the tag on the box, print the covers.
   up with them.
 - **Radio and podcasts.** Point a tag at a radio stream, or at a podcast whose newest episodes are
   fetched and encoded on their own.
+- **Your tonies from Flipper Zero dumps.** Point it at a folder of `.nfc` dumps of your tonies,
+  or a GitHub repository holding them, and teddyCloud fetches each tonie's audio from the cloud
+  into its library. It goes slowly on purpose, ten an hour by default, skips what teddyCloud
+  already has, keeps running on the server with the page closed, and carries on after a restart.
 - **Upkeep.** What is on the box right now, a listening log, the TAF library with the tags that
   play each file, a checkup that finds and repairs broken tags, and backup and restore of
   everything teddyCloud does not keep in the archive.
@@ -73,6 +77,8 @@ tonie starts at the box, not here.
 - teddyCloud **0.7.0 or newer** (custom tonies are written through an API that 0.7.0 introduced),
   with your Toniebox connected to it
 - NFC tags your Toniebox reads; see the teddyCloud documentation
+- for the import from dumps: `cloud.enabled` and `cloud.cacheContent` switched on in teddyCloud,
+  and `cloud.cacheToLibrary` too if the audio should land in the library
 - for printing: any printer and plain A4 paper; the covers are cut out by hand
 
 ## Quick start with Docker
@@ -113,7 +119,9 @@ authenticating reverse proxy (oauth2-proxy, Authelia, an OIDC gateway, ...). Nev
 teddyCloud, directly to the internet.
 
 Within that, it refuses form posts that a page on another site started, checks a backup's size
-and contents before reading it, and only fetches podcasts from public addresses.
+and contents before reading it, and only fetches podcasts from public addresses. An import from
+GitHub only ever talks to api.github.com and raw.githubusercontent.com, and an access token given
+for a private repository is kept only until the repository has been read.
 
 ## Development
 

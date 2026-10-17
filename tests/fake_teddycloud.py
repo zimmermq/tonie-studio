@@ -9,6 +9,7 @@ would have failed.
 
 from __future__ import annotations
 
+import json
 from typing import Dict, List, Optional, Set
 
 from tonie_studio.teddycloud import TeddyCloudError
@@ -27,7 +28,13 @@ def _join(directory: str, name: str) -> str:
 
 
 class FakeTeddyCloud:
-    """Enough of the library tree to run an encode against."""
+    """Enough of the library tree to run an encode against.
+
+    The library and the content tree (``special`` left out) share one tree
+    here, because the tests set up library files without naming the tree.
+    Content folders are eight upper-case hex digits and never collide with
+    the library's series folders in a test.
+    """
 
     def __init__(self) -> None:
         self.dirs: Set[str] = {"/"}
@@ -42,6 +49,12 @@ class FakeTeddyCloud:
         # Tag entries as content/<CN>/<UID>.json holds them, keyed by ruid.
         self.tag_entries: Dict[str, dict] = {}
         self.custom_models: List[dict] = []
+        self.settings: Dict[str, str] = {
+            "cloud.enabled": "true", "cloud.cacheContent": "true", "cloud.cacheToLibrary": "true",
+        }
+        # What the Tonies cloud would hand out, by ruid, and every ruid asked for.
+        self.cloud: Dict[str, bytes] = {}
+        self.cloud_requests: List[str] = []
 
     def twin(self) -> "FakeTeddyCloud":
         # One process, no sessions: every thread may share the fake.
@@ -201,3 +214,44 @@ class FakeTeddyCloud:
             self.dirs.discard(path)
             return
         raise TeddyCloudError(f"no such file: {path}")
+
+    # --- content and the Tonies cloud ---------------------------------------
+
+    def add_content(self, ruid: str, **fields) -> None:
+        """Pretend a content JSON exists for ``ruid``, written by the box or an import."""
+        folder = f"/{ruid[:8].upper()}"
+        self.dirs.add(folder)
+        self.files[f"{folder}/{ruid[8:].upper()}.json"] = json.dumps(fields).encode()
+
+    def content_entry(self, ruid: str) -> dict:
+        folder = f"/{ruid[:8].upper()}"
+        if folder not in self.dirs:
+            return {}
+        stored = self.files.get(f"{folder}/{ruid[8:].upper()}.json")
+        # teddyCloud answers an entry with empty fields when the JSON is missing.
+        return json.loads(stored) if stored else {"source": "", "cloud_ruid": "", "cloud_auth": ""}
+
+    def cache_content(self, folder: str, file: str) -> int:
+        ruid = f"{folder}{file}".lower()
+        self.cloud_requests.append(ruid)
+        if self.settings["cloud.enabled"] != "true":
+            raise TeddyCloudError("no local content available and cloud access disabled", status=503)
+        json_path = f"/{folder}/{file}.json"
+        entry = json.loads(self.files.get(json_path, b"{}"))
+        if not entry.get("cloud_auth") or ruid not in self.cloud:
+            raise TeddyCloudError(f"teddyCloud answered 410 for the download of {folder}/{file}",
+                                  status=410)
+        taf = self.cloud[ruid]
+        if self.settings["cloud.cacheContent"] == "true":
+            if self.settings["cloud.cacheToLibrary"] == "true":
+                self.dirs.update({"/by", "/by/audioID"})
+                name = f"{len(self.cloud_requests)}.taf"
+                self.files[f"/by/audioID/{name}"] = taf
+                entry["source"] = f"lib://by/audioID/{name}"
+                self.files[json_path] = json.dumps(entry).encode()
+            else:
+                self.files[f"/{folder}/{file}"] = taf
+        return len(taf)
+
+    def setting(self, name: str) -> str:
+        return self.settings[name]

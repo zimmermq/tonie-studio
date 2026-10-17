@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.import") }} - tonie-studio{% endblock %}
+
+{% macro pace_fields(pace) %}
+  <div class="row stackable wrap gap-12 items-end">
+    <label class="field m-0">
+      <span>{{ t("import.per_hour") }}</span>
+      <input type="number" name="per_hour" value="{{ '%g' % pace.per_hour }}"
+             min="0.1" max="120" step="any" style="width: 6em" required>
+    </label>
+    <label class="field m-0">
+      <span>{{ t("import.jitter") }}</span>
+      <input type="number" name="jitter" value="{{ (pace.jitter * 100) | round | int }}"
+             min="0" max="99" step="1" style="width: 6em" required>
+    </label>
+    <label class="field m-0">
+      <span>{{ t("import.max_failures") }}</span>
+      <input type="number" name="max_failures" value="{{ pace.max_failures }}"
+             min="1" max="100" step="1" style="width: 6em" required>
+    </label>
+  </div>
+{% endmacro %}
+
+{% block body %}
+<h1>{{ t("nav.import") }}</h1>
+<p class="sub">
+  {{ t("import.intro") }}
+</p>
+
+{% if run %}
+<div class="card">
+  <h2 class="mt-0 truncate">{{ run.source.label }}</h2>
+  <p id="import-status">
+    {{ t("import.phase." ~ run.phase) }}
+    {%- if run.paused %} &middot; {{ t("import.paused") }}{% endif %}
+    {%- if run.phase == "running" and not run.paused and next_at %} &middot; {{ t("import.next_at", time=t.when(next_at)) }}{% endif %}
+  </p>
+  {% if run.error_key or run.error %}
+  <p class="state-failed">
+    {%- if run.error_key %}{{ t(run.error_key, **run.error_params) }}{% else %}{{ run.error }}{% endif -%}
+  </p>
+  {% endif %}
+  <div class="list">
+  {% for state in states %}
+    <div class="album">
+      <span class="grow">{{ t("import.state." ~ state) }}</span>
+      <strong id="count-{{ state }}">{{ counts[state] }}</strong>
+    </div>
+  {% endfor %}
+  </div>
+  <div class="row wrap gap-12">
+    {% if run.active and run.paused or run.phase == "given_up" %}
+    <form method="post" action="/import/resume">
+      <button type="submit" class="primary">{{ t("import.resume") }}</button>
+    </form>
+    {% elif run.active %}
+    <form method="post" action="/import/pause">
+      <button type="submit">{{ t("import.pause") }}</button>
+    </form>
+    {% endif %}
+    {% if run.active %}
+    <form method="post" action="/import/stop" data-confirm="{{ t('import.stop_confirm') }}">
+      <button type="submit">{{ t("import.stop") }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if recent %}
+<h2>{{ t("import.recent") }}</h2>
+<div class="list">
+  {% for item in recent %}
+  <div class="album">
+    <span class="grow truncate">{{ item.path }}</span>
+    <span class="muted truncate">{{ t("import.state." ~ item.state) }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if failed %}
+<h2>{{ t("import.problems") }}</h2>
+<div class="list">
+  {% for item in failed %}
+  <div class="album">
+    <span class="grow truncate">
+      <strong class="truncate">{{ item.path }}</strong>
+      <span class="state-failed detail">
+        {%- if item.error_key %}{{ t(item.error_key, **item.error_params) }}{% else %}{{ item.error }}{% endif -%}
+      </span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+{% if not run or not run.active %}
+<h2>{{ t("import.from_github") }}</h2>
+<form method="post" action="/import/github" class="card">
+  <label class="field">
+    <span>{{ t("import.repo") }}</span>
+    <input type="text" name="repo" required placeholder="owner/repo">
+  </label>
+  <div class="row stackable wrap gap-12">
+    <label class="field grow m-0">
+      <span>{{ t("import.branch") }}</span>
+      <input type="text" name="branch">
+    </label>
+    <label class="field grow m-0">
+      <span>{{ t("import.subfolder") }}</span>
+      <input type="text" name="subfolder">
+    </label>
+  </div>
+  <label class="field">
+    <span>{{ t("import.token") }}</span>
+    <input type="password" name="token" autocomplete="off">
+  </label>
+  {{ pace_fields(pace) }}
+  <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
+</form>
+
+<h2>{{ t("import.from_files") }}</h2>
+<form method="post" action="/import/files" enctype="multipart/form-data" class="card">
+  <div class="row stackable wrap gap-12">
+    <label class="field grow m-0">
+      <span>{{ t("import.folder") }}</span>
+      <input type="file" name="files" webkitdirectory directory multiple>
+    </label>
+    <label class="field grow m-0">
+      <span>{{ t("import.single") }}</span>
+      <input type="file" name="files" accept=".nfc" multiple>
+    </label>
+  </div>
+  {{ pace_fields(pace) }}
+  <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
+</form>
+{% endif %}
+
+<script type="application/json" id="page-data">{{ {"watch": run is not none and run.active} | tojson }}</script>
+<script src="{{ asset('import.js') }}"></script>
+{% endblock %}

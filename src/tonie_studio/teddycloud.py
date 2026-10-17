@@ -46,6 +46,15 @@ REQUEST_TIMEOUT = 30
 # album legitimately takes minutes. teddyCloud reports no progress meanwhile.
 ENCODE_TIMEOUT = 1800
 
+# How long, in seconds, a taf download may go quiet before it counts as lost.
+# teddyCloud passes the taf on from the Tonies cloud as it arrives and caches it
+# on the way, so the whole download takes as long as the cloud needs; only a
+# stall should end it. Generous, because the cloud is slow to start a large one.
+DOWNLOAD_READ_TIMEOUT = 300
+
+# How much of a downloaded taf is read at a time; it is counted and dropped.
+DOWNLOAD_CHUNK = 1 << 20
+
 # How often one file is sent when the connection drops before teddyCloud
 # answers. Twice covers a connection closed under it; more would only delay
 # the failure of a teddyCloud that is really gone.
@@ -70,7 +79,15 @@ COMMAND_OK = "OK"
 
 
 class TeddyCloudError(RuntimeError):
-    """Raised when teddyCloud cannot be reached or refuses a call."""
+    """Raised when teddyCloud cannot be reached or refuses a call.
+
+    ``status`` is the HTTP status teddyCloud answered with, or ``None`` when it
+    did not answer at all.
+    """
+
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
 
 
 class TeddyCloudClient:
@@ -95,6 +112,9 @@ class TeddyCloudClient:
         ))
         self.session.mount("http://", retrying)
         self.session.mount("https://", retrying)
+        # Downloads from the Tonies cloud go over a session that never retries:
+        # a repeated request would make teddyCloud fetch the whole taf again.
+        self.downloads = requests.Session()
 
     def twin(self) -> "TeddyCloudClient":
         """A client for the same teddyCloud with a session of its own, for another thread."""
@@ -229,6 +249,59 @@ class TeddyCloudClient:
         )
         self._expect_ok(response, f"/content/json/set/{ruid}")
 
+    def content_entry(self, ruid: str) -> Dict[str, Any]:
+        """Read one tag's content JSON, such as its ``source`` and ``cloud_auth``.
+
+        A tag whose content folder does not exist answers 404 and gives an
+        empty entry here. One whose folder exists but whose JSON does not comes
+        back with empty fields, so an empty ``source`` is all that tells "not
+        cached" apart; whether the JSON itself exists needs :meth:`list_dir`.
+        """
+        if not RUID_PATTERN.match(ruid):
+            raise ValueError(f"not a tag ruid: {ruid!r}")
+        try:
+            response = self._request("GET", f"/content/json/get/{ruid}", params=self._params())
+        except TeddyCloudError as error:
+            if error.status == 404:
+                return {}
+            raise
+        return response.json()
+
+    def cache_content(self, folder: str, file: str) -> int:
+        """Have teddyCloud fetch one tag's taf from the Tonies cloud; return its size.
+
+        teddyCloud reads ``cloud_ruid`` and ``cloud_auth`` from the content JSON
+        at ``<folder>/<file>.json``, asks the cloud for the audio and passes it
+        on while writing it to its cache, then, with ``cloud.cacheToLibrary``,
+        moves it into the library and points the entry's ``source`` at it. The
+        taf is read to the end and dropped, because teddyCloud only finishes
+        the cache once the whole file has gone through.
+        """
+        url = f"{self.base_url}/content/download/{folder}/{file}.json"
+        size = 0
+        try:
+            with self.downloads.get(url, params=self._params(), stream=True,
+                                    timeout=(self.timeout, DOWNLOAD_READ_TIMEOUT)) as response:
+                if not 200 <= response.status_code < 300:
+                    raise TeddyCloudError(
+                        f"teddyCloud answered {response.status_code} for the download of "
+                        f"{folder}/{file}: {response.text[:200]}",
+                        status=response.status_code,
+                    )
+                for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK):
+                    size += len(chunk)
+        except requests.RequestException as error:
+            raise TeddyCloudError(
+                f"download of {folder}/{file} from teddyCloud broke off after {size} bytes: {error}"
+            ) from error
+        return size
+
+    # --- settings ---------------------------------------------------------
+
+    def setting(self, name: str) -> str:
+        """One setting's value as teddyCloud spells it, such as ``"true"``."""
+        return self._request("GET", f"/api/settings/get/{name}", params=self._params()).text.strip()
+
     # --- custom tonie models ---------------------------------------------
 
     def custom_tonies(self) -> List[Dict[str, Any]]:
@@ -298,7 +371,8 @@ class TeddyCloudClient:
 
         if not 200 <= response.status_code < 300:
             raise TeddyCloudError(
-                f"teddyCloud answered {response.status_code} for {path}: {response.text[:200]}"
+                f"teddyCloud answered {response.status_code} for {path}: {response.text[:200]}",
+                status=response.status_code,
             )
         return response
 

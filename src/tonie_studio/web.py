@@ -22,11 +22,12 @@ from fastapi.templating import Jinja2Templates
 from .boxstate import BoxWatcher
 from .cache import BackgroundCache
 from .encode import list_tafs, remove_orphaned_staging
+from .importing import Importer
 from .jobs import Groups, JobRunner
 from .library import same
 from .listening import ListeningLog
 from .models import ModelCache, cover_name
-from .pages import albums, batch, extras, printing, site, tonies, upkeep
+from .pages import albums, batch, extras, importing, printing, site, tonies, upkeep
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
                            page_context)
@@ -53,6 +54,7 @@ def create_app(
     runner: Optional[JobRunner] = None,
     watcher: Optional[BoxWatcher] = None,
     fetch: Fetch = download,
+    importer: Optional[Importer] = None,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
@@ -85,6 +87,7 @@ def create_app(
         lambda: {same(taf.path) for taf in list_tafs(client(), strict=True)},
         name="library", ttl=LIBRARY_TTL)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
+    importer = importer or Importer(client, settings.data_dir)
     stopping = threading.Event()
 
     @asynccontextmanager
@@ -97,6 +100,8 @@ def create_app(
         box.start()
         threading.Thread(target=podcasts.run, args=(stopping,),
                          name="podcasts", daemon=True).start()
+        # Carries on a run an earlier process left unfinished.
+        importer.start()
         # Starts the background load now, so the first page after a restart
         # already shows which albums have a tonie.
         models.get()
@@ -105,6 +110,7 @@ def create_app(
             yield
         finally:
             box.stop()
+            importer.shutdown()
             stopping.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
@@ -116,9 +122,9 @@ def create_app(
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
-        groups=groups, library=library,
+        groups=groups, library=library, importer=importer,
     )
-    for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing):
+    for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing, importing):
         part.register(app, ctx)
     return app
 

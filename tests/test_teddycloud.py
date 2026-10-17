@@ -7,11 +7,13 @@ teddyCloud mixes urlencoded forms, bare text bodies and JSON across endpoints,
 and gets a wrong encoding silently wrong.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import requests
 
-from tonie_studio.teddycloud import TeddyCloudClient, TeddyCloudError
+from tonie_studio.teddycloud import (DOWNLOAD_READ_TIMEOUT, REQUEST_TIMEOUT, TeddyCloudClient,
+                                     TeddyCloudError)
 
 
 def _ok():
@@ -242,6 +244,96 @@ class TestSetTag:
         request_mock.assert_not_called()
 
 
+class TestContentEntry:
+    def test_reads_the_content_json_of_that_ruid(self, client, request_mock):
+        request_mock.return_value = _json({"source": "lib://by/audioID/1.taf", "cloud_ruid": "x"})
+
+        entry = client.content_entry("11dfc517500304e0")
+
+        assert entry["source"] == "lib://by/audioID/1.taf"
+        assert request_mock.call_args.args == ("GET", "/content/json/get/11dfc517500304e0")
+
+    def test_a_tonie_whose_folder_is_missing_has_an_empty_entry(self, client, request_mock):
+        request_mock.side_effect = TeddyCloudError("teddyCloud answered 404", status=404)
+
+        assert client.content_entry("11dfc517500304e0") == {}
+
+    def test_other_failures_are_not_hidden(self, client, request_mock):
+        request_mock.side_effect = TeddyCloudError("teddyCloud answered 500", status=500)
+
+        with pytest.raises(TeddyCloudError):
+            client.content_entry("11dfc517500304e0")
+
+    def test_refuses_a_ruid_that_is_not_sixteen_hex_digits(self, client, request_mock):
+        with pytest.raises(ValueError):
+            client.content_entry("11DFC517")
+
+        request_mock.assert_not_called()
+
+
+class TestSetting:
+    def test_returns_the_value_as_teddycloud_spells_it(self, client, request_mock):
+        response = Mock(status_code=200, text="true\n")
+        request_mock.return_value = response
+
+        assert client.setting("cloud.enabled") == "true"
+        assert request_mock.call_args.args == ("GET", "/api/settings/get/cloud.enabled")
+
+
+def _download(status=200, chunks=(b"taf",), fails=None):
+    """A streamed response the way requests hands one out, usable in a with block."""
+    response = MagicMock()
+    response.status_code = status
+    response.text = "gone"
+
+    def iter_content(chunk_size):
+        yield from chunks
+        if fails:
+            raise fails
+
+    response.iter_content.side_effect = iter_content
+    response.__enter__.return_value = response
+    return response
+
+
+class TestCacheContent:
+    def test_reads_the_whole_taf_through_the_download_route(self, client):
+        with patch.object(client.downloads, "get",
+                          return_value=_download(chunks=(b"abc", b"de"))) as get:
+            size = client.cache_content("11DFC517", "500304E0")
+
+        assert size == 5
+        assert get.call_args.args == ("http://teddycloud.test/content/download/11DFC517/500304E0.json",)
+        assert get.call_args.kwargs["stream"] is True
+
+    def test_waits_long_between_reads_but_not_for_the_connection(self, client):
+        with patch.object(client.downloads, "get", return_value=_download()) as get:
+            client.cache_content("11DFC517", "500304E0")
+
+        assert get.call_args.kwargs["timeout"] == (REQUEST_TIMEOUT, DOWNLOAD_READ_TIMEOUT)
+
+    def test_a_refusal_carries_the_status(self, client):
+        with patch.object(client.downloads, "get", return_value=_download(status=410)):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.cache_content("11DFC517", "500304E0")
+
+        assert raised.value.status == 410
+
+    def test_a_connection_lost_mid_download_is_a_teddycloud_error(self, client):
+        broken = _download(fails=requests.exceptions.ChunkedEncodingError("cut"))
+
+        with patch.object(client.downloads, "get", return_value=broken):
+            with pytest.raises(TeddyCloudError):
+                client.cache_content("11DFC517", "500304E0")
+
+    def test_a_download_is_never_retried(self, client):
+        # A second request would make teddyCloud fetch the taf from the cloud again.
+        for scheme in ("http://", "https://"):
+            retries = client.downloads.get_adapter(scheme + "teddycloud.test").max_retries
+
+            assert retries.total == 0
+
+
 class TestCustomTonies:
     def test_returns_the_model_list(self, client, request_mock):
         request_mock.return_value = _json([{"model": "TRV_0001"}])
@@ -339,6 +431,7 @@ class TestRequest:
                 client.tags()
 
         assert "500" in str(excinfo.value)
+        assert excinfo.value.status == 500
 
     def test_builds_the_url_from_the_base_and_the_path(self, client):
         response = _json({"tags": []})

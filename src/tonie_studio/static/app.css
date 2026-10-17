@@ -85,11 +85,12 @@ button.primary, .button.primary { background: var(--accent); border-color: var(-
 /* A disabled button must not look like one that would do something. */
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.small, .button.small { padding: 2px 8px; font-size: 13px; line-height: 1.4; }
-input[type=text], input[type=url], input[type=search], input[type=number] {
+input[type=text], input[type=url], input[type=search], input[type=number],
+input[type=password] {
   font: inherit; padding: 7px 10px; border: 1px solid var(--line);
   border-radius: 7px; background: #fff; color: var(--ink);
 }
-input[type=text], input[type=url] { width: 100%; }
+input[type=text], input[type=url], input[type=password] { width: 100%; }
 label.field { display: block; margin-bottom: 12px; }
 label.field span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
 ol.tracks { list-style: none; margin: 0; padding: 0; }
@@ -308,7 +309,8 @@ label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2p
     --line: #35302a; --accent: #fb923c;
   }
   button.primary, .button.primary { color: #17150f; }
-  input[type=text], input[type=url], input[type=search], input[type=number] {
+  input[type=text], input[type=url], input[type=search], input[type=number],
+  input[type=password] {
     background: #17150f;
   }
 }

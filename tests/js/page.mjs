@@ -64,6 +64,8 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
   };
   context.window = context;
   context.addEventListener = () => {};
+  // A page that reloads itself only counts here.
+  context.location = { reloaded: 0, reload() { this.reloaded += 1; } };
   // A touch screen: hover-only extras such as the cover preview stay off.
   context.matchMedia = () => ({ matches: false });
   vm.createContext(context);
@@ -77,5 +79,5 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     for (const listener of listeners[type] || []) await listener({ detail });
     for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
   }
-  return Object.assign(elements, { timers, fetched, dispatch });
+  return Object.assign(elements, { timers, fetched, dispatch, location: context.location });
 }

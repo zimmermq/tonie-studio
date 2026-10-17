@@ -27,6 +27,7 @@ from ..boxstate import BoxWatcher
 from ..cache import BackgroundCache
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
+from ..importing import Importer
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
 from ..models import ModelCache
@@ -78,6 +79,7 @@ class Context:
     groups: Groups
     # Normalised paths of every taf in the library, or None before the first copy.
     library: BackgroundCache[Set[str]]
+    importer: Importer
 
 
 class Catalogue:
