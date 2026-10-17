@@ -42,7 +42,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "run": run,
             "states": STATES,
             "counts": _counts(run) if run else {},
-            "failed": [item for item in run.items if item.state in (FAILED, UNREADABLE)] if run else [],
+            "failed": _problems(run) if run else [],
             "recent": _recent(run) if run else [],
             "next_at": datetime.fromtimestamp(run.next_at) if run and run.next_at else None,
             "pace": run.pace if run else Pace(),
@@ -135,8 +135,28 @@ def _counts(run: Run) -> dict:
 
 
 def _recent(run: Run) -> list:
-    settled = [item for item in run.items if item.state in (IMPORTED, CACHED)]
-    return settled[-RECENT:][::-1]
+    """What the run did lately, newest first, each with when.
+
+    Tonies teddyCloud had before the run began are left out: the run did
+    nothing for them, and they would crowd out what it did.
+    """
+    settled = [item for item in run.items
+               if item.state in (IMPORTED, CACHED) and item.settled_at]
+    settled.sort(key=lambda item: item.settled_at, reverse=True)
+    return [(item, datetime.fromtimestamp(item.settled_at) if item.settled_at else None)
+            for item in settled[:RECENT]]
+
+
+def _problems(run: Run) -> list:
+    """The tonies that failed, newest first with when, then the unreadable dumps.
+
+    An unreadable dump never reached teddyCloud and has no time.
+    """
+    failed = sorted((item for item in run.items if item.state == FAILED),
+                    key=lambda item: item.settled_at, reverse=True)
+    unreadable = [item for item in run.items if item.state == UNREADABLE]
+    return [(item, datetime.fromtimestamp(item.settled_at) if item.settled_at else None)
+            for item in failed + unreadable]
 
 
 def _common_folder(paths: List[str]) -> str:

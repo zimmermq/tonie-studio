@@ -160,6 +160,64 @@ class TestWatching:
 
         assert say("github.not_found") in site.get("/import").text
 
+    def test_the_latest_tonies_say_when_with_the_newest_first(self, site, importer, teddycloud):
+        from datetime import datetime
+
+        importer.clock = lambda: datetime(2026, 10, 17, 21, 44).timestamp()
+        site.post("/import/github", data=GITHUB)
+        for _ in range(3):
+            importer.step()
+
+        page = site.get("/import").text
+
+        latest = page[page.index(say("import.recent")):]
+        assert "Sammlung/Wolf.nfc" in latest and "17.10.2026 21:44" in latest
+
+    def test_the_latest_are_in_order_of_time_not_of_the_list(self, site, importer, teddycloud):
+        from tonie_studio.importing import IMPORTED, Item, _load, _save
+
+        site.post("/import/github", data=GITHUB)
+        run = importer.current()
+        run.items = [Item(path=name, state=IMPORTED, settled_at=when)
+                     for name, when in (("A.nfc", 3000.0), ("B.nfc", 1000.0), ("C.nfc", 2000.0))]
+        _save(importer.data_dir, run)
+
+        page = site.get("/import").text
+        latest = page[page.index(say("import.recent")):]
+
+        assert latest.index("A.nfc") < latest.index("C.nfc") < latest.index("B.nfc")
+        assert _load(importer.data_dir).items[0].path == "A.nfc"
+
+    def test_problems_are_in_order_of_time_and_say_when(self, site, importer):
+        from datetime import datetime
+
+        from tonie_studio.importing import FAILED, Item, _save
+
+        site.post("/import/github", data=GITHUB)
+        run = importer.current()
+        early = datetime(2026, 10, 17, 8, 5).timestamp()
+        late = datetime(2026, 10, 17, 9, 15).timestamp()
+        run.items = [Item(path=name, state=FAILED, error="410", settled_at=when)
+                     for name, when in (("Frueh.nfc", early), ("Spaet.nfc", late))]
+        _save(importer.data_dir, run)
+
+        page = site.get("/import").text
+        problems = page[page.index(say("import.problems")):]
+
+        assert problems.index("Spaet.nfc") < problems.index("Frueh.nfc")
+        assert "17.10.2026 09:15" in problems
+
+    def test_tonies_teddycloud_had_before_the_run_are_not_among_the_latest(self, site, importer,
+                                                                           teddycloud):
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf", cloud_auth=AUTH)
+        site.post("/import/github", data=GITHUB)
+        for _ in range(3):
+            importer.step()
+
+        page = site.get("/import").text
+
+        assert say("import.recent") not in page
+
     def test_a_failed_tonie_is_listed_with_its_reason(self, site, importer, teddycloud):
         del teddycloud.cloud[WOLF_RUID]
         site.post("/import/github", data=GITHUB)

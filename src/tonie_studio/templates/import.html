@@ -73,10 +73,10 @@
 {% if recent %}
 <h2>{{ t("import.recent") }}</h2>
 <div class="list">
-  {% for item in recent %}
+  {% for item, when in recent %}
   <div class="album">
     <span class="grow truncate">{{ item.path }}</span>
-    <span class="muted truncate">{{ t("import.state." ~ item.state) }}</span>
+    <span class="muted truncate">{{ t("import.state." ~ item.state) }}{% if when %} &middot; {{ t.when(when) }}{% endif %}</span>
   </div>
   {% endfor %}
 </div>
@@ -85,11 +85,12 @@
 {% if failed %}
 <h2>{{ t("import.problems") }}</h2>
 <div class="list">
-  {% for item in failed %}
+  {% for item, when in failed %}
   <div class="album">
     <span class="grow truncate">
       <strong class="truncate">{{ item.path }}</strong>
       <span class="state-failed detail">
+        {%- if when %}{{ t.when(when) }} &middot; {% endif -%}
         {%- if item.error_key %}{{ t(item.error_key, **item.error_params) }}{% else %}{{ item.error }}{% endif -%}
       </span>
     </span>

@@ -122,6 +122,9 @@ class Item:
     error: str = ""
     error_key: str = ""
     error_params: Dict[str, Any] = field(default_factory=dict)
+    # When the run imported it, failed at it, or found it cached at its turn,
+    # as seconds since 1970; 0 for one teddyCloud had before the run began.
+    settled_at: float = 0.0
 
 
 @dataclass
@@ -439,9 +442,10 @@ class Importer:
 
         def record(current: Run) -> None:
             for index, (state, where) in checked.items():
-                current.items[index].state, current.items[index].result = state, where
                 if state == CACHED:
-                    current.items[index].auth = ""
+                    _settle_item(current.items[index], CACHED, where, 0.0)
+                else:
+                    current.items[index].state = state
             if not any(item.state == NEW for item in current.items):
                 current.phase = RUNNING
         self._record(run.id, record)
@@ -458,7 +462,9 @@ class Importer:
         # Settled meanwhile by the box or another run: no download, no wait.
         entry, where = lookup(client, item.ruid)
         if where:
-            self._record(run.id, lambda current: _settle_item(current.items[index], CACHED, where))
+            settled = self.clock()
+            self._record(run.id,
+                         lambda current: _settle_item(current.items[index], CACHED, where, settled))
             return 0
 
         now = self.clock()
@@ -476,6 +482,7 @@ class Importer:
             def failed(current: Run) -> None:
                 target = current.items[index]
                 target.state, target.error = FAILED, str(cause)
+                target.settled_at = self.clock()
                 if isinstance(cause, Problem):
                     target.error_key, target.error_params = cause.key, cause.params
                 current.streak += 1
@@ -488,7 +495,7 @@ class Importer:
         log.info("imported %s as %s", item.path, where)
 
         def imported(current: Run) -> None:
-            _settle_item(current.items[index], IMPORTED, where)
+            _settle_item(current.items[index], IMPORTED, where, self.clock())
             current.streak = 0
             current.next_at = started + current.pace.pause(self.rng)
         self._record(run.id, imported)
@@ -513,6 +520,6 @@ class Importer:
             _save(self.data_dir, run)
 
 
-def _settle_item(item: Item, state: str, where: str) -> None:
-    item.state, item.result, item.auth = state, where, ""
+def _settle_item(item: Item, state: str, where: str, when: float) -> None:
+    item.state, item.result, item.auth, item.settled_at = state, where, "", when
     item.error, item.error_key, item.error_params = "", "", {}

@@ -237,6 +237,43 @@ class TestPacing:
         assert "secret" not in json.dumps(run.source)
 
 
+class TestWhen:
+    def test_a_tonie_the_run_imported_notes_when(self, importer, clock):
+        importer.begin([WOLF], STEADY, "test")
+        clock.now = 2_000_000.0
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().items[0].settled_at == 2_000_000.0
+
+    def test_one_teddycloud_had_before_the_run_has_no_time(self, importer, teddycloud, clock):
+        # The run did nothing for it, so it is no part of what the run did lately.
+        teddycloud.add_content(FEST_RUID, source="lib://by/audioID/9.taf", cloud_auth=AUTH)
+        importer.begin([FEST], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().items[0].settled_at == 0.0
+
+    def test_one_that_turned_up_by_its_turn_notes_when(self, importer, teddycloud, clock):
+        importer.begin([WOLF, FEST], STEADY, "test")
+        run_until_idle(importer, clock)
+        teddycloud.add_content(FEST_RUID, source="lib://by/audioID/5.taf", cloud_auth=AUTH)
+        clock.now += 360
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().items[1].settled_at == clock.now
+
+    def test_a_failure_notes_it_too(self, importer, teddycloud, clock):
+        del teddycloud.cloud[WOLF_RUID]
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().items[0].settled_at == clock.now
+
+
 class TestQuiet:
     def test_a_new_tonie_is_looked_up_once_per_check_not_once_per_call(self, importer, teddycloud,
                                                                       clock):
