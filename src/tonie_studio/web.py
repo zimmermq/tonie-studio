@@ -27,7 +27,7 @@ from .naming import Namer
 from .jobs import Groups, JobRunner
 from .library import same
 from .listening import ListeningLog
-from .models import ModelCache, cover_name
+from .models import ModelCache, cover_name, cover_url
 from .pages import albums, batch, extras, importing, printing, site, tonies, upkeep
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
@@ -60,6 +60,7 @@ def create_app(
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     templates.env.filters["cover_name"] = cover_name
+    templates.env.filters["cover_url"] = cover_url
     templates.env.globals["describe_progress"] = describe_progress
     jobs = runner or JobRunner()
     catalogue = Catalogue(settings)

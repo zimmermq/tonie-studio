@@ -13,8 +13,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
-from ..models import (CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, fetch_cover, find_model,
-                      is_cover_name, update_model)
+from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, fetch_cover,
+                      find_model, images_cached, is_cover_name, update_model)
 from ..podcast import load_subscriptions, remove_subscription
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
@@ -51,9 +51,11 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/tonies", response_class=HTMLResponse)
     def tonies(request: Request):
+        connection = client()
         return templates.TemplateResponse(request, "tonies.html", {
-            "tags": list_tags(client()),
+            "tags": list_tags(connection),
             "box": box.state,
+            "images_cached": images_cached(connection),
         })
 
 
@@ -173,6 +175,22 @@ def register(app: FastAPI, ctx: Context) -> None:
         })
 
 
+    @app.get("/cover/cache/{name}")
+    def cached_picture(name: str, mode: Optional[str] = None, size: int = 0):
+        """Pass a picture through from teddyCloud's image cache, optionally as the sticker.
+
+        teddyCloud fetches a picture into its cache the first time it is asked
+        for one, and answers a cover of this app's own with a redirect to
+        custom_img, which the request follows.
+        """
+        if cache_name(f"{CACHE}{name}") != name:
+            raise Refused(400, "error.not_an_image")
+        try:
+            data = client().fetch(f"{CACHE}{name}")
+        except TeddyCloudError as error:
+            raise Refused(502, "error.failed", detail=error) from error
+        return _picture_response(data, name, mode, size)
+
     @app.get("/cover/custom/{name}")
     def custom_cover(name: str, mode: Optional[str] = None, size: int = 0):
         """Pass a cover through from teddyCloud, optionally as the sticker.
@@ -192,16 +210,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         except TeddyCloudError as error:
             raise Refused(502, "error.failed", detail=error) from error
 
-        if mode in (FILL, FIT):
-            try:
-                data = render_square(data, mode, size=max(64, min(size or PIXELS, PIXELS)))
-            except (OSError, ValueError) as error:
-                # A cover teddyCloud holds but Pillow cannot read still has to
-                # reach the page; the untouched bytes may well render there.
-                log.debug("cannot render %s as a sticker: %s", name, error)
-            else:
-                return Response(data, media_type="image/jpeg", headers=NO_SNIFFING)
-        return Response(data, media_type=COVER_TYPES[Path(name).suffix.lower()], headers=NO_SNIFFING)
+        return _picture_response(data, name, mode, size)
 
 
     @app.get("/radio", response_class=HTMLResponse)
@@ -269,3 +278,18 @@ def _uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
     if cover is None or not is_cover_name(cover.filename):
         return None, "jpg"
     return cover.file.read(), Path(cover.filename).suffix.lstrip(".") or "jpg"
+
+
+def _picture_response(data: bytes, name: str, mode: Optional[str], size: int) -> Response:
+    """A picture as it is, or, with a ``mode``, rendered the way the sheet prints it."""
+    if mode in (FILL, FIT):
+        try:
+            data = render_square(data, mode, size=max(64, min(size or PIXELS, PIXELS)))
+        except (OSError, ValueError) as error:
+            # A cover teddyCloud holds but Pillow cannot read still has to
+            # reach the page; the untouched bytes may well render there.
+            log.debug("cannot render %s as a sticker: %s", name, error)
+        else:
+            return Response(data, media_type="image/jpeg", headers=NO_SNIFFING)
+    return Response(data, media_type=COVER_TYPES.get(Path(name).suffix.lower(), "image/jpeg"),
+                    headers=NO_SNIFFING)

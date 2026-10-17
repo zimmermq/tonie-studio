@@ -8,11 +8,15 @@
     id="boxnote" class="muted"></span>.
 </p>
 
+{% if images_cached == false %}
+<div class="warn">{{ t("covers.cache_off") }}</div>
+{% endif %}
+
 <div class="list">
 {% for tag in tags %}
   <div class="album" id="tag-{{ tag.ruid }}">
-    {% if tag.picture | cover_name %}
-    <img src="/cover/custom/{{ tag.picture | cover_name | urlencode }}" alt="" loading="lazy">
+    {% if tag.picture | cover_url(false) %}
+    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}

@@ -7,6 +7,7 @@ prefix nothing else uses.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import re
@@ -14,10 +15,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Sequence, Union
+from urllib.parse import quote
 
 from .cache import BackgroundCache
 from .tags import TonieError, label
-from .teddycloud import TeddyCloudClient
+from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +31,15 @@ MODEL_PREFIX = "TS-"
 # Where teddyCloud serves the covers of custom models; a model's ``pic`` names
 # its cover by this path.
 CUSTOM_IMG = "/custom_img/"
+
+# Where teddyCloud serves the pictures it keeps itself with the setting
+# tonie_json.cache_images on: the catalogue's figure pictures and every model
+# picture hosted elsewhere, fetched on first use. It then hands out these
+# addresses instead of the original ones, for this app's covers too, which it
+# answers with a redirect to custom_img.
+CACHE = "/cache/"
+CACHE_SETTING = "tonie_json.cache_images"
+_CACHE_NAME = re.compile(r"^[0-9A-Fa-f]{64}\.[A-Za-z0-9]{1,5}$")
 
 
 DEFAULT_LANGUAGE = "de-de"
@@ -52,6 +63,67 @@ def is_cover_name(name: Optional[str]) -> bool:
 # What tonies.json uses, offered so a model is not filed under an invented one.
 CATEGORIES = ("music", "audio-book", "audio-play", "audio-play-songs", "audio-book-songs")
 
+
+
+def cache_name(picture: Optional[str]) -> Optional[str]:
+    """The name ``picture`` has in teddyCloud's image cache, or None.
+
+    teddyCloud names a cached picture after the upper-case SHA-256 of its
+    original address, with the extension after its last dot (query left out)
+    or "jpg" when there is none. A /cache/ address carries its name already.
+    """
+    if not picture:
+        return None
+    if picture.startswith(CACHE):
+        name = picture[len(CACHE):]
+        return name if _CACHE_NAME.match(name) else None
+    if not picture.startswith(("http://", "https://")):
+        return None
+    digest = hashlib.sha256(picture.encode("utf-8")).hexdigest().upper()
+    dot = picture.rfind(".")
+    extension = picture[dot + 1:].split("?", 1)[0] if dot >= 0 and "/" not in picture[dot:] else ""
+    return f"{digest}.{extension or 'jpg'}"
+
+
+def cover_url(picture: Optional[str], cached: bool = True) -> Optional[str]:
+    """Where a page asks for ``picture``, or None when there is no picture to show.
+
+    Through this app wherever it can: the browser reaches it but not
+    teddyCloud. A picture hosted elsewhere goes through teddyCloud's cache
+    when that keeps pictures (``cached``), and straight to its host otherwise.
+    """
+    name = cover_name(picture)
+    if name:
+        return f"/cover/custom/{quote(name)}"
+    if picture and picture.startswith(CACHE):
+        name = cache_name(picture)
+        return f"/cover/cache/{name}" if name else None
+    if picture and picture.startswith(("http://", "https://")):
+        return f"/cover/cache/{cache_name(picture)}" if cached else picture
+    return None
+
+
+def images_cached(client: TeddyCloudClient) -> Optional[bool]:
+    """Whether teddyCloud keeps the pictures itself, or None when it cannot say."""
+    try:
+        return client.setting(CACHE_SETTING) == "true"
+    except TeddyCloudError:
+        return None
+
+
+def fetch_picture(client: TeddyCloudClient, picture: Optional[str]) -> bytes:
+    """The bytes of a model's picture, from custom_img or through teddyCloud's cache.
+
+    Raises TeddyCloudError when teddyCloud cannot hand it out, such as for a
+    picture hosted elsewhere while its cache keeps no pictures.
+    """
+    name = cover_name(picture)
+    if name:
+        return fetch_cover(client, name)
+    name = cache_name(picture)
+    if not name:
+        raise TeddyCloudError(f"no picture to fetch: {picture!r}")
+    return client.fetch(f"{CACHE}{name}")
 
 
 def cover_name(picture: Optional[str]) -> Optional[str]:

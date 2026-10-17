@@ -51,6 +51,7 @@ class FakeTeddyCloud:
         self.custom_models: List[dict] = []
         self.settings: Dict[str, str] = {
             "cloud.enabled": "true", "cloud.cacheContent": "true", "cloud.cacheToLibrary": "true",
+            "tonie_json.cache_images": "true",
         }
         # What the Tonies cloud would hand out, by ruid, and every ruid asked for.
         self.cloud: Dict[str, bytes] = {}
@@ -178,7 +179,7 @@ class FakeTeddyCloud:
                     "model": entry["tonie_model"],
                     "series": model.get("series", ""),
                     "episode": model.get("episodes", ""),
-                    "picture": model.get("pic", "/img_unknown.png"),
+                    "picture": entry.get("picture") or model.get("pic", "/img_unknown.png"),
                     "tracks": model.get("tracks", []),
                 },
             })

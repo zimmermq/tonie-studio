@@ -17,7 +17,7 @@ from ..calibration import FILE_NAME as CALIBRATION_FILE
 from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
 from ..i18n import DEFAULT as DEFAULT_LANGUAGE
 from ..i18n import Translator
-from ..models import Model, fetch_cover, is_cover_name, list_models
+from ..models import Model, cache_name, fetch_picture, images_cached, is_cover_name, list_models
 from ..overview import Entry, build_overview
 from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
@@ -46,9 +46,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         this list is the step that was missing. Asked for that way, the page
         is the last step of the walkthrough and says so.
         """
-        models = _printable_models(client())
+        connection = client()
+        cached = images_cached(connection)
+        models = _printable_models(connection, cached)
         return templates.TemplateResponse(request, "sheet.html", {
             "models": models,
+            "images_cached": cached,
             "per_page": PER_PAGE,
             "most_copies": MOST_COPIES,
             "fill": FILL,
@@ -202,13 +205,14 @@ def clear_old_pdfs(data_dir: Path) -> None:
             log.warning("cannot remove %s: %s", leftover, error)
 
 
-def _printable_models(client: TeddyCloudClient) -> List[Model]:
-    """The custom models that have a cover of their own to print.
+def _printable_models(client: TeddyCloudClient, cached: Optional[bool] = True) -> List[Model]:
+    """The custom models that have a picture this app can put on a sticker.
 
-    A model without a picture, or one pointing at an image hosted elsewhere,
-    has nothing this app can put on a sticker.
+    That is a cover in custom_img, or, while teddyCloud keeps the pictures it
+    is shown, one hosted elsewhere, which then comes through its cache.
     """
-    return [model for model in list_models(client) if model.cover]
+    return [model for model in list_models(client)
+            if model.cover or (cached is not False and cache_name(model.picture))]
 
 
 def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
@@ -224,9 +228,9 @@ def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
         if model.id not in on_stickers:
             continue
         image = None
-        if model.cover:
+        if model.cover or cache_name(model.picture):
             try:
-                image = fetch_cover(client, model.cover)
+                image = fetch_picture(client, model.picture)
             except TeddyCloudError as error:
                 log.warning("overview: no cover for %s: %s", model.id, error)
         back = _back_of(model, times.get(model.id), translate)
@@ -280,10 +284,10 @@ def _back_preview(models: Sequence[Model], times: Dict[str, int],
 
 def _cover_bytes(client: TeddyCloudClient, model: Optional[Model]) -> Optional[bytes]:
     """The cover of a printable model, or None when there is none to be read."""
-    if model is None or not model.cover:
+    if model is None or not (model.cover or cache_name(model.picture)):
         return None
     try:
-        return fetch_cover(client, model.cover)
+        return fetch_picture(client, model.picture)
     except TeddyCloudError as error:
         log.warning("cannot read the cover of %s: %s", model.id, error)
         return None

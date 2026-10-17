@@ -17,8 +17,8 @@
 <div class="list">
   {% for tag in streams %}
   <div class="album">
-    {% if tag.picture | cover_name %}
-    <img src="/cover/custom/{{ tag.picture | cover_name | urlencode }}" alt="" loading="lazy">
+    {% if tag.picture | cover_url(false) %}
+    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
     {% else %}<span class="noart" aria-hidden="true"></span>{% endif %}
     <span class="grow truncate">
       <strong class="truncate">{{ tag.label }}</strong>

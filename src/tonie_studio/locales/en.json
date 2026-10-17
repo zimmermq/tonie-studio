@@ -189,6 +189,7 @@
  "common.nothing_chosen": "nothing chosen",
  "common.save": "Save",
  "common.to_tonies": "To the tonies",
+ "covers.cache_off": "teddyCloud does not keep the tonie pictures itself (setting tonie_json.cache_images is off). Pictures of official tonies then come straight from the Tonies server, and models with such a picture cannot be printed. Switch on \"Cache images\" under the tonies.json settings in teddyCloud.",
  "encode.changed": "{target} is no longer the taf this album was planned with.",
  "encode.exists": "A taf already exists at {target}; rename or delete it first.",
  "encode.no_name": "The taf needs a name.",

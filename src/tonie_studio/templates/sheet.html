@@ -8,6 +8,10 @@
 <p class="sub">
   {{ t("sheet.intro", count=per_page) }}
 </p>
+
+{% if images_cached == false %}
+<div class="warn">{{ t("covers.cache_off") }}</div>
+{% endif %}
 {% if first_print %}<div class="warn">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
 
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
@@ -23,7 +27,7 @@
 
   <div class="list">
     {% for model in models %}
-    <div class="album sticker" data-src="/cover/custom/{{ model.cover | urlencode }}">
+    <div class="album sticker" data-src="{{ model.picture | cover_url(images_cached) }}">
       <input type="checkbox" class="want" {% if model.id in preset %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
       <span class="grow truncate">
