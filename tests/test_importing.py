@@ -248,6 +248,29 @@ class TestQuiet:
         assert teddycloud.content_misses == 2  # the check, and the look right before
 
 
+class TestAfterImport:
+    def test_each_imported_tonie_is_handed_on_with_its_dump(self, teddycloud, tmp_path, clock):
+        seen = []
+        importer = Importer(lambda: teddycloud, tmp_path, clock=clock, sleep=lambda s: None,
+                            after_import=lambda ruid, path: seen.append((ruid, path)))
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert seen == [(WOLF_RUID, "Wolf.nfc")]
+
+    def test_a_failure_after_the_import_does_not_undo_it(self, teddycloud, tmp_path, clock):
+        def fails(ruid, path):
+            raise RuntimeError("naming broke")
+        importer = Importer(lambda: teddycloud, tmp_path, clock=clock, sleep=lambda s: None,
+                            after_import=fails)
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": IMPORTED}
+
+
 class TestFailures:
     def test_a_failure_is_recorded_and_the_run_goes_on(self, importer, teddycloud, clock):
         del teddycloud.cloud[WOLF_RUID]

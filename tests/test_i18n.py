@@ -17,7 +17,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
-           "import.phase.", "import.state.")
+           "import.phase.", "import.state.", "names.kind.")
 
 
 def placeholders(text):
@@ -83,6 +83,10 @@ class TestCatalogs:
         assert {f"import.state.{state}" for state in (
             importing.PENDING, importing.IMPORTED, importing.CACHED, importing.FAILED,
             importing.DUPLICATE, importing.UNREADABLE)} <= keys
+
+        from tonie_studio.pages.importing import KINDS
+
+        assert {f"names.kind.{kind}" for kind in KINDS} <= keys
 
         from tonie_studio.album import ORDERINGS
 

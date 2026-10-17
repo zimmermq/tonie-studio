@@ -334,6 +334,14 @@ class TestCacheContent:
             assert retries.total == 0
 
 
+class TestToniesJson:
+    def test_reads_the_official_catalogue(self, client, request_mock):
+        request_mock.return_value = _json([{"model": "10000001"}])
+
+        assert client.tonies_json() == [{"model": "10000001"}]
+        assert request_mock.call_args.args == ("GET", "/api/toniesJson")
+
+
 class TestCustomTonies:
     def test_returns_the_model_list(self, client, request_mock):
         request_mock.return_value = _json([{"model": "TRV_0001"}])

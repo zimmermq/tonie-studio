@@ -41,6 +41,9 @@ check the tracks, encode, lay the tag on the box, print the covers.
   or a GitHub repository holding them, and teddyCloud fetches each tonie's audio from the cloud
   into its library. It goes slowly on purpose, ten an hour by default, skips what teddyCloud
   already has, keeps running on the server with the page closed, and carries on after a restart.
+  A tonie teddyCloud cannot name from its catalogue, such as a figure of a set, gets a model of
+  its own named after the dump's folder and file, and moves to the official model once the
+  catalogue lists its audio.
 - **Upkeep.** What is on the box right now, a listening log, the TAF library with the tags that
   play each file, a checkup that finds and repairs broken tags, and backup and restore of
   everything teddyCloud does not keep in the archive.

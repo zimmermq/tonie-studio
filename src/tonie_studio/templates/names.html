@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ t("names.title") }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ t("names.title") }}</h1>
+<p class="sub">
+  {{ t("names.intro") }}
+</p>
+
+{% if named >= 0 %}
+<p class="state-done">{{ t("names.done", named=named, deleted=deleted) }}</p>
+{% endif %}
+
+{% if plan.empty %}
+<div class="card">{{ t("names.nothing") }}</div>
+{% else %}
+<div class="list">
+  {% for kind in kinds if counts[kind] %}
+  <div class="album">
+    <span class="grow">{{ t("names.kind." ~ kind) }}</span>
+    <strong>{{ counts[kind] }}</strong>
+  </div>
+  {% endfor %}
+  {% if plan.retired %}
+  <div class="album">
+    <span class="grow">{{ t("names.retired") }}</span>
+    <strong>{{ plan.retired | length }}</strong>
+  </div>
+  {% endif %}
+</div>
+
+<form method="post" action="/import/names" class="row wrap gap-12 mt-14">
+  <button type="submit" class="primary">{{ t("names.apply") }}</button>
+  <a class="button" href="/import">{{ t("names.back") }}</a>
+</form>
+
+<h2>{{ t("names.changes") }}</h2>
+<div class="list">
+  {% for step in steps %}
+  <div class="album">
+    <span class="grow truncate">
+      <strong class="truncate">
+        {%- if step.name %}{{ step.name.series }} - {{ step.name.episode }}{% else %}{{ step.label or step.path or step.ruid }}{% endif -%}
+      </strong>
+      <span class="muted truncate">
+        {{ t("names.kind." ~ step.kind) }}:
+        {% if step.replaces %}{{ step.replaces }} &rarr; {% endif %}{{ step.model_id }}
+        {%- if step.path %} &middot; {{ step.path }}{% endif %}
+      </span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if plan.skipped %}
+<h2>{{ t("names.skipped") }}</h2>
+<div class="list">
+  {% for path, why in plan.skipped %}
+  <div class="album">
+    <span class="grow truncate">
+      <strong class="truncate">{{ path }}</strong>
+      <span class="muted truncate">{{ t("names.not_in_library", source=why) }}</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

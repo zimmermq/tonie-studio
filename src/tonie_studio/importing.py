@@ -283,9 +283,13 @@ class Importer:
                  clock: Callable[[], float] = time.time,
                  rng: Optional[random.Random] = None,
                  sleep: Callable[[float], None] = time.sleep,
-                 fetch_repo: Callable[..., List[Tuple[str, str]]] = github.dumps):
+                 fetch_repo: Callable[..., List[Tuple[str, str]]] = github.dumps,
+                 after_import: Optional[Callable[[str, str], None]] = None):
         self.client = client
         self.fetch_repo = fetch_repo
+        # Called with the ruid and dump path of every tonie once it is imported,
+        # such as to name it. Its failure is logged and leaves the import alone.
+        self.after_import = after_import
         self.data_dir = data_dir
         self.clock = clock
         self.rng = rng or random.Random()
@@ -295,6 +299,11 @@ class Importer:
         self._thread: Optional[threading.Thread] = None
 
     # --- what the pages call ------------------------------------------------
+
+    def dumps(self) -> Dict[str, str]:
+        """``{ruid: dump path}`` of every tonie the latest run read."""
+        run = self.current()
+        return {item.ruid: item.path for item in run.items if item.ruid} if run else {}
 
     def current(self) -> Optional[Run]:
         with LOCK:
@@ -483,6 +492,11 @@ class Importer:
             current.streak = 0
             current.next_at = started + current.pace.pause(self.rng)
         self._record(run.id, imported)
+        if self.after_import:
+            try:
+                self.after_import(item.ruid, item.path)
+            except Exception:
+                log.exception("after the import of %s", item.path)
         return 0
 
     def _record(self, run_id: str, change: Callable[[Run], None]) -> None:

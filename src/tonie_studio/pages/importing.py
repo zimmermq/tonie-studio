@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
                          ImportProblem, Pace, Run)
+from .. import naming
 from .common import Context, Refused, refused
 
 # The order the counts are shown in.
@@ -24,11 +25,15 @@ STATES = (PENDING, IMPORTED, CACHED, FAILED, DUPLICATE, UNREADABLE)
 # How many of the latest settled tonies the page lists.
 RECENT = 10
 
+# The order the naming steps are listed in.
+KINDS = (naming.RENAME, naming.PROMOTE, naming.NEW, naming.REUSE, naming.OFFICIAL)
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     templates = ctx.templates
     importer = ctx.importer
+    namer = ctx.namer
 
     @app.get("/import", response_class=HTMLResponse)
     def import_page(request: Request):
@@ -81,6 +86,23 @@ def register(app: FastAPI, ctx: Context) -> None:
         label = _common_folder([name for name, _ in dumps])
         _start(lambda pace: importer.begin(dumps, pace, label), per_hour, jitter, max_failures)
         return RedirectResponse("/import", 303)
+
+    @app.get("/import/names", response_class=HTMLResponse)
+    def names_page(request: Request, named: int = -1, deleted: int = 0):
+        """What the upkeep would change now, renaming the old models included."""
+        todo = namer.preview(migrate=True)
+        steps = sorted(todo.steps, key=lambda step: (KINDS.index(step.kind), step.path))
+        return templates.TemplateResponse(request, "names.html", {
+            "plan": todo, "steps": steps, "kinds": KINDS,
+            "counts": {kind: sum(1 for step in steps if step.kind == kind) for kind in KINDS},
+            "named": named, "deleted": deleted,
+        })
+
+    @app.post("/import/names")
+    def apply_names():
+        done = namer.upkeep(migrate=True)
+        return RedirectResponse(
+            f"/import/names?named={len(done.steps)}&deleted={len(done.retired)}", 303)
 
     @app.post("/import/pause")
     def pause():

@@ -28,6 +28,7 @@ from ..cache import BackgroundCache
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..importing import Importer
+from ..naming import Namer
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
 from ..models import ModelCache
@@ -80,6 +81,7 @@ class Context:
     # Normalised paths of every taf in the library, or None before the first copy.
     library: BackgroundCache[Set[str]]
     importer: Importer
+    namer: Namer
 
 
 class Catalogue:

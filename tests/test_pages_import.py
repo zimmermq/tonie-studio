@@ -189,3 +189,37 @@ class TestControls:
         site.post("/import/stop")
 
         assert site.post("/import/github", data=GITHUB, follow_redirects=False).status_code == 303
+
+
+class TestNames:
+    def test_the_import_page_leads_there(self, site):
+        assert 'href="/import/names"' in site.get("/import").text
+
+    def test_with_nothing_to_do_it_says_so(self, site):
+        assert say("names.nothing") in site.get("/import/names").text
+
+    def test_shows_the_renaming_first_and_writes_nothing(self, site, teddycloud):
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="NFC-0004")
+        teddycloud.custom_models.append({"model": "NFC-0004", "series": "Comics",
+                                         "episodes": "Fledermaus", "audio_id": ["7"],
+                                         "hash": ["77"]})
+
+        page = site.get("/import/names").text
+
+        assert say("names.kind.rename") in page and "NFC-0004" in page and "TS-0001" in page
+        assert "Comics - Fledermaus" in page
+        assert teddycloud.custom_models[0]["model"] == "NFC-0004"
+
+    def test_applying_renames_and_says_how_much(self, site, teddycloud):
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="NFC-0004")
+        teddycloud.custom_models.append({"model": "NFC-0004", "series": "Comics",
+                                         "episodes": "Fledermaus", "audio_id": ["7"],
+                                         "hash": ["77"]})
+
+        response = site.post("/import/names", follow_redirects=False)
+
+        assert response.headers["location"] == "/import/names?named=1&deleted=1"
+        assert [m["model"] for m in teddycloud.custom_models] == ["TS-0001"]
+        assert teddycloud.tag_entries["1d577820500304e0"]["tonie_model"] == "TS-0001"

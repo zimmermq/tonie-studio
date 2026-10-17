@@ -23,6 +23,7 @@ from .boxstate import BoxWatcher
 from .cache import BackgroundCache
 from .encode import list_tafs, remove_orphaned_staging
 from .importing import Importer
+from .naming import Namer
 from .jobs import Groups, JobRunner
 from .library import same
 from .listening import ListeningLog
@@ -88,6 +89,11 @@ def create_app(
         name="library", ttl=LIBRARY_TTL)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
     importer = importer or Importer(client, settings.data_dir)
+    namer = Namer(client, importer.dumps)
+    # Whoever built the importer decides what follows an import, unless they
+    # left it open: then each imported tonie is named straight away.
+    if importer.after_import is None:
+        importer.after_import = namer.name_one
     stopping = threading.Event()
 
     @asynccontextmanager
@@ -102,6 +108,8 @@ def create_app(
                          name="podcasts", daemon=True).start()
         # Carries on a run an earlier process left unfinished.
         importer.start()
+        threading.Thread(target=namer.run, args=(stopping,),
+                         name="naming", daemon=True).start()
         # Starts the background load now, so the first page after a restart
         # already shows which albums have a tonie.
         models.get()
@@ -122,7 +130,7 @@ def create_app(
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
-        groups=groups, library=library, importer=importer,
+        groups=groups, library=library, importer=importer, namer=namer,
     )
     for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing, importing):
         part.register(app, ctx)

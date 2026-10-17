@@ -302,6 +302,10 @@ class TeddyCloudClient:
         """One setting's value as teddyCloud spells it, such as ``"true"``."""
         return self._request("GET", f"/api/settings/get/{name}", params=self._params()).text.strip()
 
+    def tonies_json(self) -> List[Dict[str, Any]]:
+        """The official catalogue teddyCloud keeps up to date: every tonie it can name."""
+        return self._request("GET", "/api/toniesJson", params=self._params()).json()
+
     # --- custom tonie models ---------------------------------------------
 
     def custom_tonies(self) -> List[Dict[str, Any]]:

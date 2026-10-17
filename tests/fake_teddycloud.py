@@ -58,6 +58,8 @@ class FakeTeddyCloud:
         # Lookups of a tonie whose content folder does not exist, which the
         # real server logs as a 404 warning each.
         self.content_misses = 0
+        # The official catalogue, tonies.json.
+        self.catalogue: List[dict] = []
 
     def twin(self) -> "FakeTeddyCloud":
         # One process, no sessions: every thread may share the fake.
@@ -259,3 +261,6 @@ class FakeTeddyCloud:
 
     def setting(self, name: str) -> str:
         return self.settings[name]
+
+    def tonies_json(self) -> List[dict]:
+        return [dict(entry) for entry in self.catalogue]
