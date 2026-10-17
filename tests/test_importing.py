@@ -237,6 +237,17 @@ class TestPacing:
         assert "secret" not in json.dumps(run.source)
 
 
+class TestQuiet:
+    def test_a_new_tonie_is_looked_up_once_per_check_not_once_per_call(self, importer, teddycloud,
+                                                                      clock):
+        # Each lookup of a tonie teddyCloud does not know yet is a warning in its log.
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert teddycloud.content_misses == 2  # the check, and the look right before
+
+
 class TestFailures:
     def test_a_failure_is_recorded_and_the_run_goes_on(self, importer, teddycloud, clock):
         del teddycloud.cloud[WOLF_RUID]

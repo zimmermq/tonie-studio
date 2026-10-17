@@ -172,33 +172,41 @@ def cached_at(client: TeddyCloudClient, ruid: str) -> str:
     answers an empty entry for a tonie whose folder does not exist, which
     saves listing the content tree's hundreds of folders.
     """
+    return lookup(client, ruid)[1]
+
+
+def lookup(client: TeddyCloudClient, ruid: str) -> Tuple[Dict[str, Any], str]:
+    """The tonie's content entry, and where its audio is (see :func:`cached_at`)."""
     entry = client.content_entry(ruid)
     if not entry:
-        return ""
+        return entry, ""
     if entry.get("source"):
-        return entry["source"]
+        return entry, entry["source"]
     folder, file = _content_path(ruid)
     try:
         listing = client.list_dir(f"/{folder}")
     except TeddyCloudError:
-        return ""
+        return entry, ""
     if any(item.get("name") == file and not item.get("isDir") and item.get("size")
            for item in listing):
-        return f"{BESIDE}{folder}/{file}"
-    return ""
+        return entry, f"{BESIDE}{folder}/{file}"
+    return entry, ""
 
 
 def import_one(client: TeddyCloudClient, ruid: str, auth: str,
-               sleep: Callable[[float], None] = time.sleep) -> str:
+               sleep: Callable[[float], None] = time.sleep,
+               entry: Optional[Dict[str, Any]] = None) -> str:
     """Write the tonie's content JSON, have teddyCloud fetch its audio, and
     return where it keeps it.
 
     The JSON is written whole, because teddyCloud's own setter does not take
     the cloud fields. What an existing entry already says, such as a model
-    picked for the tonie, is kept.
+    picked for the tonie, is kept. ``entry`` is that entry when the caller has
+    just read it; every read of a tonie teddyCloud does not know yet is a
+    warning in its log.
     """
     folder, file = _content_path(ruid)
-    entry = dict(client.content_entry(ruid))
+    entry = dict(client.content_entry(ruid) if entry is None else entry)
     entry.update({"cloud_ruid": ruid, "cloud_auth": auth, "nocloud": False,
                   "cloud_override": False})
     entry.setdefault("source", "")
@@ -439,7 +447,7 @@ class Importer:
         item = run.items[index]
         client = self.client()
         # Settled meanwhile by the box or another run: no download, no wait.
-        where = cached_at(client, item.ruid)
+        entry, where = lookup(client, item.ruid)
         if where:
             self._record(run.id, lambda current: _settle_item(current.items[index], CACHED, where))
             return 0
@@ -450,7 +458,7 @@ class Importer:
 
         started = now
         try:
-            where = import_one(client, item.ruid, item.auth, sleep=self.sleep)
+            where = import_one(client, item.ruid, item.auth, sleep=self.sleep, entry=entry)
         except (TeddyCloudError, ImportProblem) as error:
             log.warning("import of %s failed: %s", item.path, error)
             # Python unbinds ``error`` when the except block ends.

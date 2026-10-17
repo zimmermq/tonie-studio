@@ -55,6 +55,9 @@ class FakeTeddyCloud:
         # What the Tonies cloud would hand out, by ruid, and every ruid asked for.
         self.cloud: Dict[str, bytes] = {}
         self.cloud_requests: List[str] = []
+        # Lookups of a tonie whose content folder does not exist, which the
+        # real server logs as a 404 warning each.
+        self.content_misses = 0
 
     def twin(self) -> "FakeTeddyCloud":
         # One process, no sessions: every thread may share the fake.
@@ -226,6 +229,7 @@ class FakeTeddyCloud:
     def content_entry(self, ruid: str) -> dict:
         folder = f"/{ruid[:8].upper()}"
         if folder not in self.dirs:
+            self.content_misses += 1
             return {}
         stored = self.files.get(f"{folder}/{ruid[8:].upper()}.json")
         # teddyCloud answers an entry with empty fields when the JSON is missing.
