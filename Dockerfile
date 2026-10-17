@@ -24,11 +24,14 @@ RUN useradd --uid 10001 --create-home app \
     && chown -R app:app /data
 USER app
 
-# The release this image is, written into every backup's manifest. CI passes
-# it on release; the default keeps a source run sane. Placed late so a version
+# The release this image is, written into every backup's manifest and shown
+# at the top of every page with the commit it was built from. CI passes both
+# on release; the defaults keep a source run sane. Placed late so a version
 # bump does not invalidate the dependency layers above.
 ARG TS_VERSION=dev
 ENV TS_VERSION=$TS_VERSION
+ARG TS_COMMIT=
+ENV TS_COMMIT=$TS_COMMIT
 
 EXPOSE 8080
 

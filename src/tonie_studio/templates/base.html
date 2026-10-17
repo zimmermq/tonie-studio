@@ -45,6 +45,10 @@
     {%- endfor %}
   </nav>
   <span class="boxnow muted grow truncate" id="boxnow" hidden></span>
+  <span class="build muted">
+    {%- if build.version_url %}<a href="{{ build.version_url }}">{{ build.version }}</a>{% else %}{{ build.version }}{% endif %}
+    {%- if build.commit %} &middot; <a href="{{ build.commit_url }}">{{ build.commit }}</a>{% endif -%}
+  </span>
   <span class="languages" aria-label="{{ t('nav.language') }}">
     {%- for code, name in languages %}
     {%- if code == lang %}<b title="{{ name }}">{{ code | upper }}</b>

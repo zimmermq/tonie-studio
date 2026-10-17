@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -164,10 +165,31 @@ def translator(request: Request) -> Translator:
                                 request.headers.get("accept-language")))
 
 
+# Where the source lives, for the release and commit every page header links to.
+SOURCE = "https://github.com/zimmermq/tonie-studio"
+
+
 def page_context(request: Request) -> Dict:
-    """What every page's template needs: the reader's language and the shared files."""
+    """What every page's template needs: the reader's language, the shared files and the build."""
     translate = translator(request)
-    return {"t": translate, "lang": translate.lang, "languages": languages(), "asset": asset}
+    return {"t": translate, "lang": translate.lang, "languages": languages(), "asset": asset,
+            "build": build()}
+
+
+def build() -> Dict[str, str]:
+    """The release and commit this process runs, as the image was built with them.
+
+    CI passes both when it builds a release; a run from the sources has
+    neither, says "dev" and links nowhere, since nothing there was released.
+    """
+    version = os.environ.get("TS_VERSION") or "dev"
+    commit = os.environ.get("TS_COMMIT") or ""
+    return {
+        "version": version,
+        "version_url": f"{SOURCE}/releases/tag/{version}" if version != "dev" else "",
+        "commit": commit[:7],
+        "commit_url": f"{SOURCE}/commit/{commit}" if commit else "",
+    }
 
 
 @lru_cache(maxsize=None)

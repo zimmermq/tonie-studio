@@ -334,3 +334,25 @@ class TestModelsAreLoadedAtStartup:
 
         with TestClient(app):
             eventually(lambda: asked)
+
+
+class TestBuild:
+    """Every page says which release and commit is running, small, beside the languages."""
+
+    def test_a_release_names_its_version_and_commit(self, client, monkeypatch):
+        monkeypatch.setenv("TS_VERSION", "v0.3.1")
+        monkeypatch.setenv("TS_COMMIT", "41ddb24a3f0c9e1b2d3c4b5a69788796a5b4c3d2")
+
+        footer = client.get("/").text.split('class="build', 1)[1].split("</span>", 1)[0]
+
+        assert "v0.3.1" in footer and "41ddb24" in footer
+        assert "/releases/tag/v0.3.1" in footer
+        assert "/commit/41ddb24a3f0c9e1b2d3c4b5a69788796a5b4c3d2" in footer
+
+    def test_a_local_run_says_dev_and_links_nothing(self, client, monkeypatch):
+        monkeypatch.delenv("TS_VERSION", raising=False)
+        monkeypatch.delenv("TS_COMMIT", raising=False)
+
+        footer = client.get("/").text.split('class="build', 1)[1].split("</span>", 1)[0]
+
+        assert "dev" in footer and "href" not in footer

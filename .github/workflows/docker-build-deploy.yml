@@ -100,13 +100,16 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: TS_VERSION=${{ steps.version.outputs.version }}
+          build-args: |
+            TS_VERSION=${{ steps.version.outputs.version }}
+            TS_COMMIT=${{ github.sha }}
           tags: |
             ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE }}:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Update homelab-iac repository
         env:

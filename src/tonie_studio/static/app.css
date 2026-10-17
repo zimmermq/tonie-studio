@@ -32,6 +32,8 @@ header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; 
 /* Wide enough that an album title is not cut on a normal window, narrow
    enough that a line of prose stays readable. */
 main { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.build { font-size: 12px; white-space: nowrap; }
+.build a { color: inherit; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 28px 0 10px; }
 p.sub { color: var(--muted); margin: 0 0 20px; }
