@@ -14,6 +14,7 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..github import LARGEST_DUMP, RepoError, parse_repo
+from ..teddycloud import TeddyCloudError
 from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
                          ImportProblem, Pace, Run)
 from .. import naming
@@ -100,7 +101,14 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/import/names")
     def apply_names():
-        done = namer.upkeep(migrate=True)
+        # teddyCloud answering with a refusal is not teddyCloud being away,
+        # which is what the app's handler for its errors would say.
+        try:
+            done = namer.upkeep(migrate=True)
+        except TeddyCloudError as error:
+            if error.status and 400 <= error.status < 500:
+                raise Refused(409, "names.refused", detail=str(error)) from error
+            raise
         return RedirectResponse(
             f"/import/names?named={len(done.steps)}&deleted={len(done.retired)}", 303)
 

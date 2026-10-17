@@ -294,13 +294,26 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
 
 
 def apply(client: TeddyCloudClient, todo: Plan) -> None:
-    """Write the models, link the tonies, then delete what nothing points at any more."""
+    """Write the models, link the tonies, delete what nothing points at, then add the audio.
+
+    teddyCloud refuses a custom model whose audio_id and hash another custom
+    model already carries, and a renamed model shares both with the model it
+    replaces until that is deleted. So the new models are written without
+    their audio first and get it only at the end. No tonie is ever without
+    its model on the way. Should a write fail in between, a new model lacks
+    its audio, which only stops teddyCloud from recognising that audio on a
+    tonie that has no model set; every tonie linked here has one.
+    """
+    new_models = [step.new_model for step in todo.steps if step.new_model]
+    for model in new_models:
+        client.upsert_custom_tonie(replace(model, audio_ids=[], hashes=[]).to_json())
     for step in todo.steps:
-        if step.new_model:
-            client.upsert_custom_tonie(step.new_model.to_json())
         client.set_tag(step.ruid, tonie_model=step.model_id)
     if todo.retired:
         client.delete_custom_tonies(todo.retired)
+    for model in new_models:
+        if model.audio_ids and model.hashes:
+            client.upsert_custom_tonie(model.to_json())
     log.info("named %d tonie(s), deleted %d model(s)", len(todo.steps), len(todo.retired))
 
 

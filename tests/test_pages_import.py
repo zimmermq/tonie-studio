@@ -39,6 +39,7 @@ def repo():
 @pytest.fixture
 def importer(teddycloud, settings, repo):
     teddycloud.cloud[WOLF_RUID] = b"taf"
+    teddycloud.unique_audio = True
     importer = Importer(lambda: teddycloud, settings.data_dir, rng=random.Random(1),
                         sleep=lambda s: None, fetch_repo=repo)
     # The tests take the steps themselves; no thread races them.
@@ -268,6 +269,25 @@ class TestNames:
         assert say("names.kind.rename") in page and "NFC-0004" in page and "TS-0001" in page
         assert "Comics - Fledermaus" in page
         assert teddycloud.custom_models[0]["model"] == "NFC-0004"
+
+    def test_a_refusal_from_teddycloud_is_said_as_one(self, site, teddycloud):
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="NFC-0004")
+        teddycloud.custom_models.append({"model": "NFC-0004", "series": "Comics",
+                                         "episodes": "Fledermaus", "audio_id": ["7"],
+                                         "hash": ["77"]})
+
+        def refuse(model):
+            raise TeddyCloudError("teddyCloud answered 400 for /api/toniesCustomJsonUpsert: no",
+                                  status=400)
+        teddycloud.upsert_custom_tonie = refuse
+
+        response = site.post("/import/names")
+
+        assert response.status_code == 409
+        assert "answered 400" in response.text and say("offline.albums_work") not in response.text
 
     def test_applying_renames_and_says_how_much(self, site, teddycloud):
         teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",

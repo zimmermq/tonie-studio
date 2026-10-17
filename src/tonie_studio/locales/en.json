@@ -349,6 +349,7 @@
  "names.kind.reuse": "Existing model of its own (same audio)",
  "names.not_in_library": "Audio is not in the library ({source})",
  "names.nothing": "Nothing to do: every tonie of the latest import has a name, and none of this app's models has become official.",
+ "names.refused": "teddyCloud refused a change; what was written before it stays, the rest does not: {detail}",
  "names.retired": "Models deleted afterwards",
  "names.skipped": "Skipped",
  "names.title": "Names",

@@ -60,6 +60,10 @@ class FakeTeddyCloud:
         self.content_misses = 0
         # The official catalogue, tonies.json.
         self.catalogue: List[dict] = []
+        # teddyCloud 0.7.0 refuses a custom model whose audio_id and hash another
+        # custom model already carries. Off by default: the encode above gives
+        # every taf the same audio, which real encodes never do.
+        self.unique_audio = False
 
     def twin(self) -> "FakeTeddyCloud":
         # One process, no sessions: every thread may share the fake.
@@ -194,6 +198,16 @@ class FakeTeddyCloud:
         missing = [field for field in ("model", "series") if not model.get(field)]
         if missing:
             raise ValueError(f"custom model needs {' and '.join(missing)}")
+        # teddyCloud refuses two custom models with the same audio_id and hash.
+        pairs = {(str(a), str(h).upper()) for a in model.get("audio_id") or []
+                 for h in model.get("hash") or []} if self.unique_audio else set()
+        for other in self.custom_models:
+            if other["model"].lower() == model["model"].lower():
+                continue
+            if pairs & {(str(a), str(h).upper()) for a in other.get("audio_id") or []
+                        for h in other.get("hash") or []}:
+                raise TeddyCloudError("teddyCloud answered 400 for /api/toniesCustomJsonUpsert: "
+                                      "Duplicate audio_id+hash pair detected", status=400)
         for index, existing in enumerate(self.custom_models):
             if existing["model"].lower() == model["model"].lower():
                 self.custom_models[index] = dict(model)

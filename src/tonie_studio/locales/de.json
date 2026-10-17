@@ -349,6 +349,7 @@
  "names.kind.reuse": "Vorhandenes eigenes Modell (gleiches Hörspiel)",
  "names.not_in_library": "Hörspiel liegt nicht in der Bibliothek ({source})",
  "names.nothing": "Nichts zu tun: Alle Tonies des letzten Imports haben einen Namen, und kein eigenes Modell ist inzwischen offiziell.",
+ "names.refused": "teddyCloud hat eine Änderung abgelehnt; bis dahin Geschriebenes bleibt, der Rest nicht: {detail}",
  "names.retired": "Modelle, die danach gelöscht werden",
  "names.skipped": "Übersprungen",
  "names.title": "Namen",

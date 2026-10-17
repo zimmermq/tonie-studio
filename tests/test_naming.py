@@ -301,6 +301,7 @@ class TestNamer:
         from fake_teddycloud import FakeTeddyCloud
 
         fake = FakeTeddyCloud()
+        fake.unique_audio = True
         fake.dirs.update({"/by", "/by/audioID"})
         fake.files[f"/by/audioID/{audio_id}.taf"] = b"taf"
         fake.taf_headers[f"/by/audioID/{audio_id}.taf"] = header(audio_id, sha1)
@@ -342,6 +343,8 @@ class TestNamer:
 
         assert [m["model"] for m in fake.custom_models] == ["TS-0001"]
         assert fake.tag_entries[ruid("00000001")]["tonie_model"] == "TS-0001"
+        # Written without its audio while the old model still had it, then with it.
+        assert (fake.custom_models[0]["audio_id"], fake.custom_models[0]["hash"]) == (["7"], ["77"])
 
     def test_the_upkeep_promotes_a_model_the_catalogue_now_covers(self):
         from tonie_studio.naming import Namer
