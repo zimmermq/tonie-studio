@@ -1,8 +1,8 @@
 """Tests for naming imported tonies after the catalogue or their dump's file name."""
 
 from tonie_studio.models import Model
-from tonie_studio.naming import (NEW, OFFICIAL, PROMOTE, RENAME, REUSE, Catalog, Name, norm,
-                                 official_by_audio, plan, promotions)
+from tonie_studio.naming import (NEW, OFFICIAL, PROMOTE, RENAME, RETITLE, REUSE, Catalog, Name,
+                                 fingerprint, norm, official_by_audio, plan, promotions)
 from tonie_studio.tags import TonieTag
 
 OFFICIAL_ENTRIES = [
@@ -99,6 +99,15 @@ class TestSets:
         name = self.catalog.figure("Wuselwesen/Luft & Elektrizitaet.nfc", "11004634")
 
         assert name.episode == "Luft & Elektrizität"
+
+    def test_a_figure_matches_a_track_named_after_its_series(self):
+        # The catalogue writes "<series> - <figure>", dump files "<series> Set - <figure>".
+        catalog = Catalog([{"model": "11003994", "series": "Eule", "episodes": "Eule Set",
+                            "tracks": ["Eule - Mit Gefühl", "Eule - Auf Reisen"]}])
+
+        name = catalog.figure("Eule/Eule Set - Mit Gefuehl.nfc", "11003994")
+
+        assert (name.series, name.episode) == ("Eule", "Mit Gefühl")
 
     def test_a_figure_without_a_matching_track_keeps_the_file_name(self):
         name = self.catalog.figure("Tolle Berufe/5 Neu.nfc", "11000801")
@@ -253,6 +262,64 @@ class TestPlan:
         assert result.steps == [] and result.retired == []
 
 
+class TestRetitling:
+    eule = [{"model": "11003994", "series": "Eule", "episodes": "Eule Set", "language": "de-de",
+             "tracks": ["Eule - Mit Gefühl", "Eule - Auf Reisen"],
+             "audio_id": ["11", "12"], "hash": ["AA", "BB"]}]
+
+    def test_a_model_of_ours_gets_the_better_name_the_rules_now_find(self):
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Eule Set - Mit Gefuehl")
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")}, retitle=True)
+
+        (step,) = result.steps
+        assert (step.kind, step.model_id, step.new_model.episode) == (RETITLE, "TS-0039", "Mit Gefühl")
+        assert step.new_model.audio_ids == ["11"] and result.retired == []
+
+    def test_only_when_asked(self):
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Eule Set - Mit Gefuehl")
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")})
+
+        assert result.steps == []
+
+    def test_a_name_that_is_already_right_is_left(self):
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Mit Gefühl")
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")}, retitle=True)
+
+        assert result.steps == []
+
+    def test_album_tonies_have_no_dump_and_are_never_retitled(self):
+        ours = model("TS-0001", 9, "99", series="Mein Album", episode="Teil 1")
+        result = plan([tag(ruid("00000001"), lib(9), "TS-0001")], {}, Catalog([]), {}, [ours],
+                      {"9.taf": header(9, "99")}, retitle=True)
+
+        assert result.steps == []
+
+
+class TestFingerprint:
+    def test_the_same_plan_gives_the_same_print_and_a_change_another(self):
+        tags = [tag(ruid("00000001"), lib(1))]
+        dumps = {ruid("00000001"): "A/Eins.nfc"}
+        headers = {"1.taf": header(1, "11")}
+
+        first = plan(tags, dumps, Catalog([]), {}, [], headers)
+        again = plan(tags, dumps, Catalog([]), {}, [], headers)
+        other = plan(tags, {ruid("00000001"): "A/Zwei.nfc"}, Catalog([]), {}, [], headers)
+
+        assert fingerprint(first) == fingerprint(again) != fingerprint(other)
+
+
 class TestRenaming:
     def test_models_from_the_old_script_move_into_this_apps_namespace(self):
         old = model("NFC-0004", 7, "77", series="Comics", episode="Fledermaus")
@@ -345,6 +412,21 @@ class TestNamer:
         assert fake.tag_entries[ruid("00000001")]["tonie_model"] == "TS-0001"
         # Written without its audio while the old model still had it, then with it.
         assert (fake.custom_models[0]["audio_id"], fake.custom_models[0]["hash"]) == (["7"], ["77"])
+
+    def test_the_upkeep_writes_nothing_when_the_plan_is_not_the_one_shown(self):
+        import pytest
+
+        from tonie_studio.naming import Namer, PlanChanged
+
+        fake = self.teddycloud_with(7, "77", ruid("00000001"), model_id="NFC-0004")
+        fake.custom_models.append({"model": "NFC-0004", "series": "Comics", "episodes": "Fledermaus",
+                                   "audio_id": ["7"], "hash": ["77"]})
+        namer = Namer(lambda: fake, dict)
+
+        with pytest.raises(PlanChanged):
+            namer.upkeep(migrate=True, expect="not what is planned now")
+
+        assert [m["model"] for m in fake.custom_models] == ["NFC-0004"]
 
     def test_the_upkeep_promotes_a_model_the_catalogue_now_covers(self):
         from tonie_studio.naming import Namer

@@ -284,10 +284,27 @@ class TestNames:
                                   status=400)
         teddycloud.upsert_custom_tonie = refuse
 
-        response = site.post("/import/names")
+        page = site.get("/import/names").text
+        seen = page.split('name="plan" value="', 1)[1].split('"', 1)[0]
+
+        response = site.post("/import/names", data={"plan": seen})
 
         assert response.status_code == 409
         assert "answered 400" in response.text and say("offline.albums_work") not in response.text
+
+    def test_applying_after_a_change_writes_nothing_and_shows_the_new_plan(self, site, teddycloud):
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="NFC-0004")
+        teddycloud.custom_models.append({"model": "NFC-0004", "series": "Comics",
+                                         "episodes": "Fledermaus", "audio_id": ["7"],
+                                         "hash": ["77"]})
+
+        response = site.post("/import/names", data={"plan": "seen before the change"},
+                             follow_redirects=False)
+
+        assert response.headers["location"] == "/import/names?changed=1"
+        assert teddycloud.custom_models[0]["model"] == "NFC-0004"
+        assert say("names.changed") in site.get("/import/names?changed=1").text
 
     def test_applying_renames_and_says_how_much(self, site, teddycloud):
         teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
@@ -296,7 +313,10 @@ class TestNames:
                                          "episodes": "Fledermaus", "audio_id": ["7"],
                                          "hash": ["77"]})
 
-        response = site.post("/import/names", follow_redirects=False)
+        page = site.get("/import/names").text
+        seen = page.split('name="plan" value="', 1)[1].split('"', 1)[0]
+
+        response = site.post("/import/names", data={"plan": seen}, follow_redirects=False)
 
         assert response.headers["location"] == "/import/names?named=1&deleted=1"
         assert [m["model"] for m in teddycloud.custom_models] == ["TS-0001"]

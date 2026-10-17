@@ -27,7 +27,8 @@ STATES = (PENDING, IMPORTED, CACHED, FAILED, DUPLICATE, UNREADABLE)
 RECENT = 10
 
 # The order the naming steps are listed in.
-KINDS = (naming.RENAME, naming.PROMOTE, naming.NEW, naming.REUSE, naming.OFFICIAL)
+KINDS = (naming.RENAME, naming.PROMOTE, naming.RETITLE, naming.NEW, naming.REUSE,
+         naming.OFFICIAL)
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -89,22 +90,27 @@ def register(app: FastAPI, ctx: Context) -> None:
         return RedirectResponse("/import", 303)
 
     @app.get("/import/names", response_class=HTMLResponse)
-    def names_page(request: Request, named: int = -1, deleted: int = 0):
+    def names_page(request: Request, named: int = -1, deleted: int = 0, changed: int = 0):
         """What the upkeep would change now, renaming the old models included."""
         todo = namer.preview(migrate=True)
         steps = sorted(todo.steps, key=lambda step: (KINDS.index(step.kind), step.path))
         return templates.TemplateResponse(request, "names.html", {
             "plan": todo, "steps": steps, "kinds": KINDS,
             "counts": {kind: sum(1 for step in steps if step.kind == kind) for kind in KINDS},
-            "named": named, "deleted": deleted,
+            "named": named, "deleted": deleted, "changed": bool(changed),
+            "fingerprint": naming.fingerprint(todo),
         })
 
     @app.post("/import/names")
-    def apply_names():
+    def apply_names(plan: str = Form("")):
+        # Only what the person looked at is written: a plan that changed since,
+        # say because an import moved on, is shown again instead.
         # teddyCloud answering with a refusal is not teddyCloud being away,
         # which is what the app's handler for its errors would say.
         try:
-            done = namer.upkeep(migrate=True)
+            done = namer.upkeep(migrate=True, expect=plan)
+        except naming.PlanChanged:
+            return RedirectResponse("/import/names?changed=1", 303)
         except TeddyCloudError as error:
             if error.status and 400 <= error.status < 500:
                 raise Refused(409, "names.refused", detail=str(error)) from error

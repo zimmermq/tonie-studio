@@ -30,6 +30,8 @@ guessed.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 import threading
@@ -63,6 +65,7 @@ NEW = "new"            # make a custom model and link to it
 REUSE = "reuse"        # link to the custom model that already carries the audio
 PROMOTE = "promote"    # replace a custom model the catalogue now covers
 RENAME = "rename"      # move an NFC- model into this app's namespace
+RETITLE = "retitle"    # give a model of ours the better name the rules find now
 
 # How long a copy of the catalogue is used before it is fetched again. It
 # changes a few times a week and is several megabytes.
@@ -133,14 +136,26 @@ class Catalog:
         return self.is_set(model_id) or self.is_stub(model_id)
 
     def figure(self, path: str, set_model: str) -> Name:
-        """The name of one figure of a set: the set's track its file name matches."""
+        """The name of one figure of a set: the set's track its file name matches.
+
+        The catalogue lists a set's figures as its tracks, often as "<series> -
+        <figure>", while a dump is called "<series> Set - <figure>", so a track
+        is also matched by what follows its series. The figure's name is then
+        that part, in the catalogue's spelling.
+        """
         entry = self.by_model[set_model]
+        series = entry.get("series") or ""
         dump = PurePosixPath(path)
         stem = norm(dump.stem)
-        tracks = [track for track in entry.get("tracks") or []
-                  if norm(track) and (norm(track) in stem or stem in norm(track))]
-        episode = tracks[0] if len(tracks) == 1 else dump.stem
-        return Name(None, entry.get("series") or dump.parent.name, episode,
+        found = []
+        for track in entry.get("tracks") or []:
+            head, separator, rest = track.partition(" - ")
+            figure = rest if separator and norm(head) == norm(series) and rest.strip() else track
+            whole, own = norm(track), norm(figure)
+            if (whole and (whole in stem or stem in whole)) or (own and own in stem):
+                found.append(figure.strip())
+        episode = found[0] if len(found) == 1 else dump.stem
+        return Name(None, series or dump.parent.name, episode,
                     entry.get("category") or "", entry.get("pic") or "")
 
 
@@ -201,10 +216,22 @@ class Plan:
         return not self.steps and not self.retired
 
 
+class PlanChanged(Exception):
+    """The plan is no longer the one a person looked at before applying it."""
+
+
+def fingerprint(todo: Plan) -> str:
+    """A short digest of everything a plan would write, to tell two plans apart."""
+    steps = [[step.kind, step.ruid, step.model_id, step.replaces,
+              step.new_model.to_json() if step.new_model else None] for step in todo.steps]
+    text = json.dumps([steps, todo.retired], sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
+
+
 def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
          by_audio: Mapping[Tuple[str, str], str], models: List[Model],
          headers: Mapping[str, Mapping[str, Any]], migrate: bool = False,
-         relink: bool = True) -> Plan:
+         relink: bool = True, retitle: bool = False) -> Plan:
     """What naming the tonies in ``dumps`` (``{ruid: dump path}``) takes.
 
     ``tags`` is teddyCloud's tag index, whose model is the one teddyCloud names
@@ -212,7 +239,9 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
     ``headers`` holds the taf headers of the library's ``by/audioID`` folder by
     file name. With ``relink`` every tonie on a model the catalogue now covers
     is moved to the official one; with ``migrate`` the NFC- models move into
-    this app's namespace too.
+    this app's namespace too; with ``retitle`` a model of this app named after
+    a dump in ``dumps`` is renamed when the rules now find a better name, such
+    as a set figure's official title.
     """
     tags = list(tags)
     by_ruid = {tag.ruid: tag for tag in tags}
@@ -290,7 +319,48 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
         available.append(model)
         result.steps.append(Step(NEW, ruid, model.id, name=name, path=path, new_model=model,
                                  replaces=current))
+        handled.add(ruid)
+
+    if retitle:
+        result.steps.extend(_retitles(by_ruid, dumps, handled, catalog, by_audio, models, headers))
     return result
+
+
+def _retitles(by_ruid: Mapping[str, TonieTag], dumps: Mapping[str, str], handled: set,
+              catalog: Catalog, by_audio: Mapping[Tuple[str, str], str], models: List[Model],
+              headers: Mapping[str, Mapping[str, Any]]) -> List[Step]:
+    """Better names for this app's models of imported tonies.
+
+    Only tonies with a dump are looked at, so a model this app made from an
+    album is never renamed: no dump names it.
+    """
+    ours = {model.id: model for model in models if model.id.startswith(MODEL_PREFIX)}
+    steps, done = [], set()
+    for ruid, path in dumps.items():
+        tag = by_ruid.get(ruid)
+        if ruid in handled or tag is None or tag.model not in ours or tag.model in done:
+            continue
+        header = headers.get(tag.source[len(LIBRARY_PREFIX):]) \
+            if tag.source.startswith(LIBRARY_PREFIX) else None
+        if not header:
+            continue
+        official = by_audio.get((str(header["audioId"]), str(header["sha1Hash"]).upper()))
+        if official and catalog.is_set(official):
+            name = catalog.figure(path, official)
+        elif official:
+            continue  # the catalogue names it; promotion moves it there
+        else:
+            name = catalog.describe(path)
+            if name.model:
+                continue
+        model = ours[tag.model]
+        if (model.series, model.episode) == (name.series, name.episode):
+            continue
+        done.add(model.id)
+        steps.append(Step(RETITLE, ruid, model.id, name=name, path=path,
+                          new_model=replace(model, series=name.series, episode=name.episode),
+                          label=tag.label))
+    return steps
 
 
 def apply(client: TeddyCloudClient, todo: Plan) -> None:
@@ -304,16 +374,22 @@ def apply(client: TeddyCloudClient, todo: Plan) -> None:
     its audio, which only stops teddyCloud from recognising that audio on a
     tonie that has no model set; every tonie linked here has one.
     """
-    new_models = [step.new_model for step in todo.steps if step.new_model]
+    new_models = [step.new_model for step in todo.steps
+                  if step.new_model and step.kind != RETITLE]
     for model in new_models:
         client.upsert_custom_tonie(replace(model, audio_ids=[], hashes=[]).to_json())
     for step in todo.steps:
-        client.set_tag(step.ruid, tonie_model=step.model_id)
+        if step.kind != RETITLE:
+            client.set_tag(step.ruid, tonie_model=step.model_id)
     if todo.retired:
         client.delete_custom_tonies(todo.retired)
     for model in new_models:
         if model.audio_ids and model.hashes:
             client.upsert_custom_tonie(model.to_json())
+    # A renamed model keeps its id and audio, so it is written in one go.
+    for step in todo.steps:
+        if step.kind == RETITLE:
+            client.upsert_custom_tonie(step.new_model.to_json())
     log.info("named %d tonie(s), deleted %d model(s)", len(todo.steps), len(todo.retired))
 
 
@@ -346,16 +422,26 @@ class Namer:
         return self._catalog[1], self._catalog[2]
 
     def preview(self, migrate: bool = False) -> Plan:
-        """What the upkeep would do now, over every tonie of the latest import."""
+        """What the upkeep would do now, over every tonie of the latest import.
+
+        With ``migrate`` also what only a person starts: moving NFC- models
+        into this app's namespace and renaming models the rules now name better.
+        """
         client = self.client()
         catalog, by_audio = self.catalog()
         return plan(list_tags(client), self.dumps(), catalog, by_audio, list_models(client),
-                    library_headers(client), migrate=migrate)
+                    library_headers(client), migrate=migrate, retitle=migrate)
 
-    def upkeep(self, migrate: bool = False) -> Plan:
-        """Plan and carry out the upkeep in one go, under the lock writes share."""
+    def upkeep(self, migrate: bool = False, expect: Optional[str] = None) -> Plan:
+        """Plan and carry out the upkeep in one go, under the lock writes share.
+
+        With ``expect``, the fingerprint of the plan a person was shown, nothing
+        is written unless the plan is still that one; :class:`PlanChanged` says so.
+        """
         with self._lock:
             todo = self.preview(migrate)
+            if expect is not None and fingerprint(todo) != expect:
+                raise PlanChanged()
             if not todo.empty:
                 apply(self.client(), todo)
             return todo

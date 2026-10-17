@@ -7,6 +7,10 @@
   {{ t("names.intro") }}
 </p>
 
+{% if changed %}
+<p class="state-failed">{{ t("names.changed") }}</p>
+{% endif %}
+
 {% if named >= 0 %}
 <p class="state-done">{{ t("names.done", named=named, deleted=deleted) }}</p>
 {% endif %}
@@ -30,6 +34,7 @@
 </div>
 
 <form method="post" action="/import/names" class="row wrap gap-12 mt-14">
+  <input type="hidden" name="plan" value="{{ fingerprint }}">
   <button type="submit" class="primary">{{ t("names.apply") }}</button>
   <a class="button" href="/import">{{ t("names.back") }}</a>
 </form>
