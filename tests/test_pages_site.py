@@ -82,6 +82,22 @@ class TestTeddyCloudDown:
     def test_the_sheet_page_says_it_too(self, offline):
         assert offline.get("/sheet").status_code == 503
 
+    def test_a_refusal_is_not_called_an_outage(self, settings, runner, tags):
+        class Refusing:
+            def __getattr__(self, _name):
+                def refuse(*args, **kwargs):
+                    raise TeddyCloudError("teddyCloud answered 400 for /api/getTagIndex: no",
+                                          status=400)
+                return refuse
+
+        app = create_app(settings, client_factory=Refusing, runner=runner)
+        with TestClient(app) as client:
+            response = client.get("/tonies")
+
+        assert response.status_code == 502
+        assert "answered 400" in response.text
+        assert "Ohne teddyCloud gibt es keine Sticker" not in response.text
+
     def test_health_stays_green_because_this_app_is_fine(self, offline):
         # Readiness must not follow teddyCloud, or its restart rolls this pod.
         assert offline.get("/health").status_code == 200

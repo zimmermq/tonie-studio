@@ -434,8 +434,39 @@ class TestRepublishing:
         assert model.tracks == ["Zwei"]
 
 
+class TestSameAudioOnTwoStickers:
+    """teddyCloud 0.7.0 refuses a second custom model with the same audio_id and hash."""
+
+    def test_the_second_sticker_gets_a_model_of_its_own_without_the_audio(self, teddycloud,
+                                                                          encoded, cover):
+        teddycloud.unique_audio = True
+        first = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="Eins",
+                        tracks=["a"], cover=cover)
+
+        second = publish(teddycloud, "deb4ed0e500304e0", encoded, series="S", episode="Zwei",
+                         tracks=["a"], cover=cover)
+
+        models = {model["model"]: model for model in teddycloud.custom_tonies()}
+        assert models[first]["audio_id"] == [encoded.audio_id]
+        assert "audio_id" not in models[second] and models[second]["episodes"] == "Zwei"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["tonie_model"] == second
+
+    def test_publishing_again_onto_the_same_model_keeps_its_audio(self, teddycloud, encoded,
+                                                                  cover):
+        teddycloud.unique_audio = True
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="Eins",
+                           tracks=["a"], cover=cover)
+
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="Eins neu",
+                tracks=["a"], cover=cover, model_id=model_id)
+
+        (model,) = teddycloud.custom_tonies()
+        assert model["audio_id"] == [encoded.audio_id] and model["episodes"] == "Eins neu"
+
+
 class TestPublishingAtOnce:
     def test_two_publishes_at_the_same_time_make_two_models(self, teddycloud, encoded, cover):
+        teddycloud.unique_audio = True
         # Placing a sticker while a batch encode publishes is two threads; with
         # the id picked before a slow cover upload both took TS-0001.
         import threading

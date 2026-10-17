@@ -25,8 +25,8 @@ from typing import Optional, Sequence, Union
 
 from .encode import EncodeResult, delete_taf, taf_exists
 from .library import is_library, path_of, same
-from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, find_model, new_model, next_model_id,
-                     release_from_year, remove_model, upload_cover)
+from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, find_model, find_model_by_audio,
+                     new_model, next_model_id, release_from_year, remove_model, upload_cover)
 from .tags import TonieError, find_tag, list_tags, require_tag
 from .teddycloud import TeddyCloudClient
 
@@ -76,7 +76,13 @@ def publish(
         model = new_model(model_id, series, episode, tracks, language, category)
         model.release = release_from_year(year) or ""
         if encoded.audio_id is not None and encoded.sha1:
-            model.audio_ids, model.hashes = [encoded.audio_id], [encoded.sha1.upper()]
+            # teddyCloud refuses a second custom model with the same audio_id
+            # and hash. A sticker given audio another model already carries gets
+            # a model without them: it names its model outright, and only the
+            # automatic naming of other tags by this audio stays with the first.
+            holder = find_model_by_audio(client, encoded.audio_id, encoded.sha1)
+            if holder is None or holder.id.lower() == model_id.lower():
+                model.audio_ids, model.hashes = [encoded.audio_id], [encoded.sha1.upper()]
 
         if cover is not None:
             model.picture = upload_cover(client, model_id, cover, cover_name)
