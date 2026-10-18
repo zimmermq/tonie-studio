@@ -41,25 +41,37 @@ class Part:
     episode: str
 
 
+def ordered_tracks(album: Album, order: str) -> List[Tuple[int, Track]]:
+    """The album's tracks in the order the page sent, each with its row's position.
+
+    ``order`` carries one track number per row of the page, as the rows were
+    arranged; the titles are sent one per row too, so a track's title is the
+    one at its position. Something that is no track number, or a track named
+    a second time, is passed over and keeps its position for nobody else.
+    """
+    by_number = {track.number: track for track in album.tracks}
+    ordered, seen = [], set()
+    for position, part in enumerate(order.split(",")):
+        number = int(part) if part.strip().isdigit() else None
+        if number in by_number and number not in seen:
+            seen.add(number)
+            ordered.append((position, by_number[number]))
+    return ordered
+
+
 def chosen_tracks(album: Album, order: str, selected: Sequence[int],
                   titles: Sequence[str]) -> List[Chosen]:
     """The tracks to encode with their names, in the order the page put them in.
 
-    ``order`` carries the track numbers as the list was arranged and is what
-    the titles are aligned to: both are submitted in the order the rows sit in,
-    so the nth title belongs to the nth number. Reading a title by its track
-    number instead would hand the wrong name to every reordered track.
+    Read as ``ordered_tracks`` reads the form; without an order, the album's.
+    Reading a title by its track number instead of its row would hand the
+    wrong name to every reordered track.
     """
-    by_number = {track.number: track for track in album.tracks}
-    numbers = [int(part) for part in order.split(",") if part.strip().isdigit()]
-    if not numbers:
-        numbers = list(by_number)
-
+    ordered = ordered_tracks(album, order) or list(enumerate(album.tracks))
     keep = set(selected)
     chosen = []
-    for position, number in enumerate(numbers):
-        track = by_number.get(number)
-        if track is None or number not in keep:
+    for position, track in ordered:
+        if track.number not in keep:
             continue
         name = titles[position].strip() if position < len(titles) else ""
         chosen.append((track, name or track.title))

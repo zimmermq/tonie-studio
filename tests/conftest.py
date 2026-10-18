@@ -70,7 +70,9 @@ def teddycloud():
     # Two tags the box has already read; nothing is assigned yet.
     cloud.add_tag("7ab4ed0e500304e0")
     cloud.add_tag("deb4ed0e500304e0")
-    return cloud
+    yield cloud
+    # The real server drops the connection for these; see dir_misses.
+    assert cloud.dir_misses == [], f"listed folders that do not exist: {cloud.dir_misses}"
 
 
 @pytest.fixture
@@ -94,12 +96,14 @@ def make_site(settings, teddycloud, runner, tags, box):
 
     Called rather than requested, so a test can set things up first that the
     app reads as it starts. Every app started is shut down after the test.
+    The loops that work on their own stay off unless asked for with
+    ``background=True``: they would race the test's changes to teddyCloud.
     """
     started = []
 
     def make(**overrides):
         options = {"client_factory": lambda: teddycloud, "runner": runner, "watcher": box,
-                   **overrides}
+                   "background": False, **overrides}
         site = TestClient(create_app(options.pop("settings", settings), **options))
         started.append(site)
         return site.__enter__()

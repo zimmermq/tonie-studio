@@ -432,3 +432,51 @@ class TestReadingSeveralAlbums:
 
         assert read == [path.name for path in paths]
         assert most[0] > 1
+
+
+def _flac(path, seconds=3, **tags):
+    """A FLAC file of nothing but its header, tagged: enough for mutagen to read."""
+    import struct
+
+    from mutagen.flac import FLAC
+
+    rate, channels, bits = 44100, 2, 16
+    packed = (rate << 44) | ((channels - 1) << 41) | ((bits - 1) << 36) | (rate * seconds)
+    info = struct.pack(">HH", 4096, 4096) + b"\x00" * 6 + struct.pack(">Q", packed) + b"\x00" * 16
+    path.write_bytes(b"fLaC" + bytes([0x80, 0, 0, len(info)]) + info)
+    audio = FLAC(path)
+    for key, value in tags.items():
+        audio[key] = value
+    audio.save()
+    return path
+
+
+class TestReadingRealTags:
+    """Every other test stands in for the tag reader; this one reads a real file."""
+
+    def test_reads_names_numbers_and_length(self, tmp_path):
+        from tonie_studio.album import _read_tags
+
+        path = _flac(tmp_path / "03.flac", title="Papagei", artist="Lichterkinder",
+                     album="Tierische Tierlieder", tracknumber="3/30", discnumber="1",
+                     date="2021")
+
+        tags = _read_tags(path)
+
+        assert (tags.title, tags.artist, tags.album, tags.track, tags.disc, tags.date) == (
+            "Papagei", "Lichterkinder", "Tierische Tierlieder", 3, 1, "2021")
+        assert tags.duration == pytest.approx(3.0)
+
+    def test_a_file_without_tags_reads_as_empty(self, tmp_path):
+        from tonie_studio.album import _read_tags
+
+        tags = _read_tags(_flac(tmp_path / "01.flac"))
+
+        assert (tags.title, tags.track) == (None, None)
+
+    def test_a_file_that_is_no_audio_has_no_tags(self, tmp_path):
+        from tonie_studio.album import _read_tags
+
+        (tmp_path / "01.flac").write_bytes(b"not audio")
+
+        assert _read_tags(tmp_path / "01.flac") is None

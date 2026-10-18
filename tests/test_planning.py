@@ -48,6 +48,25 @@ class TestChosenTracks:
 
         assert [(track.number, name) for track, name in chosen] == [(2, "Zweiter"), (1, "Erster")]
 
+    @pytest.mark.parametrize("order, titles", [
+        ("2,x,1", ["Zweiter", "?", "Erster"]),     # something that is no number
+        ("2,2,1", ["Zweiter", "noch mal", "Erster"]),  # a track twice
+    ])
+    def test_the_page_shown_again_and_the_encode_read_the_form_alike(self, order, titles):
+        # The album page shows the form back on an error; what it shows has
+        # to be what would be encoded, or a fix on the page fixes the wrong row.
+        from tonie_studio.pages.albums import AlbumForm
+
+        album = Album(path=None, title="A", artist=None, year=None,
+                      tracks=[_track(1), _track(2)], cover=None)
+
+        chosen = chosen_tracks(album, order, [1, 2], titles)
+        shown = AlbumForm.submitted(album, "S", "E", order, [1, 2], titles, 1, 0, 1.0, 0.0, 0.0)
+
+        assert [(track.number, name) for track, name in chosen] == [
+            (row.track.number, row.title) for row in shown.rows if row.checked]
+        assert [(track.number, name) for track, name in chosen] == [(2, "Zweiter"), (1, "Erster")]
+
 
 class TestSuggestSeries:
     def test_a_folder_in_the_archive_names_the_series(self, tmp_path):

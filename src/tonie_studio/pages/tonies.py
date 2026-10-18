@@ -13,7 +13,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..albumnotes import made
-from ..encode import EncodeError, taf_exists
+from ..encode import EncodeError, list_folder, taf_exists
 from ..library import is_library, path_of
 from ..listing import Column, filters
 from ..models import (CATEGORIES, DEFAULT_CATEGORY, cover_url,
@@ -271,7 +271,7 @@ def _library_dates(connection: TeddyCloudClient) -> Dict[str, datetime]:
     the list then leaves the date empty rather than guess.
     """
     try:
-        files = connection.list_dir(LIBRARY_FOLDER, special="library")
+        files = list_folder(connection, LIBRARY_FOLDER)
     except TeddyCloudError:
         return {}
     return {LIBRARY_PREFIX + entry["name"]: from_seconds(entry["date"])

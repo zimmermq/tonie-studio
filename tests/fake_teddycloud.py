@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional, Set
 
-from tonie_studio.teddycloud import TeddyCloudError
+from tonie_studio.teddycloud import RUID_PATTERN, TeddyCloudError
 
 
 def _parent(path: str) -> str:
@@ -63,6 +63,10 @@ class FakeTeddyCloud:
         # Lookups of a tonie whose content folder does not exist, which the
         # real server logs as a 404 warning each.
         self.content_misses = 0
+        # Listings of a folder that does not exist. The real server answers
+        # those by dropping the connection, which the client retries twice
+        # and logs; the app looks in the parent first instead.
+        self.dir_misses: List[str] = []
         # The official catalogue, tonies.json.
         self.catalogue: List[dict] = []
         # teddyCloud 0.7.0 refuses a custom model whose audio_id and hash another
@@ -89,6 +93,7 @@ class FakeTeddyCloud:
             ]
         stickers = self._stickers_in(path)
         if path not in self.dirs and not stickers:
+            self.dir_misses.append(path)
             raise TeddyCloudError(f"no such directory: {path}")
 
         # teddyCloud lists the link to the parent as an ordinary entry.
@@ -203,6 +208,8 @@ class FakeTeddyCloud:
         return index
 
     def set_tag(self, ruid: str, **fields) -> None:
+        if not RUID_PATTERN.match(ruid):
+            raise ValueError(f"not a tag ruid: {ruid!r}")
         # teddyCloud keeps one content JSON per tonie: a tag the box has read
         # and a tonie only an import wrote are changed the same way.
         stored = f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json"
@@ -284,6 +291,8 @@ class FakeTeddyCloud:
         self.files[f"{folder}/{ruid[8:].upper()}.json"] = json.dumps(fields).encode()
 
     def content_entry(self, ruid: str) -> dict:
+        if not RUID_PATTERN.match(ruid):
+            raise ValueError(f"not a tag ruid: {ruid!r}")
         folder = f"/{ruid[:8].upper()}"
         if folder not in self.dirs:
             self.content_misses += 1

@@ -17,7 +17,7 @@ class TestStartup:
         teddycloud.create_dir("/_tonie-studio-staging/abandoned")
         teddycloud.files["/_tonie-studio-staging/abandoned/001.flac"] = b"x"
 
-        started = make_site()
+        started = make_site(background=True)
         eventually(lambda: teddycloud.files == {})
         assert started.get("/health").status_code == 200
 
@@ -31,7 +31,7 @@ class TestStartup:
         long_ago = time.time() - 30 * 86400
         os.utime(stale, (long_ago, long_ago))
 
-        make_site()
+        make_site(background=True)
         eventually(lambda: not stale.exists())
 
     def test_starts_while_teddycloud_is_unreachable(self, settings, runner, tags):

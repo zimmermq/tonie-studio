@@ -5,6 +5,7 @@ real one, so a test that passes here would not have been rejected there.
 """
 
 import pytest
+from web_helpers import eventually
 from fake_teddycloud import FakeTeddyCloud
 
 from tonie_studio.encode import (STAGING_ROOT, EncodeError, delete_taf, encode_files, library_path,
@@ -94,6 +95,29 @@ class TestStaging:
 
         assert not [path for path in teddycloud.files if path.startswith(STAGING_ROOT)]
         assert not [path for path in teddycloud.dirs if path.startswith(f"{STAGING_ROOT}/")]
+
+    def test_a_cleanup_that_fails_does_not_hide_why_the_encode_failed(self, teddycloud, sources):
+        # The cleanup runs after the failure; its own trouble is logged, and
+        # the error that reaches the page is still the one worth knowing.
+        teddycloud.encode_fails = "ffmpeg died"
+
+        def refuse(path, special=None):
+            raise TeddyCloudError("teddyCloud refused /api/fileDelete", refused=True)
+
+        teddycloud.delete = refuse
+
+        with pytest.raises(TeddyCloudError) as raised:
+            encode_files(teddycloud, sources, "/a.taf")
+
+        assert "ffmpeg died" in str(raised.value)
+
+    def test_a_progress_report_that_fails_does_not_fail_the_encode(self, teddycloud, sources):
+        def broken(step, done, total):
+            raise RuntimeError("the page went away")
+
+        result = encode_files(teddycloud, sources, "/a.taf", progress=broken)
+
+        assert result.target == "/a.taf" and "/a.taf" in teddycloud.files
 
     def test_gives_every_job_its_own_folder(self, teddycloud, sources):
         encode_files(teddycloud, sources, "/a.taf")
@@ -289,7 +313,7 @@ class TestEncodeProgress:
                 target=_watch_growth,
                 args=(teddycloud, "/a.taf", 600.0, lambda *a: seen.append(a), stop))
             thread.start()
-            _eventually(lambda: seen)
+            eventually(lambda: seen)
             stop.set()
             thread.join(2)
         finally:
@@ -315,7 +339,7 @@ class TestEncodeProgress:
                 target=_watch_growth,
                 args=(teddycloud, "/a.taf", 600.0, lambda *a: seen.append(a), stop))
             thread.start()
-            _eventually(lambda: seen)
+            eventually(lambda: seen)
             stop.set()
             thread.join(2)
         finally:
@@ -330,16 +354,6 @@ class TestEncodeProgress:
 
         assert [step for step, _, _ in seen] == ["upload", "upload", "upload", "encode"]
 
-
-def _eventually(condition, timeout=3.0):
-    import time
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if condition():
-            return
-        time.sleep(0.01)
-    raise AssertionError("condition never became true")
 
 
 class TestStagingRootAbsent:

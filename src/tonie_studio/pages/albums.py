@@ -23,7 +23,7 @@ from ..library import same
 from ..listing import Column, filters
 from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
-from ..planning import chosen_tracks, expected_targets, plan_parts
+from ..planning import chosen_tracks, expected_targets, ordered_tracks, plan_parts
 from ..jobs import Groups, JobRunner
 from ..publishing import Crop, Details, encode_job, job_states
 from ..uploads import UploadError, spool
@@ -283,18 +283,14 @@ class AlbumForm:
         A track the order leaves out keeps its place at the end, unticked, so
         no row of the album disappears from the page.
         """
-        by_number = {track.number: track for track in album.tracks}
         keep = set(selected)
-        rows, seen = [], set()
-        for position, part in enumerate(order.split(",")):
-            number = int(part) if part.strip().isdigit() else None
-            if number not in by_number or number in seen:
-                continue
-            seen.add(number)
-            title = titles[position] if position < len(titles) else by_number[number].title
-            rows.append(TrackRow(by_number[number], title, number in keep))
+        ordered = ordered_tracks(album, order)
+        rows = [TrackRow(track, (titles[position].strip() if position < len(titles) else "")
+                         or track.title, track.number in keep)
+                for position, track in ordered]
+        seen = {track.number for _position, track in ordered}
         rows += [TrackRow(track, track.title, False)
-                 for number, track in by_number.items() if number not in seen]
+                 for track in album.tracks if track.number not in seen]
         return cls(series=series, episode=episode, rows=rows, parts=parts,
                    cover_index=cover_index, cover_zoom=cover_zoom,
                    cover_x=cover_x, cover_y=cover_y)

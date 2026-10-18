@@ -69,8 +69,14 @@ def create_app(
     fetch: Fetch = download,
     importer: Optional[Importer] = None,
     shop: Optional[Shop] = None,
+    background: bool = True,
 ) -> FastAPI:
-    """Build the app. The dependencies are injected so tests can replace them."""
+    """Build the app. The dependencies are injected so tests can replace them.
+
+    ``background`` false starts none of the loops that work on their own -
+    housekeeping, podcasts, the importer, the naming - for a test that changes
+    teddyCloud while the app runs and must not race them.
+    """
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     templates.env.filters["cover_name"] = cover_name
     templates.env.filters["cover_url"] = cover_url
@@ -118,15 +124,16 @@ def create_app(
         # Off the startup path on purpose. An unreachable teddyCloud answers
         # only after DNS timeouts and retries, and blocking here would hold the
         # readiness probe down for a service outage this app can survive.
-        threading.Thread(target=_housekeeping, args=(settings, client, stopping),
-                         name="housekeeping", daemon=True).start()
         box.start()
-        threading.Thread(target=podcasts.run, args=(stopping,),
-                         name="podcasts", daemon=True).start()
-        # Carries on a run an earlier process left unfinished.
-        importer.start()
-        threading.Thread(target=namer.run, args=(stopping,),
-                         name="naming", daemon=True).start()
+        if background:
+            threading.Thread(target=_housekeeping, args=(settings, client, stopping),
+                             name="housekeeping", daemon=True).start()
+            threading.Thread(target=podcasts.run, args=(stopping,),
+                             name="podcasts", daemon=True).start()
+            # Carries on a run an earlier process left unfinished.
+            importer.start()
+            threading.Thread(target=namer.run, args=(stopping,),
+                             name="naming", daemon=True).start()
         # Starts the background load now, so the first page after a restart
         # already shows which albums have a tonie.
         models.get()

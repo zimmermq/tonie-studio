@@ -229,3 +229,56 @@ class TestWorkInProgress:
         found = examine(cloud, busy_folders={"/Podcasts"})
 
         assert "orphan_taf" not in kinds(found)
+
+
+class TestApplyingRepairs:
+    """What each offered repair writes, and nothing besides."""
+
+    def test_a_garbled_path_is_pointed_at_the_real_taf(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+
+        cloud.create_dir("/Markus_Osterwald")
+        cloud.files["/Markus_Osterwald/Bobo_Siebenschl\u00e4fer.taf"] = b"taf"
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Bobo_Siebenschl\u00c3\u00a4fer.taf",
+                      nocloud=True)
+
+        apply_fix(cloud, tmp_path, "repair_source", BOBO)
+
+        assert cloud.tag_entries[BOBO]["source"] == "lib://Markus_Osterwald/Bobo_Siebenschl\u00e4fer.taf"
+
+    def test_a_path_that_is_not_garbled_is_not_touched(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        with pytest.raises(TonieError) as caught:
+            apply_fix(cloud, tmp_path, "repair_source", TIERE)
+
+        assert caught.value.key == "checkup.nothing_to_repair"
+        assert cloud.tag_entries[TIERE]["source"] == "lib://Lichterkinder/Tierische Tierlieder.taf"
+
+    def test_deleting_a_leftover_model_takes_its_notes_along(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.runtimes import playing_times, remember
+
+        cloud.custom_models.append({"model": "TS-0009", "series": "Vergessen"})
+        remember(tmp_path, "TS-0009", 300)
+
+        apply_fix(cloud, tmp_path, "delete_model", "TS-0009")
+
+        assert [m["model"] for m in cloud.custom_models] == ["TS-0001"]
+        assert playing_times(tmp_path) == {}
+
+    def test_repairing_a_model_that_is_gone_says_so(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        with pytest.raises(TonieError) as caught:
+            apply_fix(cloud, tmp_path, "repair_model", "TS-0042")
+
+        assert caught.value.key == "tonie.model_missing"
+
+    def test_an_unknown_repair_is_a_bug_not_a_refusal(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+
+        with pytest.raises(ValueError):
+            apply_fix(cloud, tmp_path, "format_disk", TIERE)

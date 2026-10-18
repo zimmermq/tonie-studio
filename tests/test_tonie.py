@@ -523,6 +523,8 @@ class TestPublishingAtOnce:
         for thread in threads:
             thread.join(5)
 
+        # Two ids that are equal would be the bug; none at all, a test that ran nothing.
+        assert not any(thread.is_alive() for thread in threads) and len(ids) == 2
         assert len(set(ids)) == 2
         assert len(teddycloud.custom_tonies()) == 2
 

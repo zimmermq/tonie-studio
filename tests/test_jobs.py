@@ -3,6 +3,7 @@
 import threading
 
 import pytest
+from web_helpers import eventually
 
 from tonie_studio.jobs import JobRunner, JobState
 
@@ -133,7 +134,7 @@ class TestProgressBar:
             release.wait(5)
 
         job_id = runner.submit("encode", "a", work)
-        _eventually(lambda: runner.get(job_id).step == "upload")
+        eventually(lambda: runner.get(job_id).step == "upload")
 
         assert runner.get(job_id).percent == UPLOAD_SHARE
         release.set()
@@ -149,22 +150,12 @@ class TestProgressBar:
             release.wait(5)
 
         job_id = runner.submit("encode", "a", work)
-        _eventually(lambda: runner.get(job_id).step == "encode")
+        eventually(lambda: runner.get(job_id).step == "encode")
 
         assert runner.get(job_id).percent == 99
         release.set()
         _wait(runner, job_id)
 
-
-def _eventually(condition, timeout=3.0):
-    import time
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if condition():
-            return
-        time.sleep(0.01)
-    raise AssertionError("condition never became true")
 
 
 class TestGroups:

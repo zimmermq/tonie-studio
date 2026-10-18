@@ -330,6 +330,7 @@ class TestRestoreSharesTheRecords:
             assert json.loads((target / TIMES_FILE).read_text()) == {"TS-0002": 60}
         worker.join(5)
 
+        assert not worker.is_alive()
         assert json.loads((target / TIMES_FILE).read_text()) == {"TS-0001": 5021, "TS-0002": 60}
 
     def test_recording_a_playing_time_takes_that_lock_too(self, tmp_path):
@@ -345,6 +346,7 @@ class TestRestoreSharesTheRecords:
             assert worker.is_alive()
         worker.join(5)
 
+        assert not worker.is_alive()
         assert playing_times(tmp_path) == {"TS-0001": 60}
 
 

@@ -7,6 +7,7 @@ these are the real payloads, not a paraphrase of them.
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import requests
 
 from tonie_studio.boxstate import BoxWatcher, ruid_from_uid
 
@@ -383,3 +384,59 @@ class TestHowTheStreamFailed:
         state = self._fail_once(requests.exceptions.ConnectionError("Connection refused"))
 
         assert state.connected is False and state.silent is False
+
+
+class TestTheStreamItself:
+    """The HTTP side: every other test feeds lines in by hand."""
+
+    class Response:
+        def __init__(self, lines, status=200):
+            self.lines, self.status_code, self.encoding = lines, status, None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(str(self.status_code))
+
+        def iter_lines(self, decode_unicode=False):
+            assert decode_unicode and self.encoding == "utf-8"
+            yield from self.lines
+
+    def recorded_lines(self):
+        for frame in _json.loads(FIXTURE.read_text()):
+            yield f"event: {frame['event']}"
+            yield f"data: {frame['data']}"
+            yield ""
+
+    def test_the_recorded_stream_read_over_http_finds_the_tonie(self, monkeypatch):
+        heard = []
+        clock = _Clock()
+        watcher = BoxWatcher("http://teddycloud.test", clock=clock,
+                             on_change=lambda kind, ruid, at: heard.append(kind))
+        asked = {}
+
+        def get(url, **kwargs):
+            asked.update(url=url, **kwargs)
+            return self.Response(list(self.recorded_lines()))
+
+        monkeypatch.setattr(requests, "get", get)
+
+        watcher._listen()
+        watcher.flush()
+
+        assert asked["url"] == "http://teddycloud.test/api/sse" and asked["stream"] is True
+        assert watcher.state.connected and "placed" in heard
+
+    def test_an_error_answer_ends_the_stream_before_anything_is_read(self, monkeypatch):
+        watcher = BoxWatcher("http://teddycloud.test")
+        monkeypatch.setattr(requests, "get", lambda url, **kwargs: self.Response([], status=502))
+
+        with pytest.raises(requests.HTTPError):
+            watcher._listen()
+
+        assert not watcher.state.connected

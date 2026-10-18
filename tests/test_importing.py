@@ -123,6 +123,17 @@ class TestImportOne:
 
         assert getattr(raised.value, "status", None) == 410
 
+    def test_an_empty_download_is_a_failure(self, teddycloud):
+        # The cloud answering with nothing leaves nothing to play.
+        from tonie_studio.importing import ImportProblem
+
+        teddycloud.cloud[WOLF_RUID] = b""
+
+        with pytest.raises(ImportProblem) as raised:
+            import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None)
+
+        assert raised.value.key == "import.no_taf"
+
     def test_a_download_teddycloud_did_not_keep_is_a_failure(self, teddycloud):
         teddycloud.settings["cloud.cacheContent"] = "false"
 

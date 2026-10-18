@@ -422,6 +422,18 @@ def _ensure_dir(client: TeddyCloudClient, path: str) -> None:
     client.create_dir(path, special="library")
 
 
+def list_folder(client: TeddyCloudClient, path: str) -> List[dict]:
+    """The listing of a library folder; empty when it does not exist.
+
+    Looked for in its parent first, for the reason _entry gives: a folder
+    teddyCloud does not have is answered by a dropped connection.
+    """
+    parent, name = _split(path)
+    if _entry(client, parent, name, directory=True) is None:
+        return []
+    return client.list_dir(path, special="library")
+
+
 def _has_entry(
     client: TeddyCloudClient, parent: str, name: str, directory: bool = False,
 ) -> bool:

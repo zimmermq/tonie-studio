@@ -42,6 +42,7 @@ from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .cache import TtlCache
+from .encode import list_folder
 from .models import CATEGORIES, MODEL_PREFIX, WRITING, Model, list_models
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -421,7 +422,7 @@ def apply(client: TeddyCloudClient, todo: Plan) -> None:
 def library_headers(client: TeddyCloudClient) -> Dict[str, Mapping[str, Any]]:
     """The taf headers of the tafs fetched from the cloud, by file name."""
     try:
-        files = client.list_dir(LIBRARY_FOLDER, special="library")
+        files = list_folder(client, LIBRARY_FOLDER)
     except TeddyCloudError:
         return {}
     return {entry["name"]: entry["tafHeader"] for entry in files
