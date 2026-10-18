@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -203,11 +203,13 @@ def newest(feed: Feed, count: int) -> List[Episode]:
     return ordered[:max(1, count)]
 
 
-def download(url: str, limit: int = LARGEST_DOWNLOAD) -> bytes:
+def download(url: str, limit: int = LARGEST_DOWNLOAD, into: Optional[Path] = None) -> bytes:
     """Fetch ``url`` within the limits a feed from elsewhere deserves.
 
     Redirects are followed by hand, so every address on the way is checked,
-    not only the first one.
+    not only the first one. With ``into`` the body is written to that file as
+    it arrives and nothing is returned: an episode held whole and then joined
+    would need twice its size in memory. A download that fails leaves no file.
     """
     for _ in range(MOST_REDIRECTS + 1):
         check_public(url)
@@ -217,17 +219,30 @@ def download(url: str, limit: int = LARGEST_DOWNLOAD) -> bytes:
                 url = urljoin(url, response.headers.get("location", ""))
                 continue
             response.raise_for_status()
-            chunks, size = [], 0
-            give_up = time.monotonic() + LONGEST_DOWNLOAD
-            for chunk in response.iter_content(1024 * 1024):
-                size += len(chunk)
-                if size > limit:
-                    raise FeedError("feed.too_large", url=url, megabytes=limit // 1048576)
-                if time.monotonic() > give_up:
-                    raise FeedError("feed.too_slow", url=url, minutes=LONGEST_DOWNLOAD // 60)
-                chunks.append(chunk)
-            return b"".join(chunks)
+            if into is None:
+                return b"".join(_chunks(response, url, limit))
+            try:
+                with into.open("wb") as target:
+                    for chunk in _chunks(response, url, limit):
+                        target.write(chunk)
+            except BaseException:
+                into.unlink(missing_ok=True)
+                raise
+            return b""
     raise FeedError("feed.redirects", count=MOST_REDIRECTS, url=url)
+
+
+def _chunks(response, url: str, limit: int) -> Iterator[bytes]:
+    """The body in pieces, given up on past ``limit`` bytes or LONGEST_DOWNLOAD seconds."""
+    size = 0
+    give_up = time.monotonic() + LONGEST_DOWNLOAD
+    for chunk in response.iter_content(1024 * 1024):
+        size += len(chunk)
+        if size > limit:
+            raise FeedError("feed.too_large", url=url, megabytes=limit // 1048576)
+        if time.monotonic() > give_up:
+            raise FeedError("feed.too_slow", url=url, minutes=LONGEST_DOWNLOAD // 60)
+        yield chunk
 
 
 def check_public(url: str, resolve: Optional[Callable] = None) -> None:
@@ -303,7 +318,11 @@ def refresh(
         paths = []
         for number, episode in enumerate(chosen, 1):
             path = folder / f"{number:03d}{_episode_suffix(episode)}"
-            path.write_bytes(fetch(episode.url))
+            if fetch is download:
+                # Straight to the file; a fetch handed in, as tests do, gives bytes.
+                download(episode.url, into=path)
+            else:
+                path.write_bytes(fetch(episode.url))
             paths.append(path)
         seconds = sum(episode.seconds or 0 for episode in chosen) or None
         # A new name every time, so the old taf keeps playing until the new

@@ -141,6 +141,15 @@ class TestSheet:
 
         assert response.content.startswith(b"%PDF")
 
+    def test_a_picture_far_larger_than_any_cover_is_refused(self, client, monkeypatch):
+        # Read whole into memory; a camera RAW file is no cover.
+        monkeypatch.setattr("tonie_studio.pages.common.LARGEST_PICTURE", 1000)
+
+        response = client.post("/sheet", files=[("files", ("big.jpg", jpeg_bytes((800, 800)),
+                                                          "image/jpeg"))])
+
+        assert response.status_code == 413
+
     def test_offers_the_choice_between_filling_and_fitting(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 

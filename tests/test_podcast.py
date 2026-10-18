@@ -369,6 +369,30 @@ class TestDownload:
         assert download("https://example.org/old/feed.xml") == b"<rss/>"
         assert asked[-1] == "https://example.org/new/feed.xml"
 
+    def test_an_episode_goes_straight_to_its_file(self, web, tmp_path):
+        # An episode of 300 MB held whole, then joined, is 600 MB of memory.
+        from tonie_studio.podcast import download
+
+        answers, _hosts, _asked = web
+        answers["https://example.org/ep.mp3"] = FakeResponse(b"x" * (3 * 1024 * 1024))
+        target = tmp_path / "001.mp3"
+
+        download("https://example.org/ep.mp3", into=target)
+
+        assert target.read_bytes() == b"x" * (3 * 1024 * 1024)
+
+    def test_a_download_refused_half_way_leaves_no_file(self, web, tmp_path):
+        from tonie_studio.podcast import download
+
+        answers, _hosts, _asked = web
+        answers["https://example.org/ep.mp3"] = FakeResponse(b"x" * (3 * 1024 * 1024))
+        target = tmp_path / "001.mp3"
+
+        with pytest.raises(FeedError):
+            download("https://example.org/ep.mp3", limit=2 * 1024 * 1024, into=target)
+
+        assert not target.exists()
+
     def test_too_large_is_refused(self, web):
         from tonie_studio.podcast import download
 

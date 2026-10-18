@@ -47,6 +47,10 @@ STATIC = Path(__file__).parent.parent / "static"
 # or a folder of a thousand dumps, passes the form parser's default of 1000.
 MOST_UPLOAD_PARTS = 20000
 
+# The largest picture an upload may be, in bytes: covers are a few hundred
+# kilobytes, a large photo some ten megabytes.
+LARGEST_PICTURE = 20 * 1024 * 1024
+
 # Below this many seconds of audio an encode is done before minutes would mean
 # anything, so its progress is not counted in them.
 LONG_ENCODE_SECONDS = 90
@@ -233,6 +237,18 @@ def describe_progress(job, translate: Translator) -> str:
     return f"{job.step} {job.done_count}/{job.total}"
 
 
+def read_picture(upload: UploadFile) -> bytes:
+    """An uploaded picture, refused when it is far larger than any cover.
+
+    It is read whole into memory; reading one byte past the limit is enough
+    to tell, without holding all of a file that is too large.
+    """
+    data = upload.file.read(LARGEST_PICTURE + 1)
+    if len(data) > LARGEST_PICTURE:
+        raise Refused(413, "error.picture_too_large", megabytes=LARGEST_PICTURE // 1048576)
+    return data
+
+
 def uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
     """The picture a form sent along, and the extension to store it under.
 
@@ -241,4 +257,4 @@ def uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
     """
     if cover is None or not is_cover_name(cover.filename):
         return None, "jpg"
-    return cover.file.read(), Path(cover.filename).suffix.lstrip(".") or "jpg"
+    return read_picture(cover), Path(cover.filename).suffix.lstrip(".") or "jpg"

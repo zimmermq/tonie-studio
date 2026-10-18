@@ -20,6 +20,9 @@
       <tr><td>{{ t("backup.total") }}</td><td></td><td class="number">{{ t.size(total) }}</td></tr>
     </tfoot>
   </table>
+  {% if too_large %}
+  <div class="warn">{{ t("backup.too_large_to_restore", size=t.size(largest)) }}</div>
+  {% endif %}
   <a class="button primary" href="/backup/download">{{ t("backup.download") }}</a>
 </div>
 

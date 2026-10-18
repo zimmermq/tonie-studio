@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from .. import backup as backup_module
 from ..albumnotes import made
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                       park, plan_restore, read_backup, take_parked)
@@ -98,9 +99,13 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/backup", response_class=HTMLResponse)
     def backup_page(request: Request):
         parts = describe_backup(client(), settings.data_dir)
+        total = sum(part.size for part in parts)
         return templates.TemplateResponse(request, "backup.html", {
             "parts": parts,
-            "total": sum(part.size for part in parts),
+            "total": total,
+            # A restore refuses a file above this; better said before saving one.
+            "too_large": total > backup_module.LARGEST_BACKUP,
+            "largest": backup_module.LARGEST_BACKUP,
         })
 
 

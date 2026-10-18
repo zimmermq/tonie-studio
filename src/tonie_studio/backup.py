@@ -24,6 +24,7 @@ import logging
 import os
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -195,12 +196,10 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
         archive.writestr("models.json", _json(models))
         archive.writestr("tags.json", _json(tags))
 
-        for name in sorted({Model.from_json(model).cover for model in models} - {None}):
-            try:
-                archive.writestr(f"covers/{name}", fetch_cover(client, name))
-            except TeddyCloudError as error:
-                # A model whose picture is gone still has a name worth keeping.
-                log.warning("backup: cover %s cannot be read: %s", name, error)
+        names = sorted({Model.from_json(model).cover for model in models} - {None})
+        for name, data in zip(names, _fetch_covers(client, names), strict=True):
+            if data is not None:
+                archive.writestr(f"covers/{name}", data)
 
         for file_name in (TIMES_FILE, LISTENING_FILE, MADE_FILE, CALIBRATION_FILE):
             path = data_dir / file_name
@@ -217,6 +216,26 @@ def _saved_subscriptions(data_dir: Path) -> List[Dict]:
     return [{key: value for key, value in asdict(subscription).items()
              if key not in ("error", "error_key", "error_params")}
             for subscription in load_subscriptions(data_dir)]
+
+
+# How many covers are fetched at once for a backup. One after another,
+# hundreds of them outlast the gateway's wait for the download to start;
+# teddyCloud serves a few at a time without trouble.
+COVER_FETCHES = 8
+
+
+def _fetch_covers(client: TeddyCloudClient, names: List[str]) -> List[Optional[bytes]]:
+    """Each cover's bytes, in the order of ``names``; None for one that cannot be read."""
+    def fetch(name: str) -> Optional[bytes]:
+        try:
+            return fetch_cover(client, name)
+        except TeddyCloudError as error:
+            # A model whose picture is gone still has a name worth keeping.
+            log.warning("backup: cover %s cannot be read: %s", name, error)
+            return None
+
+    with ThreadPoolExecutor(max_workers=COVER_FETCHES, thread_name_prefix="backup") as pool:
+        return list(pool.map(fetch, names))
 
 
 def read_backup(data: bytes) -> Backup:

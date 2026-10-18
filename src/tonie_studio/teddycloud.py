@@ -178,7 +178,7 @@ class TeddyCloudClient:
                     "POST",
                     "/api/fileUpload",
                     params=self._params(path=path, special=special),
-                    data=_AfterHeadStart(body),
+                    data=body,
                     headers={"Content-Type": content_type, "Connection": "close"},
                     timeout=ENCODE_TIMEOUT,
                 )
@@ -397,23 +397,37 @@ class TeddyCloudClient:
                                   refused=True)
 
 
-def _multipart(filename: str, stream: BinaryIO) -> Tuple[bytes, str]:
-    """The multipart body of one file upload and its content type, as requests builds it."""
+# Stands in for the file while requests frames the form around it.
+_FILE_MARK = b"\x00tonie-studio-file\x00"
+
+
+def _multipart(filename: str, stream: BinaryIO) -> Tuple["_AfterHeadStart", str]:
+    """The multipart body of one file upload and its content type, as requests frames it.
+
+    The form around the file comes from requests, so the bytes are the same;
+    the file itself is read while the body is sent, never held whole: a FLAC
+    track is hundreds of megabytes.
+    """
     prepared = requests.Request("POST", "http://teddycloud.invalid/",
-                                files={"file": (filename, stream)}).prepare()
-    return prepared.body, prepared.headers["Content-Type"]
+                                files={"file": (filename, _FILE_MARK)}).prepare()
+    head, tail = prepared.body.split(_FILE_MARK)
+    start = stream.tell()
+    size = stream.seek(0, io.SEEK_END) - start
+    stream.seek(start)
+    return _AfterHeadStart(head, stream, size, tail), prepared.headers["Content-Type"]
 
 
 class _AfterHeadStart:
     """A request body that holds its first byte back for HEAD_START.
 
+    The form's head, the file read as it is sent, then the form's end.
     File-like and with a length, so requests sends it with a Content-Length
     rather than in chunks.
     """
 
-    def __init__(self, body: bytes):
-        self._body = io.BytesIO(body)
-        self._length = len(body)
+    def __init__(self, head: bytes, stream: BinaryIO, size: int, tail: bytes):
+        self._parts = [io.BytesIO(head), stream, io.BytesIO(tail)]
+        self._length = len(head) + size + len(tail)
         self._started = False
 
     def __len__(self) -> int:
@@ -423,7 +437,15 @@ class _AfterHeadStart:
         if not self._started:
             self._started = True
             time.sleep(HEAD_START)
-        return self._body.read(size)
+        if size is None or size < 0:
+            rest, self._parts = b"".join(part.read() for part in self._parts), []
+            return rest
+        while self._parts:
+            piece = self._parts[0].read(size)
+            if piece:
+                return piece
+            self._parts.pop(0)
+        return b""
 
 
 def _form_value(value: Any) -> str:

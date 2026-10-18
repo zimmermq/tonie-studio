@@ -99,6 +99,39 @@ class TestSettingsOfThisApp:
         assert read_shift(here) == (0.0, 0.0)
 
 
+class TestManyCovers:
+    def test_covers_are_fetched_side_by_side(self, cloud, data_dir):
+        # Hundreds of covers fetched one after another take longer than the
+        # gateway waits for the download to start.
+        import threading
+        import time
+
+        for number in range(2, 10):
+            cloud.custom_models.append({"model": f"TS-{number:04d}", "series": "S",
+                                        "pic": f"/custom_img/TS-{number:04d}.jpg"})
+            cloud.images[f"TS-{number:04d}.jpg"] = b"\xff\xd8\xff" + bytes([number])
+        at_once, most = [0], [0]
+        lock = threading.Lock()
+        original = cloud.fetch
+
+        def slow(path, *args, **kwargs):
+            with lock:
+                at_once[0] += 1
+                most[0] = max(most[0], at_once[0])
+            time.sleep(0.05)
+            with lock:
+                at_once[0] -= 1
+            return original(path, *args, **kwargs)
+
+        cloud.fetch = slow
+
+        archive = zipfile.ZipFile(io.BytesIO(create_backup(cloud, data_dir)))
+
+        assert most[0] > 1
+        assert sorted(n for n in archive.namelist() if n.startswith("covers/")) == sorted(
+            f"covers/TS-{number:04d}.jpg" for number in range(1, 10))
+
+
 class TestCreating:
     def test_holds_models_tags_covers_and_the_apps_records(self, cloud, data_dir):
         archive = zipfile.ZipFile(io.BytesIO(create_backup(cloud, data_dir)))

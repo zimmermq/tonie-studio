@@ -120,6 +120,13 @@ class TestCheckupPage:
 
 
 class TestBackupPages:
+    def test_warns_when_a_backup_would_be_too_large_to_restore(self, client, runner, teddycloud,
+                                                                monkeypatch):
+        publish_album(client, runner, teddycloud)
+        monkeypatch.setattr("tonie_studio.backup.LARGEST_BACKUP", 10)
+
+        assert 'class="warn"' in client.get("/backup").text
+
     def test_downloads_a_backup(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 

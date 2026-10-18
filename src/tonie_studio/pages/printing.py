@@ -21,7 +21,7 @@ from ..printing import (PrintError, back_of, known_models, make_sheet, overview_
 from ..overview import build_overview
 from ..runtimes import playing_times
 from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Sticker, back_lines)
-from .common import Context, Refused, failure_text, job_or_404, translator
+from .common import Context, Refused, failure_text, job_or_404, read_picture, translator
 
 log = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         wanted = [(known[model_id], count, mode) for model_id, count, mode in map(_pick, picks)
                   if count and model_id in known]
         # Read now: an uploaded file is gone once this request has its answer.
-        uploads = [(upload.filename or "upload", upload.file.read()) for upload in files
+        uploads = [(upload.filename or "upload", read_picture(upload)) for upload in files
                    if is_cover_name(upload.filename)]
         if not wanted and not uploads:
             raise Refused(400, "error.nothing_to_print")

@@ -142,6 +142,35 @@ class TestUpload:
         assert request_mock.call_args.kwargs["headers"]["Content-Type"].startswith(
             "multipart/form-data; boundary=")
 
+    def test_the_body_is_what_requests_would_send_but_streamed(self, client, request_mock):
+        # A FLAC track of a few hundred megabytes, read whole into one body,
+        # is that much memory per upload.
+        import io
+
+        import requests as real_requests
+
+        request_mock.return_value = _ok()
+        audio = bytes(range(256)) * 4000
+        stream = io.BytesIO(audio)
+        client.upload(stream, "01-track.flac", path="/", special="library")
+        data = request_mock.call_args.kwargs["data"]
+        # Nothing of the file was read before the connection read it.
+        assert stream.tell() == 0
+        content_type = request_mock.call_args.kwargs["headers"]["Content-Type"]
+        boundary = content_type.split("boundary=", 1)[1]
+
+        pieces, piece = [], data.read(8192)
+        while piece:
+            pieces.append(piece)
+            piece = data.read(8192)
+        expected = real_requests.Request(
+            "POST", "http://x/", files={"file": ("01-track.flac", io.BytesIO(audio))}).prepare()
+        sent_boundary = expected.headers["Content-Type"].split("boundary=", 1)[1]
+
+        assert len(data) == len(expected.body)
+        assert b"".join(pieces) == expected.body.replace(sent_boundary.encode(), boundary.encode())
+        assert max(map(len, pieces)) <= 8192
+
     def test_rejects_a_name_containing_a_path_separator(self, client, request_mock):
         # teddyCloud stores the multipart filename verbatim and refuses
         # separators; catching it here gives a better message than a 500.
