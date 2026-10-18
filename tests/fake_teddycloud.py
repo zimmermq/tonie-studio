@@ -189,8 +189,9 @@ class FakeTeddyCloud:
                 "nocloud": entry["nocloud"],
                 "hide": entry["hide"],
                 "claimed": entry["claimed"],
-                # Where each chapter of its audio starts, in seconds.
-                "trackSeconds": entry.get("track_seconds", []),
+                # Where each chapter of its audio starts, in seconds, read
+                # from the taf it plays, as teddyCloud reads it.
+                "trackSeconds": entry.get("track_seconds") or self._track_seconds(entry["source"]),
                 "tonieInfo": {
                     "model": entry["tonie_model"],
                     "series": model.get("series", ""),
@@ -242,6 +243,11 @@ class FakeTeddyCloud:
     def delete_custom_tonies(self, models) -> None:
         wanted = {model.lower() for model in models}
         self.custom_models = [m for m in self.custom_models if m["model"].lower() not in wanted]
+
+    def _track_seconds(self, source: str) -> List[int]:
+        if not source.startswith("lib://"):
+            return []
+        return list((self.taf_headers.get("/" + source[len("lib://"):]) or {}).get("trackSeconds") or [])
 
     def _stickers_in(self, folder: str) -> List[str]:
         """The tags the box has read whose content JSON sits in ``folder``."""

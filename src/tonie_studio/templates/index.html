@@ -1,5 +1,5 @@
 {% extends "_list_page.html" %}
-{% from "_parts.html" import thumb with context %}
+{% from "_parts.html" import file_button, picked, thumb with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("albums.title") %}
 {% set rows = uploads + archive %}
@@ -11,7 +11,7 @@
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
-     data-tags="{{ tags[id] }}" data-name="{{ (album.title or album.name) | lower }}"
+     data-tags="{{ tags[id] | join(' ') }}" data-name="{{ (album.title or album.name) | lower }}"
      data-artist="{{ (album.artist or '') | lower }}" data-year="{{ album.year or '' }}"
      data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}"
      data-library="{{ 'unknown' if in_library is none else ('yes' if id in in_library else 'no') }}">
@@ -85,13 +85,9 @@
       <!-- A file input cannot be styled, so it sits invisibly inside a label
            that can be. webkitdirectory picks a whole album folder at once; a 60
            track release is otherwise 60 clicks in the dialog. -->
-      <label class="button">{{ t("upload.folder") }}
-        <input type="file" name="files" webkitdirectory directory multiple>
-      </label>
-      <label class="button">{{ t("upload.files") }}
-        <input type="file" name="files" multiple>
-      </label>
-      <span class="muted grow truncate" id="picked">{{ t("common.nothing_chosen") }}</span>
+      {{ file_button("files", t("upload.folder"), multiple=True, folder=True) }}
+      {{ file_button("files", t("upload.files"), multiple=True) }}
+      {{ picked("picked") }}
       <button class="primary" type="submit" id="send" disabled>{{ t("upload.send") }}</button>
     </div>
   </form>

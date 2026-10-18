@@ -60,6 +60,7 @@
     {%- endfor %}
   </span>
 </header>
+<script type="application/json" id="common-words">{{ t.strings("common.files") | tojson }}</script>
 <script type="application/json" id="box-words">{{ t.strings("box.unreachable", "box.silent", "box.playing", "box.on_box") | tojson }}</script>
 <main>
 {% block above %}{% endblock %}

@@ -37,6 +37,21 @@ window.showPicked = (input, slot, describe) => {
   });
 };
 
+// A file button with data-picked names the line saying what it holds: the
+// file's name, or how many there are. A page with more to say about a choice
+// (the album upload's size) calls showPicked itself instead.
+// The words are read when needed: this script runs in the head, before them.
+const commonWord = key => JSON.parse(document.getElementById('common-words').textContent)[key];
+document.addEventListener('change', event => {
+  const input = event.target;
+  const slot = input.dataset && input.dataset.picked && document.getElementById(input.dataset.picked);
+  if (!slot) return;
+  if (slot.dataset.empty === undefined) slot.dataset.empty = slot.textContent;
+  const files = [...input.files];
+  slot.textContent = !files.length ? slot.dataset.empty
+    : files.length === 1 ? files[0].name : say(commonWord('common.files'), {count: files.length});
+});
+
 // A form that cannot be taken back carries its question in data-confirm,
 // already in the reader's language; it is sent only once that is answered.
 // A choice inside the form can carry one too, asked only when it is chosen:

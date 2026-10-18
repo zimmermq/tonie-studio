@@ -73,3 +73,25 @@
   {{ caller() }}
 </{{ tag }}>
 {%- endmacro %}
+
+{#- Choosing files: a button, since a file field itself cannot be styled.
+    With ``slot``, the line of that id (see ``picked``) says what was chosen:
+    the file's name, or how many; app.js does that for every page. Without,
+    the page describes the choice itself. #}
+{% macro file_button(name, label, slot="", accept="", multiple=False, folder=False,
+                     required=False, id="") -%}
+<label class="button">{{ label }}
+  <input type="file" name="{{ name }}"
+         {%- if id %} id="{{ id }}"{% endif %}
+         {%- if accept %} accept="{{ accept }}"{% endif %}
+         {%- if multiple %} multiple{% endif %}
+         {%- if folder %} webkitdirectory directory{% endif %}
+         {%- if required %} required{% endif %}
+         {%- if slot %} data-picked="{{ slot }}"{% endif %}>
+</label>
+{%- endmacro %}
+
+{#- The line beside a file button saying what it holds. #}
+{% macro picked(slot) -%}
+<span class="muted grow truncate" id="{{ slot }}">{{ t("common.nothing_chosen") }}</span>
+{%- endmacro %}

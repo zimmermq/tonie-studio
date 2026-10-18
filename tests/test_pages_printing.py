@@ -213,12 +213,12 @@ class TestOverviewSheet:
         assert response.content.startswith(b"%PDF")
 
     def test_a_model_on_no_sticker_is_left_out(self, client, runner, teddycloud):
-        from tonie_studio.pages.printing import _overview_entries
+        from tonie_studio.printing import overview_entries
 
         publish_album(client, runner, teddycloud)
         teddycloud.custom_models.append({"model": "TS-0009", "series": "Nirgends"})
 
-        titles = [entry.series for entry in _overview_entries(teddycloud, {})]
+        titles = [entry.series for entry in overview_entries(teddycloud, {})]
 
         assert "Nirgends" not in titles
 
@@ -282,16 +282,16 @@ class TestCalibrationPages:
 class TestPrintedLanguage:
     def test_the_back_side_speaks_the_readers_language(self):
         from tonie_studio.i18n import Translator
-        from tonie_studio.pages.printing import _back_of
+        from tonie_studio.printing import back_of
         from tonie_studio.models import Model
 
         # The release is 2019-01-01 in the catalogue's seconds-since-1970 form.
         model = Model(id="TS-0001", series="S", episode="E", release="1546300800",
                       tracks=["a", "b"])
 
-        assert _back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
-        assert _back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"
-        assert _back_of(model, 1500, Translator("en")).language == "en"
+        assert back_of(model, 1500, Translator("en")).notes[0] == "2019 - 2 tracks - 25 minutes"
+        assert back_of(model, 1500, Translator("de")).notes[0] == "2019 - 2 Tracks - 25 Minuten"
+        assert back_of(model, 1500, Translator("en")).language == "en"
 
 
 class TestSheetRefusesWhatItCannotPrint:

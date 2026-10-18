@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field with context %}
+{% from "_parts.html" import field, file_button, picked with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("tonies.print") %}
 {% set page_heading = t("sheet.heading") %}
@@ -136,14 +136,12 @@
   <div class="card">
     <p class="muted mt-0">{{ t("sheet.extra_hint") }}</p>
     <div class="row wrap gap-10">
-      <label class="button">{{ t("sheet.choose_pictures") }}
-        <input type="file" name="files" accept="image/*" multiple id="extra">
-      </label>
+      {{ file_button("files", t("sheet.choose_pictures"), slot="extrapicked", accept="image/*", multiple=True) }}
       <select name="upload_mode">
         <option value="{{ fill }}">{{ t("sheet.fill") }}</option>
         <option value="{{ fit }}">{{ t("sheet.fit") }}</option>
       </select>
-      <span class="muted grow truncate" id="extrapicked">{{ t("common.nothing_chosen") }}</span>
+      {{ picked("extrapicked") }}
     </div>
   </div>
 
@@ -178,6 +176,6 @@
 
 
 
-<script type="application/json" id="page-data">{{ {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures", "sheet.shown_of"), "backFade": back_fade} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.shown_of"), "backFade": back_fade} | tojson }}</script>
 <script src="{{ asset('sheet.js') }}"></script>
 {% endblock %}

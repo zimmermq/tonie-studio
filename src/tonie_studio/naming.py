@@ -445,6 +445,10 @@ class Namer:
             self._catalog = (self.clock(), Catalog(entries), official_by_audio(entries))
         return self._catalog[1], self._catalog[2]
 
+    def official(self) -> Catalog:
+        """The catalogue alone, for looking a tonie up by its model."""
+        return self.catalog()[0]
+
     def preview(self, migrate: bool = False) -> Plan:
         """What the upkeep would do now, over every tonie of the latest import.
 

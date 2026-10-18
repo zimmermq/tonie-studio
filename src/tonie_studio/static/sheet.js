@@ -158,12 +158,6 @@ if (fillsheet) fillsheet.addEventListener('click', () => {
   });
 });
 
-const extra = document.getElementById('extra');
-if (extra) {
-  showPicked(extra, document.getElementById('extrapicked'),
-             files => say(words['sheet.pictures'], {count: files.length}));
-}
-
 // The text side. The server decides which lines fit, so this only has to
 // draw them: a preview that re-decided would promise what the sheet does not
 // deliver. The lines are asked for when shown, per model and layout.

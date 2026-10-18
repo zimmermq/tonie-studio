@@ -13,13 +13,14 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Sequence, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from .cache import BackgroundCache
 from .tags import TonieError, label
 from .teddycloud import TeddyCloudClient, TeddyCloudError
+from .times import from_seconds
 
 log = logging.getLogger(__name__)
 
@@ -207,10 +208,7 @@ class Model:
     @property
     def year(self) -> Optional[int]:
         """The release year, or None when the model carries no date."""
-        try:
-            return datetime.fromtimestamp(int(self.release.strip()), timezone.utc).year
-        except (ValueError, OverflowError, OSError):
-            return None
+        return release_year(self.release)
 
 
 def list_models(client: TeddyCloudClient) -> List[Model]:
@@ -382,3 +380,19 @@ def upload_cover(
 def fetch_cover(client: TeddyCloudClient, name: str) -> bytes:
     """The bytes of one cover in custom_img; raises TeddyCloudError when it cannot be read."""
     return client.fetch(f"{CUSTOM_IMG}{name}")
+
+
+def release_year(release: Optional[str]) -> Optional[int]:
+    """The year of a catalogue release, which the catalogue gives as seconds since 1970."""
+    moment = from_seconds((release or "").strip())
+    return moment.year if moment else None
+
+
+def picture_suffix(url: str) -> str:
+    """The cover type of a picture's address, as teddyCloud keeps covers.
+
+    The address's own suffix where it is a cover type; jpg otherwise, which
+    is what most pictures without one turn out to be.
+    """
+    suffix = PurePosixPath(urlparse(url or "").path).suffix.lower()
+    return suffix.lstrip(".") if suffix in COVER_TYPES else "jpg"

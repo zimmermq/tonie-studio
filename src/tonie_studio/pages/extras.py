@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -14,7 +13,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..listening import TonieListening, summarise
-from ..listing import Column
+from ..listing import Column, filters
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, Subscription, add_subscription,
                        load_subscriptions, parse_feed, remove_subscription)
 from ..runtimes import playing_times
@@ -68,11 +67,11 @@ def register(app: FastAPI, ctx: Context) -> None:
             heard = entry is not None and bool(entry.placed or entry.on_box)
             rows.append(Heard(tag, entry, HEARD if heard else QUIET))
         rows.sort(key=lambda row: row.tag.label.casefold())
-        counts = Counter(row.kind for row in rows)
+        counts, offered = filters(([row.kind] for row in rows), (HEARD, QUIET))
         return templates.TemplateResponse(request, "listening.html", {
             "rows": rows,
             "counts": counts,
-            "filters": [kind for kind in (HEARD, QUIET) if counts[kind]],
+            "filters": offered,
             "columns": LISTENING_COLUMNS,
             "period": period,
             "days": days,

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{#- A page that only says something went wrong and how to go on. The page
+    sets ``message`` (what happened, as it came), may set ``explanation``
+    (what it means for the person), and sets ``action_href`` and
+    ``action_label`` for the one button on. #}
+{% block body %}
+<div class="warn">{{ message }}</div>
+{% if explanation | default("") %}<p>{{ explanation }}</p>{% endif %}
+<p><a class="button" href="{{ action_href }}">{{ action_label }}</a></p>
+{% endblock %}

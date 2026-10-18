@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -42,3 +43,20 @@ def write_json(path: Path, value: Any) -> None:
         scratch.replace(path)
     except OSError as error:
         log.warning("cannot store %s: %s", path, error)
+
+
+def sweep(folder: Path, pattern: str, older_than: float) -> None:
+    """Remove the files in ``folder`` matching ``pattern`` that are older than ``older_than`` seconds.
+
+    For what a process that died half way left behind; one being worked on
+    right now is younger. A file that cannot be removed is logged and left.
+    """
+    if not folder.is_dir():
+        return
+    cutoff = time.time() - older_than
+    for leftover in folder.glob(pattern):
+        try:
+            if leftover.stat().st_mtime < cutoff:
+                leftover.unlink()
+        except OSError as error:
+            log.warning("cannot remove %s: %s", leftover, error)

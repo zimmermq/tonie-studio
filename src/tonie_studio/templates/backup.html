@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import file_button, picked with context %}
 {% set page_title = t("nav.backup") %}
 
 {% block intro %}{{ t("backup.intro") }}{% endblock %}
@@ -26,13 +27,10 @@
 <div class="card">
   <p class="muted mt-0">{{ t("backup.restore_hint") }}</p>
   <form method="post" action="/restore" enctype="multipart/form-data" class="row wrap gap-10">
-    <label class="button">{{ t("backup.choose") }}
-      <input type="file" name="file" accept=".zip,application/zip" required id="restorefile">
-    </label>
-    <span class="muted grow truncate" id="restorepicked">{{ t("common.nothing_chosen") }}</span>
+    {{ file_button("file", t("backup.choose"), slot="restorepicked", accept=".zip,application/zip", required=True) }}
+    {{ picked("restorepicked") }}
     <button type="submit">{{ t("backup.preview") }}</button>
   </form>
 </div>
 
-<script src="{{ asset('backup.js') }}"></script>
 {% endblock %}

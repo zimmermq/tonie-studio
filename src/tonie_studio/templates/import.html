@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field with context %}
+{% from "_parts.html" import field, file_button, picked with context %}
 {% set page_title = t("nav.import") %}
 
 {% macro pace_fields(pace) %}
@@ -118,14 +118,11 @@
 
 <h2>{{ t("import.from_files") }}</h2>
 <form method="post" action="/import/files" enctype="multipart/form-data" class="card">
-  <div class="row stackable wrap gap-12">
-    {% call field(t("import.folder"), class="grow m-0") %}
-      <input type="file" name="files" webkitdirectory directory multiple>
-    {% endcall %}
-    {% call field(t("import.single"), class="grow m-0") %}
-      <input type="file" name="files" accept=".nfc" multiple>
-    {% endcall %}
-  </div>
+  <p class="row wrap gap-10 mt-0">
+    {{ file_button("files", t("import.folder"), slot="dumpspicked", multiple=True, folder=True) }}
+    {{ file_button("files", t("import.single"), slot="dumpspicked", accept=".nfc", multiple=True) }}
+    {{ picked("dumpspicked") }}
+  </p>
   {{ pace_fields(pace) }}
   <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
 </form>

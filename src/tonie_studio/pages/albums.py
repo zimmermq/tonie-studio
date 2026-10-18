@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -21,7 +20,7 @@ from ..batch import episode_order
 from ..encode import taf_exists
 from ..i18n import Problem
 from ..library import same
-from ..listing import Column
+from ..listing import Column, filters
 from ..models import is_cover_name
 from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
@@ -61,7 +60,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                                  settings.archive_dir, settings.upload_dir)
         tags = {identifier: _album_tags(identifier, done, new, in_library)
                 for identifier, _album, _origin in albums}
-        counts = Counter(tag for value in tags.values() for tag in value.split())
+        counts, offered = filters(tags.values(), (NO_TONIE, NOT_IN_LIBRARY, NEW))
         return templates.TemplateResponse(request, "index.html", {
             "albums": albums,
             "archive": [row for row in albums if row[2] == "archive"],
@@ -74,7 +73,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "in_library": in_library,
             "tags": tags,
             "counts": counts,
-            "filters": [tag for tag in (NO_TONIE, NOT_IN_LIBRARY, NEW) if counts[tag]],
+            "filters": offered,
             "columns": ALBUM_COLUMNS,
         })
 
@@ -361,7 +360,7 @@ NO_TONIE, NOT_IN_LIBRARY, NEW = "notonie", "notinlibrary", "new"
 
 
 def _album_tags(identifier: str, done: Dict, new: Set[str],
-                in_library: Optional[Set[str]]) -> str:
+                in_library: Optional[Set[str]]) -> List[str]:
     """The filters an album answers to. Without a copy of the library nothing
     is claimed to be missing from it."""
     tags = [] if identifier in done else [NO_TONIE]
@@ -369,4 +368,4 @@ def _album_tags(identifier: str, done: Dict, new: Set[str],
         tags.append(NOT_IN_LIBRARY)
     if identifier in new:
         tags.append(NEW)
-    return " ".join(tags)
+    return tags

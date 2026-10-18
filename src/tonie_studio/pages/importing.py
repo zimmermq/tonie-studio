@@ -7,7 +7,6 @@ days, so the page is something to look in on rather than to wait at.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List
 
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -15,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..teddycloud import TeddyCloudError
+from ..times import from_seconds
 from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
                          ImportProblem, Pace, Run)
 from .. import naming
@@ -46,7 +46,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "counts": _counts(run) if run else {},
             "failed": _problems(run) if run else [],
             "recent": _recent(run) if run else [],
-            "next_at": datetime.fromtimestamp(run.next_at) if run and run.next_at else None,
+            "next_at": from_seconds(run.next_at) if run else None,
             "pace": run.pace if run else Pace(),
         })
 
@@ -157,7 +157,7 @@ def _recent(run: Run) -> list:
     settled = [item for item in run.items
                if item.state in (IMPORTED, CACHED) and item.settled_at]
     settled.sort(key=lambda item: item.settled_at, reverse=True)
-    return [(item, datetime.fromtimestamp(item.settled_at) if item.settled_at else None)
+    return [(item, from_seconds(item.settled_at))
             for item in settled[:RECENT]]
 
 
@@ -169,7 +169,7 @@ def _problems(run: Run) -> list:
     failed = sorted((item for item in run.items if item.state == FAILED),
                     key=lambda item: item.settled_at, reverse=True)
     unreadable = [item for item in run.items if item.state == UNREADABLE]
-    return [(item, datetime.fromtimestamp(item.settled_at) if item.settled_at else None)
+    return [(item, from_seconds(item.settled_at))
             for item in failed + unreadable]
 
 

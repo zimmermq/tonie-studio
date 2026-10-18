@@ -10,7 +10,6 @@ id, and the wrong one would be encoded.
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 import time
 from contextlib import contextmanager
@@ -18,9 +17,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Type
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Type
 
-from fastapi import Request
+from fastapi import Request, UploadFile
 from fastapi.templating import Jinja2Templates
 
 from .. import encode
@@ -34,12 +33,11 @@ from ..naming import Namer
 from ..shop import Shop
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
-from ..models import ModelCache
+from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
 from ..settings import Settings
+from ..tags import TonieTag
 from ..teddycloud import TeddyCloudClient
-
-log = logging.getLogger(__name__)
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
 STATIC = Path(__file__).parent.parent / "static"
@@ -161,17 +159,26 @@ class Refused(Problem):
 
 
 @contextmanager
-def refusing(*kinds: Type[BaseException]) -> Iterator[None]:
+def refusing(*kinds: Type[BaseException], status: int = 400) -> Iterator[None]:
     """Answer what the services raise as one of ``kinds`` with a refusal the page shows.
 
     For the errors a person can act on - teddyCloud saying no, a sticker that
     is taken - which the page then names: "That did not work: ...". Anything
-    else is a fault and stays one.
+    else is a fault and stays one. ``status`` is 502 where what failed is a
+    server this app asked on the person's behalf.
     """
     try:
         yield
     except kinds as error:
-        raise Refused(400, "error.failed", detail=error) from error
+        raise Refused(status, "error.failed", detail=error) from error
+
+
+def tag_or_404(tags: Iterable[TonieTag], ruid: str) -> TonieTag:
+    """The tag ``ruid`` among ``tags``, or a refusal saying teddyCloud does not know it."""
+    tag = next((candidate for candidate in tags if candidate.ruid == ruid), None)
+    if tag is None:
+        raise Refused(404, "error.no_tag")
+    return tag
 
 
 def refused(problem: Problem, status: int = 400) -> Refused:
@@ -244,3 +251,14 @@ def describe_progress(job, translate: Translator) -> str:
                              count=round(job.total / 60))
         return translate("job.encoding")
     return f"{job.step} {job.done_count}/{job.total}"
+
+
+def uploaded_cover(cover: Optional[UploadFile]) -> Tuple[Optional[bytes], str]:
+    """The picture a form sent along, and the extension to store it under.
+
+    Anything that is not an image by its name is ignored rather than refused:
+    the cover is optional, and the rest of the form is still worth saving.
+    """
+    if cover is None or not is_cover_name(cover.filename):
+        return None, "jpg"
+    return cover.file.read(), Path(cover.filename).suffix.lstrip(".") or "jpg"

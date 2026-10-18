@@ -45,7 +45,7 @@ from .encode import EncodeError, cut_to_bytes, delete_taf, encode_files, library
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
-from .models import COVER_TYPES, find_model
+from .models import find_model, picture_suffix
 from .runtimes import remember
 from .store import LOCK, read_json, write_json
 from .tags import find_tag, list_tags
@@ -80,8 +80,6 @@ MOST_REDIRECTS = 5
 # the part that is cut off.
 TITLE_IN_NAME = 80
 TITLE_IN_NAME_BYTES = 160
-
-PICTURE_SUFFIXES = frozenset(suffix.lstrip(".") for suffix in COVER_TYPES)
 
 ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 
@@ -288,7 +286,7 @@ def refresh(
         model_id = publish(
             client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
             tracks=[episode.title for episode in chosen], cover=cover,
-            cover_name=_picture_suffix(feed.image or ""),
+            cover_name=picture_suffix(feed.image or ""),
             model_id=subscription.model or None,
         )
     except Exception:
@@ -350,11 +348,6 @@ def _delete_quietly(client: TeddyCloudClient, path: str, subscription_id: str) -
         log.warning("podcast %s: %s stays: %s", subscription_id, path, error)
 
 
-def _picture_suffix(url: str) -> str:
-    suffix = _suffix(url).lstrip(".")
-    return suffix if suffix in PICTURE_SUFFIXES else "jpg"
-
-
 def load_subscriptions(data_dir: Path) -> List[Subscription]:
     with LOCK:
         return _read(data_dir)
@@ -374,6 +367,12 @@ def add_subscription(data_dir: Path, subscription: Subscription) -> None:
 def remove_subscription(data_dir: Path, subscription_id: str) -> None:
     with LOCK:
         _write(data_dir, [entry for entry in _read(data_dir) if entry.id != subscription_id])
+
+
+def unsubscribe(data_dir: Path, ruid: str) -> None:
+    """Drop every subscription that plays onto this sticker."""
+    with LOCK:
+        _write(data_dir, [entry for entry in _read(data_dir) if entry.ruid != ruid])
 
 
 def update_subscription(data_dir: Path, subscription: Subscription) -> None:

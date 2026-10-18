@@ -183,6 +183,10 @@
  "common.cancel": "Abbrechen",
  "common.choose_picture": "Bild wählen",
  "common.delete": "Löschen",
+ "common.files": {
+  "one": "{count} Datei",
+  "other": "{count} Dateien"
+ },
  "common.none": "Keine",
  "common.nothing_chosen": "nichts ausgewählt",
  "common.save": "Speichern",
@@ -253,7 +257,7 @@
  "import.branch": "Branch (leer: Standard-Branch)",
  "import.busy": "Es läuft schon ein Import. Halte ihn an oder beende ihn, bevor du einen neuen startest.",
  "import.cloud_off": "In teddyCloud sind der Cloud-Zugriff (cloud.enabled) oder das Zwischenspeichern (cloud.cacheContent) aus. Ohne beides kann teddyCloud nichts holen.",
- "import.folder": "Ordner",
+ "import.folder": "Ordner wählen",
  "import.from_files": "Aus Dateien",
  "import.from_github": "Aus einem GitHub-Repository",
  "import.intro": "Holt die Hörspiele zu Tonie-Dumps eines Flipper Zero aus der Cloud in die teddyCloud-Bibliothek. Was teddyCloud schon hat, wird übersprungen. Damit es nach jemandem aussieht, der Tonies auflegt, und nicht nach einem Massendownload, geht es langsam: Ein Import läuft auf dem Server weiter, auch wenn du die Seite schließt, und übersteht einen Neustart.",
@@ -276,7 +280,7 @@
  "import.recent": "Zuletzt",
  "import.repo": "Repository (besitzer/repo oder GitHub-Adresse)",
  "import.resume": "Weitermachen",
- "import.single": "Oder einzelne .nfc-Dateien",
+ "import.single": "Einzelne .nfc-Dateien",
  "import.start": "Import starten",
  "import.state.cached": "Schon in teddyCloud",
  "import.state.duplicate": "Doppelt (gleicher Tonie)",
@@ -542,10 +546,6 @@
  "sheet.overview": "Übersicht für die Dose",
  "sheet.overview_hint": "Alle Tonies auf einem A4-Blatt: Cover, Name, Jahr, Spieldauer.",
  "sheet.overview_pdf": "Übersicht als PDF",
- "sheet.pictures": {
-  "one": "{count} Bild",
-  "other": "{count} Bilder"
- },
  "sheet.search": "Tonies oder Sticker suchen",
  "sheet.search_hint": "Name, Serie oder UID - mehrere UIDs mit Leerzeichen oder Komma getrennt",
  "sheet.sheets": {

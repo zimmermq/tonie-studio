@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, sticker_picker, thumb with context %}
+{% from "_parts.html" import field, file_button, picked, sticker_picker, thumb with context %}
 {% set page_title = t("radio.title") %}
 
 {% block intro %}{{ t("radio.intro") }}{% endblock %}
@@ -54,7 +54,7 @@
       </select>
     {% endcall %}
     {% call field(t("radio.cover"), class="mb-0") %}
-      <label class="button">{{ t("common.choose_picture") }}<input type="file" name="cover" accept="image/*"></label>
+      <span class="row gap-10">{{ file_button("cover", t("common.choose_picture"), slot="coverpicked", accept="image/*") }}{{ picked("coverpicked") }}</span>
     {% endcall %}
   </div>
 

@@ -31,6 +31,10 @@ from .listening import ListeningLog
 from .listing import orders
 from .models import ModelCache, cover_name, cover_url
 from .pages import albums, batch, extras, importing, printing, site, tonies, upkeep
+from .pages import box as box_page
+from .pages import covers as cover_pages
+from .pages import library as library_page
+from .pages import radio as radio_page
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
                            page_context)
@@ -142,7 +146,8 @@ def create_app(
         groups=groups, library=library, importer=importer, namer=namer,
         shop=shop, prints=prints,
     )
-    for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing, importing):
+    for part in (site, albums, job_pages, batch, tonies, library_page, radio_page, cover_pages,
+                 box_page, extras, upkeep, printing, importing):
         part.register(app, ctx)
     return app
 

@@ -25,12 +25,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from .encode import Taf, list_tafs
+from .albumnotes import forget_model
+from .encode import Taf, delete_taf, list_tafs
 from .library import is_library, played, same
-from .models import MODEL_PREFIX, Model, list_models
-from .tags import TonieTag, list_tags
+from .models import MODEL_PREFIX, Model, find_model, list_models, remove_model, update_model
+from .runtimes import forget
+from .tags import TonieError, TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
@@ -240,3 +243,38 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
 
 
 _same = same
+
+
+def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -> None:
+    """Make one repair a finding offered.
+
+    Nothing here checks whether the finding still holds: the caller runs the
+    checks again first, or a repair could undo something done in the meantime.
+    """
+    if fix == "nocloud":
+        client.set_tag(target, nocloud=True)
+    elif fix == "repair_source":
+        tag = find_tag(client, target)
+        fixed = repaired(tag.source if tag else None)
+        if not fixed:
+            raise TonieError("checkup.nothing_to_repair", target=target)
+        client.set_tag(target, source=fixed)
+    elif fix == "repair_model":
+        model = find_model(client, target)
+        if model is None:
+            raise TonieError("tonie.model_missing", model=target)
+        changes = model_repairs(model)
+        update_model(client, target, series=changes.get("series"),
+                     episode=changes.get("episode"), tracks=changes.get("tracks"))
+    elif fix == "empty_sticker":
+        # The model goes too: without it, the empty sticker would still carry
+        # the old name and cover in teddyCloud.
+        client.set_tag(target, source="", tonie_model="")
+    elif fix == "delete_taf":
+        delete_taf(client, target)
+    elif fix == "delete_model":
+        remove_model(client, target)
+        forget(data_dir, target)
+        forget_model(data_dir, target)
+    else:
+        raise ValueError(f"unknown repair {fix!r}")

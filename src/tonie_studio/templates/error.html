@@ -1,13 +1,6 @@
-{% extends "base.html" %}
-{% set page_title = t("offline.title") %}
-{% set page_heading = t("offline.heading") %}
+{% extends "_message_page.html" %}
+{% set page_title, page_heading = t("offline.title"), t("offline.heading") %}
+{% set explanation = t("offline.albums_work") %}
+{% set action_href, action_label = "/", t("offline.to_albums") %}
 
 {% block intro %}{{ t("offline.sub") }}{% endblock %}
-{% block body %}
-<div class="card">
-  <p class="muted mt-0">{{ message }}</p>
-  <p class="mb-0">{{ t("offline.albums_work") }}</p>
-</div>
-
-<p><a class="button" href="/">{{ t("offline.to_albums") }}</a></p>
-{% endblock %}

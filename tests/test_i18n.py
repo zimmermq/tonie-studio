@@ -106,7 +106,7 @@ class TestCatalogs:
         assert {f"tonies.col_{column}" for column in (
             "name", "series", "kind", "chapters", "category", "age", "added")} <= keys
 
-        from tonie_studio.pages.tonies import BOX, IMPORTED, RECORDED, UNUSED
+        from tonie_studio.pages.library import BOX, IMPORTED, RECORDED, UNUSED
 
         assert {f"library.origin.{origin}" for origin in (RECORDED, IMPORTED, BOX, UNUSED)} <= keys
         assert {f"library.col_{column}" for column in (

@@ -1,7 +1,3 @@
-{% extends "base.html" %}
+{% extends "_message_page.html" %}
 {% set page_title = t("error.title") %}
-
-{% block body %}
-<div class="warn">{{ message }}</div>
-<p><a class="button" href="javascript:history.back()">{{ t("error.back") }}</a></p>
-{% endblock %}
+{% set action_href, action_label = "javascript:history.back()", t("error.back") %}

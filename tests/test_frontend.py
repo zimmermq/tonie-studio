@@ -88,6 +88,7 @@ class TestPagesUseTheSharedParts:
         'class="listing-head': "head (_list.html)",
         '<div class="hero"': "_details_page.html",
         '<div class="bar">': "_progress_page.html",
+        'type="file"': "file_button",
     }
 
     def test_no_page_writes_a_shared_part_out_by_hand(self):

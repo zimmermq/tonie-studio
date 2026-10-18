@@ -302,6 +302,16 @@ class TestStoringSafely:
 
         assert load_subscriptions(tmp_path) == []
 
+    def test_unsubscribing_a_sticker_keeps_the_others(self, tmp_path):
+        from tonie_studio.podcast import add_subscription, unsubscribe
+
+        for number, ruid in enumerate([RUID, "e00403500000ffff", RUID]):
+            add_subscription(tmp_path, Subscription(id=f"s{number}", feed="f", ruid=ruid))
+
+        unsubscribe(tmp_path, RUID)
+
+        assert [entry.id for entry in load_subscriptions(tmp_path)] == ["s1"]
+
     def test_two_writers_do_not_lose_each_other(self, tmp_path):
         import threading
 

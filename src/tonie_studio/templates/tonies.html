@@ -2,7 +2,7 @@
 {% from "_parts.html" import thumb with context %}
 {% set page_title = t("nav.tonies") %}
 {% set rows = tonies %}
-{% set filters, filter_label = kinds, "tonies.kind." %}
+{% set filter_label = "tonies.kind." %}
 {% set search, search_label = "tonies.search", "tonies.search_label" %}
 {% set no_match, empty = "tonies.no_match", "tonies.none" %}
 {% set list_id, list_class, list_view = "tonies", "listing", "grid" %}
@@ -36,7 +36,7 @@
 {%- set tag = item.tag %}
 {%- set picture = tag.picture | cover_url(false) %}
 <a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
-   data-kind="{{ item.kind }}" data-tags="{{ item.kind }}{% if not picture %} nopicture{% endif %}"
+   data-kind="{{ item.kind }}" data-tags="{{ item.tags | join(' ') }}"
    data-name="{{ item.name }}" data-series="{{ (tag.series ~ ' ' ~ item.name) | trim | lower }}"
    data-added="{{ item.added.timestamp() | int if item.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
    data-category="{{ item.category | lower }}" data-age="{{ item.age if item.age is not none else '' }}"

@@ -183,6 +183,10 @@
  "common.cancel": "Cancel",
  "common.choose_picture": "Choose picture",
  "common.delete": "Delete",
+ "common.files": {
+  "one": "{count} file",
+  "other": "{count} files"
+ },
  "common.none": "None",
  "common.nothing_chosen": "nothing chosen",
  "common.save": "Save",
@@ -253,7 +257,7 @@
  "import.branch": "Branch (empty: default branch)",
  "import.busy": "An import is already running. Pause or stop it before starting a new one.",
  "import.cloud_off": "Cloud access (cloud.enabled) or caching (cloud.cacheContent) is off in teddyCloud. Without both, teddyCloud cannot fetch anything.",
- "import.folder": "Folder",
+ "import.folder": "Choose folder",
  "import.from_files": "From files",
  "import.from_github": "From a GitHub repository",
  "import.intro": "Fetches the audio for Flipper Zero dumps of tonies from the cloud into the teddyCloud library. Anything teddyCloud already has is skipped. So that it looks like someone putting tonies on a box rather than a bulk download, it goes slowly: an import keeps running on the server when you close this page, and survives a restart.",
@@ -276,7 +280,7 @@
  "import.recent": "Latest",
  "import.repo": "Repository (owner/repo or GitHub address)",
  "import.resume": "Carry on",
- "import.single": "Or single .nfc files",
+ "import.single": "Single .nfc files",
  "import.start": "Start import",
  "import.state.cached": "Already in teddyCloud",
  "import.state.duplicate": "Duplicate (same tonie)",
@@ -542,10 +546,6 @@
  "sheet.overview": "Overview for the tin",
  "sheet.overview_hint": "Every tonie on one A4 sheet: cover, name, year, playing time.",
  "sheet.overview_pdf": "Overview as PDF",
- "sheet.pictures": {
-  "one": "{count} picture",
-  "other": "{count} pictures"
- },
  "sheet.search": "Find tonies or stickers",
  "sheet.search_hint": "Name, series or UID - several UIDs separated by spaces or commas",
  "sheet.sheets": {

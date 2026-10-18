@@ -181,6 +181,12 @@ class TestEditTonie:
     def test_refuses_a_tag_teddycloud_does_not_know(self, client):
         assert client.get("/tonies/ffffffffffffffff").status_code == 404
 
+    def test_editing_an_unknown_tag_says_it_is_unknown(self, client):
+        response = client.post("/tonies/ffffffffffffffff", data={"series": "x"})
+
+        assert response.status_code == 404
+        assert "teddyCloud kennt diesen Sticker nicht" in response.text
+
 
 class TestLibraryPage:
     def test_lists_the_tafs_with_their_size(self, client, runner, teddycloud):

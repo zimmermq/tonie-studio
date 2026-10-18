@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,17 +11,15 @@ from typing import Dict
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from ..albumnotes import forget_model
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                       plan_restore, read_backup)
-from ..checkup import examine, model_repairs, repaired
-from ..encode import EncodeError, delete_taf
-from ..models import find_model, remove_model, update_model
+from ..checkup import apply_fix, examine
+from ..encode import EncodeError
 from ..podcast import SERIES as PODCAST_SERIES
-from ..runtimes import forget
 from ..settings import Settings
-from ..tags import TonieError, find_tag
-from ..teddycloud import TeddyCloudClient, TeddyCloudError
+from ..store import sweep
+from ..tags import TonieError
+from ..teddycloud import TeddyCloudError
 from .common import Context, Refused, refusing
 
 # The repairs the checkup page offers for all findings at once.
@@ -73,7 +70,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             return RedirectResponse("/checkup?stale=1", 303)
 
         with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
-            _apply_fix(connection, settings, fix, target)
+            apply_fix(connection, settings.data_dir, fix, target)
         log.info("checkup: %s applied to %s", fix, target)
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
@@ -93,7 +90,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                    if finding.fix == fix]
         with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
             for target in targets:
-                _apply_fix(connection, settings, fix, target)
+                apply_fix(connection, settings.data_dir, fix, target)
         log.info("checkup: %s applied to %d sticker(s)", fix, len(targets))
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
@@ -170,44 +167,4 @@ def _restore_dir(settings: Settings) -> Path:
 
 def clear_parked_restores(settings: Settings, older_than: float = 86400.0) -> None:
     """Drop backups uploaded for a preview that was never confirmed."""
-    folder = _restore_dir(settings)
-    if not folder.is_dir():
-        return
-    cutoff = time.time() - older_than
-    for parked in folder.glob("*.zip"):
-        try:
-            if parked.stat().st_mtime < cutoff:
-                parked.unlink()
-        except OSError as error:
-            log.warning("cannot remove %s: %s", parked, error)
-
-
-def _apply_fix(client: TeddyCloudClient, settings: Settings, fix: str, target: str) -> None:
-    """Make one checkup repair. The caller has just confirmed it is still due."""
-    if fix == "nocloud":
-        client.set_tag(target, nocloud=True)
-    elif fix == "repair_source":
-        tag = find_tag(client, target)
-        fixed = repaired(tag.source if tag else None)
-        if not fixed:
-            raise TonieError("checkup.nothing_to_repair", target=target)
-        client.set_tag(target, source=fixed)
-    elif fix == "repair_model":
-        model = find_model(client, target)
-        if model is None:
-            raise TonieError("tonie.model_missing", model=target)
-        changes = model_repairs(model)
-        update_model(client, target, series=changes.get("series"),
-                     episode=changes.get("episode"), tracks=changes.get("tracks"))
-    elif fix == "empty_sticker":
-        # The model goes too: without it, the empty sticker would still carry
-        # the old name and cover in teddyCloud.
-        client.set_tag(target, source="", tonie_model="")
-    elif fix == "delete_taf":
-        delete_taf(client, target)
-    elif fix == "delete_model":
-        remove_model(client, target)
-        forget(settings.data_dir, target)
-        forget_model(settings.data_dir, target)
-    else:
-        raise ValueError(f"unknown repair {fix!r}")
+    sweep(_restore_dir(settings), "*.zip", older_than)

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, List, Sequence, Tuple
 
 from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -16,17 +15,15 @@ from starlette.background import BackgroundTask
 
 from ..calibration import FILE_NAME as CALIBRATION_FILE
 from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
-from ..i18n import DEFAULT as DEFAULT_LANGUAGE
-from ..i18n import Translator
-from ..models import Model, cache_name, fetch_picture, images_cached, is_cover_name, list_models
 from ..jobs import Job, JobRunner, JobState, new_id
-from ..naming import Catalog
-from ..overview import Entry, build_overview
-from ..runtimes import minutes, playing_times
-from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Back, Layout, Sticker, back_lines,
+from ..models import images_cached, is_cover_name
+from ..printing import (back_of, known_models, overview_entries, sheet_rows,
+                        stickers_for)
+from ..overview import build_overview
+from ..runtimes import playing_times
+from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Layout, Sticker, back_lines,
                      build_sheet)
-from ..tags import list_tags
-from ..teddycloud import TeddyCloudClient, TeddyCloudError
+from ..store import sweep
 from .common import Context, Refused, translator
 
 log = logging.getLogger(__name__)
@@ -58,7 +55,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         connection = client()
         cached = images_cached(connection)
-        rows = _sheet_rows(connection, namer.catalog()[0], cached)
+        rows = sheet_rows(connection, namer.official(), cached)
         preset = set(model)
         for row in rows:
             if row.model.id in preset:
@@ -119,7 +116,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/sheet/overview")
     def overview(request: Request):
         translate = translator(request)
-        entries = _overview_entries(client(), playing_times(settings.data_dir), translate)
+        entries = overview_entries(client(), playing_times(settings.data_dir), translate)
         if not entries:
             raise Refused(400, "error.nothing_to_list")
         return _send_pdf(settings.data_dir, "overview", "tonies-uebersicht.pdf",
@@ -142,7 +139,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         an answer, so it is made in the background, like an encode.
         """
         connection = client()
-        known = _known_models(connection, namer.catalog()[0])
+        known = known_models(connection, namer.official())
         wanted = [(known[model_id], count, mode) for model_id, count, mode in map(_pick, picks)
                   if count and model_id in known]
         # Read now: an uploaded file is gone once this request has its answer.
@@ -153,7 +150,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
         translate = translator(request)
         times = playing_times(settings.data_dir)
-        stickers = _stickers(client, wanted, bool(back), bool(back_tracks), times, translate)
+        stickers = stickers_for(client, wanted, bool(back), bool(back_tracks), times, translate)
         stickers += [Sticker(image=data, label=name, mode=FIT if upload_mode == FIT else FILL)
                      for name, data in uploads]
         job_id = new_id()
@@ -208,10 +205,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         the lines depend on the layout, and a page of every tonie would carry
         them all twice over.
         """
-        known = _known_models(client(), namer.catalog()[0])
+        known = known_models(client(), namer.official())
         if model not in known:
             raise Refused(404, "tonie.model_missing", model=model)
-        back = _back_of(known[model], playing_times(settings.data_dir).get(model),
+        back = back_of(known[model], playing_times(settings.data_dir).get(model),
                         translator(request))
         return {
             variant: [{"text": line.text, "size": line.size, "bold": line.bold}
@@ -247,76 +244,7 @@ def _send_pdf(data_dir: Path, prefix: str, filename: str,
 
 def clear_old_pdfs(data_dir: Path) -> None:
     """Remove PDFs a process that died while sending them left behind."""
-    if not data_dir.is_dir():
-        return
-    cutoff = time.time() - OLD_PDF_SECONDS
-    for leftover in data_dir.glob("*.pdf"):
-        try:
-            if leftover.stat().st_mtime < cutoff:
-                leftover.unlink()
-        except OSError as error:
-            log.warning("cannot remove %s: %s", leftover, error)
-
-
-@dataclass
-class SheetRow:
-    """One cover the sheet can print: a sticker and the model it plays, or a model on none."""
-
-    model: Model
-    uid: str = ""  # as teddyCloud writes it; empty for a model on no sticker
-    ruid: str = ""
-    ticked: bool = False
-
-    @property
-    def search(self) -> str:
-        """What the page's search looks through: the names, the model and the UID.
-
-        The UID is there without its colons too, the way it is often printed
-        on a chip, so either spelling finds it.
-        """
-        return " ".join((self.model.label, self.model.id, self.uid,
-                         self.uid.replace(":", ""))).lower()
-
-
-def _printable(model: Model, cached: Optional[bool]) -> bool:
-    """Whether a model has a picture this app can put on a sheet.
-
-    That is a cover in custom_img, or, while teddyCloud keeps the pictures it
-    is shown, one hosted elsewhere, which then comes through its cache.
-    """
-    return bool(model.cover or (cached is not False and cache_name(model.picture)))
-
-
-def _known_models(client: TeddyCloudClient, catalog: Catalog,
-                  cached: Optional[bool] = True) -> Dict[str, Model]:
-    """Every printable model on a sticker, and every printable model of this app, by id.
-
-    Only catalogue tonies on a sticker: the catalogue lists thousands nobody
-    here owns. Their picture comes through teddyCloud's image cache.
-    """
-    custom = {model.id: model for model in list_models(client)}
-    known = {model_id: model for model_id, model in custom.items() if _printable(model, cached)}
-    for tag in list_tags(client):
-        if tag.model and tag.model not in custom and tag.model in catalog.by_model:
-            model = Model.from_json(catalog.by_model[tag.model])
-            if _printable(model, cached):
-                known[model.id] = model
-    return known
-
-
-def _sheet_rows(client: TeddyCloudClient, catalog: Catalog,
-                cached: Optional[bool] = True) -> List[SheetRow]:
-    """A row per sticker with a printable model, then the models of this app on none.
-
-    Two stickers that play the same tonie are two rows: each chip in hand
-    gets a cover of its own.
-    """
-    known = _known_models(client, catalog, cached)
-    rows = [SheetRow(known[tag.model], tag.uid, tag.ruid)
-            for tag in list_tags(client) if tag.model in known]
-    on_stickers = {row.model.id for row in rows}
-    rows += [SheetRow(model) for model in known.values() if model.id not in on_stickers]
-    return sorted(rows, key=lambda row: (row.model.label.casefold(), row.uid))
+    sweep(data_dir, "*.pdf", OLD_PDF_SECONDS)
 
 
 def _pick(text: str) -> Tuple[str, int, str]:
@@ -332,39 +260,6 @@ def _pick(text: str) -> Tuple[str, int, str]:
     except ValueError:
         copies = 0
     return model_id, copies, FIT if mode == FIT else FILL
-
-
-def _stickers(client: Callable[[], TeddyCloudClient], wanted: Sequence[Tuple[Model, int, str]],
-              back: bool, back_tracks: bool, times: Dict[str, int],
-              translate: Translator) -> List[Sticker]:
-    """The motifs of a sheet, each fetching its picture only when the sheet gets to it.
-
-    The text side follows its cover, and both use one download: the last
-    picture fetched is kept until the next motif asks for another.
-    """
-    last: Dict[str, Optional[bytes]] = {}
-
-    def picture_of(model: Model) -> Callable[[], Optional[bytes]]:
-        def fetch() -> Optional[bytes]:
-            if model.id not in last:
-                last.clear()
-                last[model.id] = _cover_bytes(client(), model)
-            return last[model.id]
-        return fetch
-
-    stickers = []
-    for model, count, mode in wanted:
-        stickers.append(Sticker(image=picture_of(model), count=count, label=model.label,
-                                mode=mode))
-        # One text side per copy, right after it, so a sheet cut up in order
-        # leaves each pair together.
-        if back:
-            description = _back_of(model, times.get(model.id), translate)
-            if not back_tracks:
-                description.tracks = ()
-            stickers.append(Sticker(image=picture_of(model), count=count,
-                                    label=f"{model.label} back", back=description))
-    return stickers
 
 
 @dataclass
@@ -407,66 +302,6 @@ def _sheet_job(prints: JobRunner, job_id: str) -> Job:
     if job is None or job.kind != "sheet":
         raise Refused(404, "error.no_job")
     return job
-
-
-def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],
-                      translate: Optional[Translator] = None) -> List[Entry]:
-    """One entry per model that sits on a sticker, in shelf order.
-
-    A model no sticker names is not a tonie anyone can pick up, so it does not
-    belong on a list of what is in the tin.
-    """
-    on_stickers = {tag.model for tag in list_tags(client) if tag.model}
-    entries = []
-    for model in list_models(client):
-        if model.id not in on_stickers:
-            continue
-        image = None
-        if model.cover or cache_name(model.picture):
-            try:
-                image = fetch_picture(client, model.picture)
-            except TeddyCloudError as error:
-                log.warning("overview: no cover for %s: %s", model.id, error)
-        back = _back_of(model, times.get(model.id), translate)
-        entries.append(Entry(image=image, title=back.title, series=back.series,
-                             facts=list(back.notes)))
-    return sorted(entries, key=lambda entry: (entry.series.casefold(), entry.title.casefold()))
-
-
-def _back_of(model: Model, seconds: Optional[int] = None,
-             translate: Optional[Translator] = None) -> Back:
-    """What the text side of one model says.
-
-    The episode names the album and the series names who made it, which is the
-    order they are looked for in: a shelf of tonies is searched by album.
-    Facts the model does not carry are left out rather than guessed at, so a
-    tonie recorded before the app stored them simply says less.
-    """
-    translate = translate or Translator(DEFAULT_LANGUAGE)
-    facts = [
-        str(model.year or ""),
-        translate("pdf.tracks", count=len(model.tracks)) if model.tracks else "",
-        translate("pdf.minutes", count=minutes(seconds)) if minutes(seconds) else "",
-    ]
-    notes = [" - ".join(fact for fact in facts if fact), model.id]
-    return Back(
-        title=model.episode or model.series or model.id,
-        series=model.series,
-        notes=[note for note in notes if note],
-        tracks=list(model.tracks),
-        language=translate.lang,
-    )
-
-
-def _cover_bytes(client: TeddyCloudClient, model: Optional[Model]) -> Optional[bytes]:
-    """The cover of a printable model, or None when there is none to be read."""
-    if model is None or not (model.cover or cache_name(model.picture)):
-        return None
-    try:
-        return fetch_picture(client, model.picture)
-    except TeddyCloudError as error:
-        log.warning("cannot read the cover of %s: %s", model.id, error)
-        return None
 
 
 def _millimetres(text: str) -> float:
