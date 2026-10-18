@@ -490,6 +490,20 @@ class TestNamer:
         # Written without its audio while the old model still had it, then with it.
         assert (fake.custom_models[0]["audio_id"], fake.custom_models[0]["hash"]) == (["7"], ["77"])
 
+    def test_the_upkeep_counts_each_call_to_teddycloud(self):
+        from tonie_studio.naming import Namer
+
+        fake = self.teddycloud_with(7, "77", ruid("00000001"), model_id="NFC-0004")
+        fake.custom_models.append({"model": "NFC-0004", "series": "Comics", "episodes": "Fledermaus",
+                                   "audio_id": ["7"], "hash": ["77"]})
+        heard = []
+
+        namer = Namer(lambda: fake, dict)
+        namer.upkeep(migrate=True, progress=lambda step, done, total: heard.append((done, total)))
+
+        # The new model without audio, the sticker, the old model gone, the audio.
+        assert heard == [(0, 4), (1, 4), (2, 4), (3, 4)]
+
     def test_the_upkeep_writes_nothing_when_the_plan_is_not_the_one_shown(self):
         import pytest
 

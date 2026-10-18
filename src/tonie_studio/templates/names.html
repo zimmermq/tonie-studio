@@ -1,8 +1,18 @@
 {% extends "base.html" %}
 {% set page_title = t("names.title") %}
 
+{% block head %}
+{#- Writing the names is watched by asking again, as the checkup does. #}
+{% if running %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
 {% block intro %}{{ t("names.intro") }}{% endblock %}
 {% block body %}
+{% if running %}
+<div class="info" role="status">
+  {%- if running.total %}{{ t("names.running", done=running.done_count, count=running.total) }}
+  {%- else %}{{ t("names.preparing") }}{% endif -%}
+</div>
+{% else %}
 {% if changed %}
 <div class="info">{{ t("names.changed") }}</div>
 {% endif %}
@@ -66,5 +76,6 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}

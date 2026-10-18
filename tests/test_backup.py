@@ -367,6 +367,19 @@ class TestRestoreOnlyAdds:
         assert cloud.tag_entries[TIERE]["nocloud"] is True
 
 
+class TestRestoreSaysHowFarItIs:
+    def test_counts_every_model_cover_and_sticker_once(self, cloud, data_dir):
+        backup = read_backup(create_backup(cloud, data_dir))
+        heard = []
+
+        apply_restore(wiped(cloud), backup, data_dir,
+                      progress=lambda step, done, total: heard.append((step, done, total)))
+
+        total = len(backup.models) + len(backup.covers) + len(backup.tags)
+        assert total > 0
+        assert heard == [("restore", done, total) for done in range(total)]
+
+
 class TestRestoreKeepsGoing:
     def test_one_item_that_cannot_be_written_does_not_stop_the_rest(self, cloud, data_dir, tmp_path):
         # Half a restore that stops with an error page leaves nobody knowing

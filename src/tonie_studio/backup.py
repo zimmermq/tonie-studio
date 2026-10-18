@@ -29,7 +29,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .albumnotes import MADE_FILE, add_made
 from .calibration import FILE_NAME as CALIBRATION_FILE
@@ -299,8 +299,12 @@ def plan_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> Li
     return _restore(client, backup, data_dir, write=False)
 
 
-def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> List[Step]:
+def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path,
+                  progress: Optional[Callable[[str, int, int], None]] = None) -> List[Step]:
     """Restore, and return what was done.
+
+    ``progress`` is told ("restore", done, total) before each model, cover and
+    sticker, the items that each cost a call to teddyCloud.
 
     The models are compared and written under the lock every model write
     shares - a model is written whole, and one changed meanwhile would be
@@ -308,11 +312,18 @@ def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> L
     and the app's own records are moved without it: hundreds of covers take
     minutes, and holding every other write up that long times them out.
     """
-    return _restore(client, backup, data_dir, write=True)
+    return _restore(client, backup, data_dir, write=True, progress=progress)
 
 
-def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bool) -> List[Step]:
+def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bool,
+             progress: Optional[Callable[[str, int, int], None]] = None) -> List[Step]:
     steps: List[Step] = []
+    total = len(backup.models) + len(backup.covers) + len(backup.tags)
+    count = iter(range(total))
+
+    def next_item() -> None:
+        if progress:
+            progress("restore", next(count), total)
 
     # Models the backup has, this box does not, and that could not be written.
     missing_models: set = set()
@@ -320,6 +331,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
         current_models = {str(model.get("model", "")).lower(): model
                           for model in client.custom_tonies()}
         for model in backup.models:
+            next_item()
             existing = current_models.get(str(model["model"]).lower())
             action = NEW if existing is None else (SAME if existing == model else CHANGES)
             step = _attempt(write and action != SAME, MODEL, _model_label(model), action,
@@ -332,6 +344,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
             steps.append(step)
 
     for name, data in sorted(backup.covers.items()):
+        next_item()
         try:
             existing_cover: Optional[bytes] = fetch_cover(client, name)
         except TeddyCloudError:
@@ -345,6 +358,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     known = {tag.ruid: tag for tag in list_tags(client)}
     present = _library_sources(client)
     for record in backup.tags:
+        next_item()
         ruid = record["ruid"]
         label = record.get("label") or ruid
         tag = known.get(ruid)

@@ -20,6 +20,7 @@ from ..times import from_seconds
 from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
                          ImportProblem, Pace, Run)
 from .. import naming
+from ..jobs import JobState
 from .common import Context, Refused, refused, upload_form
 
 # The order the counts are shown in.
@@ -31,6 +32,10 @@ RECENT = 10
 # The order the naming steps are listed in.
 KINDS = (naming.RENAME, naming.PROMOTE, naming.RETITLE, naming.NEW, naming.REUSE,
          naming.OFFICIAL)
+
+
+# The job kind of writing the names a person looked at.
+NAMES_KIND = "names"
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -97,9 +102,24 @@ def register(app: FastAPI, ctx: Context) -> None:
         _start(lambda pace: importer.begin(dumps, pace, label), per_hour, jitter, max_failures)
         return RedirectResponse("/import", 303)
 
+    def names_run(job_id: str):
+        job = ctx.prints.get(job_id)
+        return job if job is not None and job.kind == NAMES_KIND else None
+
     @app.get("/import/names", response_class=HTMLResponse)
-    def names_page(request: Request, named: int = -1, deleted: int = 0, changed: int = 0):
+    def names_page(request: Request, named: int = -1, deleted: int = 0, changed: int = 0,
+                   running: str = ""):
         """What the upkeep would change now, renaming the old models included."""
+        if running:
+            job = names_run(running)
+            if job is None:
+                return RedirectResponse("/import/names", 303)
+            if job.state is JobState.DONE:
+                return RedirectResponse(f"/import/names?named={len(job.result.steps)}"
+                                        f"&deleted={len(job.result.retired)}", 303)
+            if job.state is JobState.FAILED:
+                return names_failed(job)
+            return templates.TemplateResponse(request, "names.html", {"running": job})
         todo = namer.preview(migrate=True)
         steps = sorted(todo.steps, key=lambda step: (KINDS.index(step.kind), step.path))
         return templates.TemplateResponse(request, "names.html", {
@@ -109,22 +129,38 @@ def register(app: FastAPI, ctx: Context) -> None:
             "fingerprint": naming.fingerprint(todo),
         })
 
+    def names_failed(job):
+        """Say why a run stopped. A plan changed meanwhile is shown again;
+        teddyCloud answering with a refusal is not teddyCloud being away,
+        which is what the app's handler for its errors would say."""
+        error = job.exception
+        if isinstance(error, naming.PlanChanged):
+            return RedirectResponse("/import/names?changed=1", 303)
+        if isinstance(error, TeddyCloudError) and not error.refused:
+            raise error
+        raise Refused(409, "names.refused", detail=job.error)
+
     @app.post("/import/names")
     def apply_names(plan: str = Form("")):
-        # Only what the person looked at is written: a plan that changed since,
-        # say because an import moved on, is shown again instead.
-        # teddyCloud answering with a refusal is not teddyCloud being away,
-        # which is what the app's handler for its errors would say.
-        try:
-            done = namer.upkeep(migrate=True, expect=plan)
-        except naming.PlanChanged:
-            return RedirectResponse("/import/names?changed=1", 303)
-        except TeddyCloudError as error:
-            if error.refused:
-                raise Refused(409, "names.refused", detail=str(error)) from error
-            raise
-        return RedirectResponse(
-            f"/import/names?named={len(done.steps)}&deleted={len(done.retired)}", 303)
+        """Start writing the names, behind a page that watches.
+
+        Only what the person looked at is written: a plan that changed since,
+        say because an import moved on, is shown again instead. It is checked
+        here, so that is said at once, and again under the lock as the run
+        starts. Hundreds of old models take longer than a proxy in front of
+        the app waits, hence the run. One at a time: a second click joins it.
+        """
+        under_way = next((job for job in ctx.prints.all() if job.kind == NAMES_KIND
+                          and job.state in (JobState.QUEUED, JobState.RUNNING)), None)
+        if under_way is None:
+            if naming.fingerprint(namer.preview(migrate=True)) != plan:
+                return RedirectResponse("/import/names?changed=1", 303)
+            job_id = ctx.prints.submit(
+                NAMES_KIND, "names",
+                lambda progress: namer.upkeep(migrate=True, expect=plan, progress=progress))
+        else:
+            job_id = under_way.id
+        return RedirectResponse(f"/import/names?running={job_id}", 303)
 
     @app.post("/import/pause")
     def pause():

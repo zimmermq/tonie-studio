@@ -30,8 +30,9 @@ log = logging.getLogger(__name__)
 KEEP_RESTORED = 5
 
 
-# The job kind of a repair run for all stickers at once.
+# The job kinds of a repair run for all stickers at once and of a restore.
 BULK_KIND = "checkup"
+RESTORE_KIND = "restore"
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -178,38 +179,72 @@ def register(app: FastAPI, ctx: Context) -> None:
     # memory: the page is looked at once, right after, and a few will do.
     restored: "OrderedDict[str, Tuple[list, dict]]" = OrderedDict()
 
+    def restore_run(token: str):
+        """The restore run of ``token`` the app still knows, newest first."""
+        return next((job for job in ctx.prints.all()
+                     if job.kind == RESTORE_KIND and job.label == token), None)
+
     @app.post("/restore/{token}")
     def restore_apply(token: str):
-        """Restore, then show what was done on a page of its own.
+        """Start the restore and watch it on a page of its own.
 
-        Its own address, so reloading it shows the result again rather than
-        sending the confirmation a second time.
+        Its own address, so reloading it shows the run or the result again
+        rather than sending the confirmation a second time. The restore runs
+        behind that page: hundreds of stickers take longer than a proxy in
+        front of the app waits for an answer.
         """
         if not token.isalnum():
             raise Refused(400, "error.not_a_restore")
+        run = restore_run(token)
+        if run is not None and run.state in (JobState.QUEUED, JobState.RUNNING):
+            return RedirectResponse(f"/restore/{token}/done", 303)
         data = read_parked(settings.data_dir, token)
         if data is None:
             raise Refused(404, "error.restore_gone")
         with refusing(BackupError):
             backup = read_backup(data)
-            steps = apply_restore(client(), backup, settings.data_dir)
-        drop_parked(settings.data_dir, token)
-        restored[token] = (steps, backup.manifest)
-        while len(restored) > KEEP_RESTORED:
-            restored.popitem(last=False)
+
+        def work(progress) -> int:
+            steps = apply_restore(client(), backup, settings.data_dir, progress)
+            # Kept until here: a run that fails can be confirmed again
+            # without uploading the backup a second time.
+            drop_parked(settings.data_dir, token)
+            restored[token] = (steps, backup.manifest)
+            while len(restored) > KEEP_RESTORED:
+                restored.popitem(last=False)
+            return len(steps)
+
+        ctx.prints.submit(RESTORE_KIND, token, work)
         return RedirectResponse(f"/restore/{token}/done", 303)
 
     @app.get("/restore/{token}/done", response_class=HTMLResponse)
     def restore_done(request: Request, token: str):
-        if token not in restored:
+        if token in restored:
+            steps, manifest = restored[token]
+            return templates.TemplateResponse(request, "restore.html", {
+                "steps": steps,
+                "manifest": manifest,
+                "token": token,
+                "done": True,
+                "silent_albums": _silent_albums(client(), settings.data_dir),
+            })
+        run = restore_run(token)
+        data = read_parked(settings.data_dir, token) if token.isalnum() else None
+        if run is None or data is None:
             raise Refused(404, "error.restore_gone")
-        steps, manifest = restored[token]
+        backup = read_backup(data)
+        if run.state is not JobState.FAILED:
+            return templates.TemplateResponse(request, "restore.html", {
+                "running": run, "steps": [], "manifest": backup.manifest, "token": token,
+                "done": False,
+            })
+        # Stopped half way: what is there is shown again, to be confirmed anew.
         return templates.TemplateResponse(request, "restore.html", {
-            "steps": steps,
-            "manifest": manifest,
+            "steps": plan_restore(client(), backup, settings.data_dir),
+            "manifest": backup.manifest,
             "token": token,
-            "done": True,
-            "silent_albums": _silent_albums(client(), settings.data_dir),
+            "done": False,
+            "failed": run.problem.say(translator(request)) if run.problem else run.error,
         })
 
 

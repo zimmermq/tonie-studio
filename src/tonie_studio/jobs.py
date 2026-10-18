@@ -62,6 +62,8 @@ class Job:
     result: Any = None
     error: Optional[str] = None
     problem: Optional[Problem] = None
+    # What the work raised, for a page that answers each cause its own way.
+    exception: Optional[BaseException] = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: Optional[datetime] = None
     # Set once the job stops, so a test or a caller can wait instead of poll.
@@ -162,6 +164,7 @@ class JobRunner:
             # would leave the page with a job that stopped for no stated reason.
             log.exception("job %s (%s) failed", job.id, job.label)
             job.error = str(error) or error.__class__.__name__
+            job.exception = error
             # Kept whole when a person is meant to read it, so a page can say
             # it in the reader's language; ``error`` is the log's version.
             job.problem = error if isinstance(error, Problem) else None

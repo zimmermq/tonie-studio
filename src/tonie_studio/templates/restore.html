@@ -1,12 +1,25 @@
 {% extends "base.html" %}
 {% set page_title = t("backup.restore") %}
-{% set page_heading = t("restore.done") if done else t("restore.ask") %}
+{% set page_heading = t("restore.done") if done else t("restore.under_way") if running else t("restore.ask") %}
 
 {% block intro %}
   {{ t("restore.from", date=(manifest.get("created") or "?")[:10],
        models=manifest.get("models", "?"), tags=manifest.get("tags", "?")) }}
 {% endblock %}
+{% block head %}
+{#- A restore under way is watched by asking again, as the checkup does. #}
+{% if running %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
 {% block body %}
+{% if running %}
+<div class="info" role="status">
+  {%- if running.total %}{{ t("restore.running", done=running.done_count, count=running.total) }}
+  {%- else %}{{ t("restore.preparing") }}{% endif -%}
+</div>
+{% else %}
+{% if failed %}
+<div class="info state-failed" role="alert">{{ t("restore.failed", detail=failed) }}</div>
+{% endif %}
 {% set changing = steps | rejectattr("action", "equalto", "same") | list %}
 {% if not done %}
 {% if changing %}
@@ -47,5 +60,6 @@
   {% endif %}
   <a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a>
 </p>
+{% endif %}
 {% endif %}
 {% endblock %}

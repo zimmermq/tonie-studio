@@ -293,7 +293,7 @@ class TestNames:
         page = site.get("/import/names").text
         seen = page.split('name="plan" value="', 1)[1].split('"', 1)[0]
 
-        response = site.post("/import/names", data={"plan": seen})
+        response = _apply_names(site, seen)
 
         assert response.status_code == 409
         assert "answered 400" in response.text and say("offline.albums_work") not in response.text
@@ -312,6 +312,35 @@ class TestNames:
         assert teddycloud.custom_models[0]["model"] == "NFC-0004"
         assert say("names.changed") in site.get("/import/names?changed=1").text
 
+    def test_applying_answers_at_once_and_renames_behind_it(self, site, teddycloud):
+        # Hundreds of old models take longer than a gateway in front of the
+        # app waits for an answer.
+        import threading
+
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="NFC-0004")
+        teddycloud.custom_models.append({"model": "NFC-0004", "series": "Comics",
+                                         "episodes": "Fledermaus", "audio_id": ["7"],
+                                         "hash": ["77"]})
+        seen = site.get("/import/names").text.split('name="plan" value="', 1)[1].split('"', 1)[0]
+        writing = threading.Event()
+        original = teddycloud.upsert_custom_tonie
+        teddycloud.upsert_custom_tonie = lambda model: writing.wait(5) and original(model)
+
+        response = site.post("/import/names", data={"plan": seen}, follow_redirects=False)
+        watching = site.get(response.headers["location"])
+
+        assert response.headers["location"].startswith("/import/names?running=")
+        assert 'http-equiv="refresh"' in watching.text
+        writing.set()
+        _wait_for_names(site, response)
+        assert [m["model"] for m in teddycloud.custom_models] == ["TS-0001"]
+
+    def test_a_run_the_app_no_longer_knows_is_just_the_page(self, site):
+        response = site.get("/import/names?running=gone", follow_redirects=False)
+
+        assert response.headers["location"] == "/import/names"
+
     def test_applying_renames_and_says_how_much(self, site, teddycloud):
         teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
                            tonie_model="NFC-0004")
@@ -322,8 +351,21 @@ class TestNames:
         page = site.get("/import/names").text
         seen = page.split('name="plan" value="', 1)[1].split('"', 1)[0]
 
-        response = site.post("/import/names", data={"plan": seen}, follow_redirects=False)
+        response = _apply_names(site, seen, follow_redirects=False)
 
         assert response.headers["location"] == "/import/names?named=1&deleted=1"
         assert [m["model"] for m in teddycloud.custom_models] == ["TS-0001"]
         assert teddycloud.tag_entries["1d577820500304e0"]["tonie_model"] == "TS-0001"
+
+
+def _wait_for_names(site, response):
+    job_id = response.headers["location"].split("running=")[1]
+    assert site.app.state.prints.get(job_id).done.wait(10)
+
+
+def _apply_names(site, seen, follow_redirects=True):
+    """Apply the plan ``seen``, wait for the run, and answer the page it ends on."""
+    response = site.post("/import/names", data={"plan": seen}, follow_redirects=False)
+    assert response.headers["location"].startswith("/import/names?running=")
+    _wait_for_names(site, response)
+    return site.get(response.headers["location"], follow_redirects=follow_redirects)

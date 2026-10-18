@@ -231,7 +231,7 @@ class TestBackupPages:
 
         page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
         token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
-        client.post(f"/restore/{token}")
+        _restore(client, token)
 
         assert teddycloud.custom_models == saved
         assert not (settings.data_dir / "restore" / f"{token}.zip").exists()
@@ -242,7 +242,7 @@ class TestBackupPages:
         teddycloud.custom_models.clear()
         page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
         token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
-        client.post(f"/restore/{token}")
+        _restore(client, token)
 
         assert client.post(f"/restore/{token}").status_code == 404
 
@@ -258,6 +258,7 @@ class TestBackupPages:
 
         response = client.post(f"/restore/{token}", follow_redirects=False)
         done = response.headers["location"]
+        _wait_for_restore(client, token)
 
         assert response.status_code == 303
         assert client.get(done).status_code == 200
@@ -275,7 +276,7 @@ class TestBackupPages:
         page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
         token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
 
-        done = client.post(f"/restore/{token}").text
+        done = _restore(client, token).text
 
         assert 'href="/batch?ids=' in done
 
@@ -303,9 +304,36 @@ class TestBackupPages:
 
         with patch("tonie_studio.pages.upkeep.apply_restore",
                    side_effect=TeddyCloudError("unreachable")):
-            assert client.post(f"/restore/{token}").status_code == 503
+            failed = _restore(client, token)
 
-        assert client.post(f"/restore/{token}", follow_redirects=False).status_code == 303
+        assert "unreachable" in failed.text and f'action="/restore/{token}"' in failed.text
+        assert 'http-equiv="refresh"' not in failed.text
+        _restore(client, token)
+        assert teddycloud.custom_models
+
+    def test_confirming_answers_at_once_and_restores_behind_it(self, client, runner, teddycloud):
+        # Hundreds of stickers take longer than a gateway in front of the app
+        # waits; the result must not depend on the confirmation's answer.
+        publish_album(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+        writing = threading.Event()
+        original = teddycloud.upsert_custom_tonie
+        teddycloud.upsert_custom_tonie = lambda model: writing.wait(5) and original(model)
+
+        response = client.post(f"/restore/{token}", follow_redirects=False)
+        watching = client.get(response.headers["location"])
+        again = client.post(f"/restore/{token}", follow_redirects=False)
+
+        assert response.headers["location"] == f"/restore/{token}/done"
+        assert 'http-equiv="refresh"' in watching.text
+        assert again.status_code == 303
+        writing.set()
+        _wait_for_restore(client, token)
+        assert teddycloud.custom_models
+        assert 'http-equiv="refresh"' not in client.get(f"/restore/{token}/done").text
 
     def test_refuses_a_file_that_is_not_a_backup(self, client):
         response = client.post("/restore", files={"file": ("x.zip", b"nope", "application/zip")})
@@ -376,3 +404,18 @@ def _finish_bulk(client, response):
     """Wait for the run a fix_all answer points at."""
     job_id = response.headers["location"].split("running=")[1]
     assert client.app.state.prints.get(job_id).done.wait(10)
+
+
+def _wait_for_restore(client, token):
+    """Wait for the restore run of ``token``."""
+    runs = [job for job in client.app.state.prints.all()
+            if job.kind == "restore" and job.label == token]
+    assert runs and all(job.done.wait(10) for job in runs)
+
+
+def _restore(client, token):
+    """Confirm a restore, wait for it, and answer its result page."""
+    response = client.post(f"/restore/{token}", follow_redirects=False)
+    assert response.status_code == 303
+    _wait_for_restore(client, token)
+    return client.get(response.headers["location"])

@@ -417,8 +417,11 @@ def _retitles(by_ruid: Mapping[str, TonieTag], dumps: Mapping[str, str], handled
     return steps
 
 
-def apply(client: TeddyCloudClient, todo: Plan) -> None:
+def apply(client: TeddyCloudClient, todo: Plan,
+          progress: Optional[Callable[[str, int, int], None]] = None) -> None:
     """Write the models, link the tonies, delete what nothing points at, then add the audio.
+
+    ``progress`` is told ("names", done, total) before each call to teddyCloud.
 
     teddyCloud refuses a custom model whose audio_id and hash another custom
     model already carries, and a renamed model shares both with the model it
@@ -430,20 +433,32 @@ def apply(client: TeddyCloudClient, todo: Plan) -> None:
     """
     new_models = [step.new_model for step in todo.steps
                   if step.new_model and step.kind != RETITLE]
+    linked = [step for step in todo.steps if step.kind != RETITLE]
+    with_audio = [model for model in new_models if model.audio_ids and model.hashes]
+    retitled = [step for step in todo.steps if step.kind == RETITLE]
+    total = len(new_models) + len(linked) + bool(todo.retired) + len(with_audio) + len(retitled)
+    count = iter(range(total))
+
+    def next_call() -> None:
+        if progress:
+            progress("names", next(count), total)
+
     for model in new_models:
+        next_call()
         client.upsert_custom_tonie(replace(model, audio_ids=[], hashes=[]).to_json())
-    for step in todo.steps:
-        if step.kind != RETITLE:
-            client.set_tag(step.ruid, tonie_model=step.model_id)
+    for step in linked:
+        next_call()
+        client.set_tag(step.ruid, tonie_model=step.model_id)
     if todo.retired:
+        next_call()
         client.delete_custom_tonies(todo.retired)
-    for model in new_models:
-        if model.audio_ids and model.hashes:
-            client.upsert_custom_tonie(model.to_json())
+    for model in with_audio:
+        next_call()
+        client.upsert_custom_tonie(model.to_json())
     # A renamed model keeps its id and audio, so it is written in one go.
-    for step in todo.steps:
-        if step.kind == RETITLE:
-            client.upsert_custom_tonie(step.new_model.to_json())
+    for step in retitled:
+        next_call()
+        client.upsert_custom_tonie(step.new_model.to_json())
     log.info("named %d tonie(s), deleted %d model(s)", len(todo.steps), len(todo.retired))
 
 
@@ -494,11 +509,13 @@ class Namer:
                     library_headers(client), migrate=migrate, retitle=migrate,
                     highest=highest_id_used(self.data_dir))
 
-    def upkeep(self, migrate: bool = False, expect: Optional[str] = None) -> Plan:
+    def upkeep(self, migrate: bool = False, expect: Optional[str] = None,
+               progress: Optional[Callable[[str, int, int], None]] = None) -> Plan:
         """Plan and carry out the upkeep in one go, under the lock all model writes share.
 
         With ``expect``, the fingerprint of the plan a person was shown, nothing
         is written unless the plan is still that one; :class:`PlanChanged` says so.
+        ``progress`` goes to :func:`apply`.
         """
         # The catalogue first: tonies.json is large, and loading it while
         # holding the lock would hold up every other write for that long.
@@ -509,7 +526,7 @@ class Namer:
                 raise PlanChanged()
             if not todo.empty:
                 self._note_ids(todo)
-                apply(self.client(), todo)
+                apply(self.client(), todo, progress)
             return todo
 
     def name_one(self, ruid: str, path: str) -> None:
