@@ -39,7 +39,10 @@ async function page(rows, globals = {}) {
     pageData: { words: { 'list.shown_of': '{shown} of {count}' }, first: 'name',
                 orders: { added: { number: true, desc: true }, name: {}, series: {}, kind: {}, category: {}, age: { number: true },
                           chapters: { number: true, desc: true } } },
-    queries: { '[data-filter]': chips, '[data-view]': views, '[data-sort]': sorters },
+    // As in the page: the list carries data-view too, so the bare attribute
+    // finds it along with the buttons.
+    queries: { '[data-filter]': chips, '[data-view]': [list, ...views],
+               'button[data-view]': views, '[data-sort]': sorters },
     globals,
   });
   const names = () => order.filter(row => !row.hidden).map(row => row.dataset.name);
@@ -95,6 +98,9 @@ async function page(rows, globals = {}) {
   view('list').fire('click');
   assert.equal(list.dataset.view, 'list');
   assert.equal(view('list').getAttribute('aria-pressed'), 'true');
+  // The list is what is switched, not a switch: a click on a row must not
+  // count as choosing a view, nor a screen reader call it pressed.
+  assert.equal(list.getAttribute('aria-pressed'), null);
 }
 
 // Nothing found says so.

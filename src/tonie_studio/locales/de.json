@@ -565,6 +565,7 @@
  "sheet.download": "PDF herunterladen",
  "sheet.extra": "Zusätzliche Bilder",
  "sheet.extra_hint": "Bilder ohne Modell kommen je einmal aufs Blatt.",
+ "sheet.extra_mode": "Wie die Bilder aufs Cover kommen",
  "sheet.fewer": "Einer weniger",
  "sheet.fill": "randlos",
  "sheet.fill_sheet": "Blatt voll machen",

@@ -565,6 +565,7 @@
  "sheet.download": "Download the PDF",
  "sheet.extra": "Extra pictures",
  "sheet.extra_hint": "Pictures without a model go on the sheet once each.",
+ "sheet.extra_mode": "How the pictures fill the cover",
  "sheet.fewer": "One fewer",
  "sheet.fill": "edge to edge",
  "sheet.fill_sheet": "Fill the sheet",

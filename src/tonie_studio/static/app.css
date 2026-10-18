@@ -378,7 +378,11 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
   display: flex; flex-direction: column; gap: 2px; padding: 10px;
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
 }
-.listing[data-view=grid] .listing-row img,
+/* Square tiles. The empty box gets its height from padding, which works in
+   every browser; a picture draws in its content box and so needs a real
+   height instead - without aspect-ratio (Safari before 15) it keeps its own
+   proportions, which is only less tidy. */
+.listing[data-view=grid] .listing-row img { width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; margin-bottom: 6px; }
 .listing[data-view=grid] .listing-row .noart { width: 100%; height: 0; padding-bottom: 100%; margin-bottom: 6px; }
 /* Two lines of the name, then cut: long episode titles are common. */
 .listing[data-view=grid] .t-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

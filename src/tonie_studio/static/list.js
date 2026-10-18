@@ -26,7 +26,7 @@
     const nohits = document.getElementById('nohits');
     const chips = [...document.querySelectorAll('[data-filter]')];
     const sorters = [...document.querySelectorAll('[data-sort]')];
-    const views = [...document.querySelectorAll('[data-view]')];
+    const views = [...document.querySelectorAll('button[data-view]')];
     const viewKey = list.dataset.remember;
 
     // Storage can be switched off or full; the page works without it.

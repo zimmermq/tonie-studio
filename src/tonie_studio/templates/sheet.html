@@ -137,7 +137,7 @@
     <p class="muted mt-0">{{ t("sheet.extra_hint") }}</p>
     <div class="row wrap gap-10">
       {{ file_button("files", t("sheet.choose_pictures"), slot="extrapicked", accept="image/*", multiple=True) }}
-      <select name="upload_mode">
+      <select name="upload_mode" aria-label="{{ t('sheet.extra_mode') }}">
         <option value="{{ fill }}">{{ t("sheet.fill") }}</option>
         <option value="{{ fit }}">{{ t("sheet.fit") }}</option>
       </select>

@@ -51,6 +51,19 @@ class TestFilePickersTakeTheKeyboard:
         assert "label.button > input[type=file]" in css
 
 
+class TestCssPictures:
+    """A picture draws in its content box: one given no height shows nothing."""
+
+    def test_no_picture_is_sized_by_padding_alone(self):
+        # height: 0 with padding-bottom draws an empty square around an img;
+        # the trick only works for a box with a background, such as .noart.
+        css = (ROOT / "static" / "app.css").read_text()
+
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+            if re.search(r"\bheight:\s*0\b", body) and "padding-bottom" in body:
+                assert not re.search(r"\bimg\b", selectors), selectors.strip()
+
+
 def _node():
     import os
     import shutil
