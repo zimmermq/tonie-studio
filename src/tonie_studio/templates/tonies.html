@@ -1,14 +1,12 @@
 {% extends "base.html" %}
 {% from "_list.html" import toolbar, chips, head with context %}
-{% block title %}{{ t("nav.tonies") }} - tonie-studio{% endblock %}
+{% set page_title = t("nav.tonies") %}
 
-{% block body %}
-<h1>{{ t("nav.tonies") }}</h1>
-<p class="sub">
+{% block intro %}
   {{ t("tonies.summary", used=tags | selectattr('assigned') | list | length, count=tags | length) }}<span
     id="boxnote" class="muted"></span>.
-</p>
-
+{% endblock %}
+{% block body %}
 {% if images_cached == false %}
 <div class="warn">{{ t("covers.cache_off") }}</div>
 {% endif %}

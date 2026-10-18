@@ -1,8 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ t("nav.listening") }} - tonie-studio{% endblock %}
+{% set page_title = t("nav.listening") %}
 
 {% block body %}
-<h1>{{ t("nav.listening") }}</h1>
 <div id="live">
 <p class="sub">
   {% if recorded_since %}

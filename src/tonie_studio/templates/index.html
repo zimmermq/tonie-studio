@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_steps.html" import steps with context %}
+{% set page_title = t("albums.title") %}
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
@@ -27,11 +28,9 @@
 </div>
 {%- endmacro %}
 
+{% block above %}{{ steps("1") }}{% endblock %}
+{% block intro %}{{ t("albums.intro") }}{% endblock %}
 {% block body %}
-{{ steps("1") }}
-<h1>{{ t("albums.title") }}</h1>
-<p class="sub">{{ t("albums.intro") }}</p>
-
 {% if jobs %}
 <h2>{{ t("albums.running") }}</h2>
 {% for job in jobs %}

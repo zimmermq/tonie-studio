@@ -1,9 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ t("sheet.job_title") }} - tonie-studio{% endblock %}
+{% set page_title = t("sheet.job_title") %}
 
 {% block body %}
-<h1>{{ t("sheet.job_title") }}</h1>
-
 <div class="card">
   <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
   <p class="muted mb-0" id="detail">{{ t("sheet.job_waiting") }}</p>

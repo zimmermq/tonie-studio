@@ -1,14 +1,12 @@
 {% extends "base.html" %}
 {% from "_list.html" import toolbar, chips, head with context %}
-{% block title %}{{ t("nav.library") }} - tonie-studio{% endblock %}
+{% set page_title = t("nav.library") %}
 
-{% block body %}
-<h1>{{ t("nav.library") }}</h1>
-<p class="sub">
+{% block intro %}
   {{ t("library.intro") }}
   {{ t("library.summary", count=shelf | length, size=t.size(total)) }}
-</p>
-
+{% endblock %}
+{% block body %}
 {% if shelf %}
 {{ toolbar(columns, "library.search", "library.search_label") }}
 {{ chips(shelf | length, filters, counts, "library.origin.") }}

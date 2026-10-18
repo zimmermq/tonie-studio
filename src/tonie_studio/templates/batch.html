@@ -1,11 +1,10 @@
 {% extends "base.html" %}
 {% from "_steps.html" import steps with context %}
-{% block title %}{{ t("batch.title") }} - tonie-studio{% endblock %}
+{% set page_title = t("batch.title") %}
 
+{% block above %}{{ steps("2") }}{% endblock %}
+{% block intro %}{{ t("batch.intro") }}{% endblock %}
 {% block body %}
-{{ steps("2") }}
-<h1>{{ t("batch.title") }}</h1>
-<p class="sub">{{ t("batch.intro") }}</p>
 {% set assigning = rows | selectattr("tags") | list %}
 
 {% set waiting = rows | rejectattr("skipped") | list %}

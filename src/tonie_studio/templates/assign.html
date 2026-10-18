@@ -1,10 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ t("assign.title") }} - tonie-studio{% endblock %}
+{% set page_title = t("assign.title") %}
+{% set page_heading = t("assign.heading") %}
 
+{% block intro %}{{ result.encoded.target }} - {{ t("albums.tracks", count=result.encoded.tracks) }}{% endblock %}
 {% block body %}
-<h1>{{ t("assign.heading") }}</h1>
-<p class="sub">{{ result.encoded.target }} - {{ t("albums.tracks", count=result.encoded.tracks) }}</p>
-
 <div class="warn" id="hint">
   {{ t("assign.new_sticker") }} <strong>{{ t("assign.hold_it") }}</strong> {{ t("assign.page_notices") }}
 </div>

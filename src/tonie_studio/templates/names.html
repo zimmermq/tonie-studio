@@ -1,12 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ t("names.title") }} - tonie-studio{% endblock %}
+{% set page_title = t("names.title") %}
 
+{% block intro %}{{ t("names.intro") }}{% endblock %}
 {% block body %}
-<h1>{{ t("names.title") }}</h1>
-<p class="sub">
-  {{ t("names.intro") }}
-</p>
-
 {% if changed %}
 <p class="state-failed">{{ t("names.changed") }}</p>
 {% endif %}

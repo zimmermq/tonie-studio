@@ -1,10 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ t("offline.title") }} - tonie-studio{% endblock %}
+{% set page_title = t("offline.title") %}
+{% set page_heading = t("offline.heading") %}
 
+{% block intro %}{{ t("offline.sub") }}{% endblock %}
 {% block body %}
-<h1>{{ t("offline.heading") }}</h1>
-<p class="sub">{{ t("offline.sub") }}</p>
-
 <div class="card">
   <p class="muted mt-0">{{ message }}</p>
   <p class="mb-0">{{ t("offline.albums_work") }}</p>

@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% block title %}{{ album.title }} - tonie-studio{% endblock %}
+{% set page_title = album.title %}
 
-{% block body %}
-<h1>{{ album.title }}</h1>
-<p class="sub">
+{% block intro %}
   {{ album.artist or t("album.various_artists") }}{% if album.year %} - {{ album.year }}{% endif %}
   - {{ t("albums.tracks", count=album.tracks | length) }}
   {%- if album.duration %} - {{ t("album.minutes", count=(album.duration / 60) | round | int) }}{% endif %}
   - {{ t("album.ordered_by", ordering=t("ordering." ~ album.ordering)) }}
-</p>
-
+{% endblock %}
+{% block body %}
 {% for warning in album.warnings %}
 <div class="warn">{{ t(warning) }}</div>
 {% endfor %}

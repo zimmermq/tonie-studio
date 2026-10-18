@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_steps.html" import steps with context %}
-{% block title %}{{ t("tonies.print") }} - tonie-studio{% endblock %}
+{% set page_title = t("tonies.print") %}
+{% set page_heading = t("sheet.heading") %}
 
+{% block above %}{% if preset %}{{ steps("5") }}{% endif %}{% endblock %}
 {% block body %}
-{% if preset %}{{ steps("5") }}{% endif %}
-<h1>{{ t("sheet.heading") }}</h1>
 {%- macro mm(value) %}{{ t.number(value, 1 if value % 1 else 0) }}{% endmacro %}
 {#- How the covers are cut decides their size and how many fit; the choice
     goes with the form and the page remembers it. #}

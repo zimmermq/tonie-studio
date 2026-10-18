@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 {% from "_steps.html" import steps with context %}
-{% block title %}{{ t(title_key) }} - tonie-studio{% endblock %}
+{% set page_title = t(title_key) %}
+{% set page_heading = t(heading_key) %}
 
+{% block above %}{% if batch %}{{ steps("4" if finished else "3") }}{% endif %}{% endblock %}
+{% block intro %}{{ t(intro_key) }}{% endblock %}
 {% block body %}
-{% if batch %}{{ steps("4" if finished else "3") }}{% endif %}
-<h1>{{ t(heading_key) }}</h1>
-<p class="sub">
-  {{ t(intro_key) }}
-</p>
-
 {% if placing %}
 <div class="card" id="placing">
   <strong>{{ t("place.prompt") }}</strong>

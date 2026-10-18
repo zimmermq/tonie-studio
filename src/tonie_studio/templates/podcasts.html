@@ -1,12 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ t("nav.podcasts") }} - tonie-studio{% endblock %}
+{% set page_title = t("nav.podcasts") %}
 
+{% block intro %}{{ t("podcasts.intro") }}{% endblock %}
 {% block body %}
-<h1>{{ t("nav.podcasts") }}</h1>
-<p class="sub">
-  {{ t("podcasts.intro") }}
-</p>
-
 <div class="list">
 {% for entry in subscriptions %}
   <div class="album">

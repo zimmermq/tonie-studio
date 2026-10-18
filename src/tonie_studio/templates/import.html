@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ t("nav.import") }} - tonie-studio{% endblock %}
+{% set page_title = t("nav.import") %}
 
 {% macro pace_fields(pace) %}
   <div class="row stackable wrap gap-12 items-end">
@@ -21,11 +21,8 @@
   </div>
 {% endmacro %}
 
+{% block intro %}{{ t("import.intro") }}{% endblock %}
 {% block body %}
-<h1>{{ t("nav.import") }}</h1>
-<p class="sub">
-  {{ t("import.intro") }}
-</p>
 <p class="row wrap gap-12">
   <a class="button" href="/import/names">{{ t("names.title") }}</a>
   <span class="muted">{{ t("names.hint") }}</span>

@@ -372,3 +372,30 @@ class TestBuild:
         footer = client.get("/").text.split('class="build', 1)[1].split("</span>", 1)[0]
 
         assert "dev" in footer and "href" not in footer
+
+
+class TestEveryPageNamesItselfOnce:
+    """A page's name is set in one place: the base layout makes the tab and the heading of it."""
+
+    PAGES = ["/", "/tonies", "/library", "/sheet", "/checkup", "/backup", "/radio",
+             "/podcasts", "/listening", "/import", "/import/names"]
+
+    def test_the_tab_carries_the_page_s_name_and_one_heading_follows(self, client):
+        import re
+
+        for path in self.PAGES:
+            page = client.get(path).text
+            found = re.search(r"<title>(.*?)</title>", page, re.S)
+            assert found, (path, page[:300])
+            title = found.group(1)
+            assert title.endswith(" - tonie-studio") and title.count("tonie-studio") == 1, path
+            assert page.count("<h1") == 1, path
+
+    def test_a_page_with_its_own_top_has_its_name_in_the_tab_only(self, client, runner,
+                                                                  teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "<title>Lichterkinder - Halloween - tonie-studio</title>" in page
+        assert page.count("<h1") == 1  # the one beside the picture

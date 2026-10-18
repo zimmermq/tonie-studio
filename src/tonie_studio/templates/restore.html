@@ -1,13 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ t("backup.restore") }} - tonie-studio{% endblock %}
+{% set page_title = t("backup.restore") %}
+{% set page_heading = t("restore.done") if done else t("restore.ask") %}
 
-{% block body %}
-<h1>{% if done %}{{ t("restore.done") }}{% else %}{{ t("restore.ask") }}{% endif %}</h1>
-<p class="sub">
+{% block intro %}
   {{ t("restore.from", date=(manifest.get("created") or "?")[:10],
        models=manifest.get("models", "?"), tags=manifest.get("tags", "?")) }}
-</p>
-
+{% endblock %}
+{% block body %}
 {% set changing = steps | rejectattr("action", "equalto", "same") | list %}
 {% if not done %}
 <div class="{% if changing %}warn{% else %}card{% endif %}">
