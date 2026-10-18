@@ -53,16 +53,17 @@
     {%- if build.version_url %}<a href="{{ build.version_url }}">{{ build.version }}</a>{% else %}{{ build.version }}{% endif %}
     {%- if build.commit %} &middot; <a href="{{ build.commit_url }}">{{ build.commit }}</a>{% endif -%}
   </span>
-  <span class="languages" aria-label="{{ t('nav.language') }}">
+  <nav class="languages" aria-label="{{ t('nav.language') }}">
     {%- for code, name in languages %}
     {%- if code == lang %}<b title="{{ name }}">{{ code | upper }}</b>
     {%- else %}<a href="/lang/{{ code }}?next={{ request.url.path | urlencode }}{% if request.url.query %}%3F{{ request.url.query | urlencode }}{% endif %}" title="{{ name }}" hreflang="{{ code }}">{{ code | upper }}</a>{% endif %}
     {%- endfor %}
-  </span>
+  </nav>
 </header>
 <script type="application/json" id="common-words">{{ t.strings("common.files") | tojson }}</script>
 <script type="application/json" id="box-words">{{ t.strings("box.unreachable", "box.silent", "box.playing", "box.on_box") | tojson }}</script>
 <main>
+<noscript><div class="noscript warn">{{ t("common.needs_script") }}</div></noscript>
 {% block above %}{% endblock %}
 {#- A kind of page with a top of its own - the picture of a details page -
     replaces this block. #}

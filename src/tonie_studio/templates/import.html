@@ -35,9 +35,7 @@
     {%- if run.phase == "running" and not run.paused and next_at %} &middot; {{ t("import.next_at", time=t.when(next_at)) }}{% endif %}
   </p>
   {% if run.error or run.error_key %}
-  <p class="state-failed">
-    {{- error_text(run) -}}
-  </p>
+  <div class="warn">{{ error_text(run) }}</div>
   {% endif %}
   <div class="list">
   {% for state in states %}

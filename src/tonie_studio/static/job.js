@@ -3,7 +3,6 @@ const data = pageData();
 
 const id = data.id;
 const words = data.words;
-const fill = document.getElementById('fill');
 const state = document.getElementById('state');
 const detail = document.getElementById('detail');
 
@@ -24,7 +23,7 @@ function describe(job) {
 // ``job`` is the answer of /api/job; ``data`` stays the page's own.
 function show(job) {
   state.textContent = words[`job.state.${job.state}`] || job.state;
-  fill.style.width = (job.percent ?? 0) + '%';
+  progressTo(job.percent ?? 0);
   detail.textContent = describe(job);
 
   if (job.state === 'done' || job.state === 'failed') {

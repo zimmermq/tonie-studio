@@ -1,6 +1,7 @@
 """Tests for the pages of what every page shares: errors, the language, the navigation
 and startup."""
 
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -446,3 +447,28 @@ class TestLowSpace:
         assert any("free" in record.getMessage() and record.levelname == "WARNING"
                    for record in caplog.records)
 
+
+
+class TestScreenReaders:
+    """What changes on a page by itself has to be announced; a sighted person sees it move."""
+
+    def test_the_list_count_is_announced(self, client):
+        assert '<span class="muted" id="count" role="status"' in client.get("/").text
+
+    def test_progress_is_a_progress_bar_and_its_line_is_announced(self, client, runner):
+        from web_helpers import encode_and_assign_page
+
+        job, _page = encode_and_assign_page(client, runner)
+        page = client.get(f"/job/{job.id}").text
+
+        assert 'role="progressbar"' in page and 'aria-valuenow=' in page
+        assert re.search(r'id="detail"[^>]*role="status"', page)
+        assert re.search(r'id="message"[^>]*role="status"', page)
+
+    def test_a_group_of_choices_is_named_by_its_caption(self, client):
+        page = client.get("/podcasts").text
+
+        assert "<fieldset" in page and "<legend>" in page
+
+    def test_the_language_links_are_a_named_navigation(self, client):
+        assert re.search(r'<nav class="languages" aria-label="', client.get("/").text)

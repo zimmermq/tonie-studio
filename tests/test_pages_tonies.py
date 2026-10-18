@@ -262,7 +262,7 @@ class TestLibraryPage:
     @staticmethod
     def row(page, path):
         start = page.rindex("<div", 0, page.index(f'data-path="{path}"'))
-        end = page.find('<div class="taf', start + 10)
+        end = page.find('<div class="listing-row"', start + 10)
         return page[start:end if end != -1 else len(page)]
 
     def test_deletes_one(self, client, runner, teddycloud):

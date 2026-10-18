@@ -2,7 +2,7 @@
 {#- A page that watches work in the background: a bar and a line saying
     where it is, then what came of it, and the buttons on. The page's own
     script asks how the work is going and fills the parts by their ids:
-      #fill     the bar, as a width in percent
+      #fill     the bar, as a width in percent; #bar carries it as aria-valuenow
       #detail   the line under it
       #outcome  hidden until the work is done or failed; #message in it says
                 which, as state-done or state-failed
@@ -12,12 +12,14 @@
     outcome card, ``actions`` fills the row of buttons under it. #}
 {% block body %}
 <div class="card">
-  <div class="bar"><div id="fill" style="width: {{ percent | default(0) }}%"></div></div>
-  <p class="muted mb-0" id="detail">{{ detail }}</p>
+  <div class="bar" id="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+       aria-valuenow="{{ percent | default(0) }}" aria-labelledby="detail">
+    <div id="fill" style="width: {{ percent | default(0) }}%"></div></div>
+  <p class="muted mb-0" id="detail" role="status">{{ detail }}</p>
 </div>
 
 <div class="card" id="outcome" {% if not finished | default(false) %}hidden{% endif %}>
-  <p id="message" class="mt-0 {% if failed | default(false) %}state-failed{% else %}state-done{% endif %}">
+  <p id="message" role="status" class="mt-0 {% if failed | default(false) %}state-failed{% else %}state-done{% endif %}">
     {%- block message %}{% endblock -%}
   </p>
   {% block outcome %}{% endblock %}

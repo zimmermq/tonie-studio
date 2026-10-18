@@ -42,7 +42,7 @@
   <div class="grow">
     {% if description %}
     {#- Cleaned by shop.clean_description: text and plain formatting only. #}
-    <div class="description">{{ description | safe }}</div>
+    <div>{{ description | safe }}</div>
     {% elif model %}
     <p class="muted mt-0 mb-0">{{ t("tonie.shop_hint") }}</p>
     {% elif not tag.model %}
@@ -51,7 +51,7 @@
   </div>
   {% if tracks %}
   <div class="tracklist">
-    <h3 class="mt-0">{{ t("tonie.about_tracks") }}</h3>
+    <h2 class="mt-0">{{ t("tonie.about_tracks") }}</h2>
     <ol class="muted mb-0">
       {% for track in tracks %}<li>{{ track }}</li>{% endfor %}
     </ol>

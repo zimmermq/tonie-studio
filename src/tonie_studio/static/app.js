@@ -48,6 +48,13 @@ window.searchWords = text => text.toLowerCase().split(/\s+/)
 // Whether every one of ``words`` is in the element's data-search.
 window.matches = (element, words) => words.every(word => element.dataset.search.includes(word));
 
+// Moves a progress page's bar, for the eye and for a screen reader.
+window.progressTo = percent => {
+  document.getElementById('fill').style.width = `${percent}%`;
+  const bar = document.getElementById('bar');
+  if (bar) bar.setAttribute('aria-valuenow', percent);
+};
+
 // How the work of a progress page ended, in the outcome card every one has.
 window.ended = (text, failed) => {
   document.getElementById('outcome').hidden = false;

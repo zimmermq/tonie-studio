@@ -1,7 +1,8 @@
 /* The look of every page. Served as a file of its own so the browser keeps it. */
 
 :root {
-  --bg: #faf8f5; --card: #fff; --ink: #2a2724; --muted: #7d7669;
+  /* --muted is small text: at least 4.5:1 on the page, the cards and the pills. */
+  --bg: #faf8f5; --card: #fff; --ink: #2a2724; --muted: #665f53;
   --line: #e4ded4; --accent: #c2410c; --ok: #15803d; --bad: #b91c1c;
 }
 * { box-sizing: border-box; }
@@ -28,7 +29,7 @@ header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; 
   box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
 }
 .menulist a { padding: 6px 8px; border-radius: 6px; }
-.menulist a:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.menulist a:hover { background: var(--line); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 /* Wide enough that an album title is not cut on a normal window, narrow
    enough that a line of prose stays readable. */
 main { max-width: 1200px; margin: 0 auto; padding: 20px; }
@@ -54,7 +55,7 @@ a { color: var(--accent); }
 .picker-row { display: flex; gap: 10px; align-items: center; padding: 7px 12px;
               border-bottom: 1px solid var(--line); cursor: pointer; }
 .picker-row:last-child { border-bottom: 0; }
-.picker-row:has(input:checked) { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.picker-row:has(input:checked) { background: var(--line); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .picker-none { margin: 8px 0 0; }
 /* Nothing to show: the same calm box on every page. Inside a list's own
    frame it is a line of that list rather than a box within a box. */
@@ -117,8 +118,11 @@ input[type=password] {
   border-radius: 7px; background: #fff; color: var(--ink);
 }
 input[type=text], input[type=url], input[type=password], input[type=search] { width: 100%; }
-label.field, div.field { display: block; margin-bottom: 12px; }
-label.field span, div.field > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+label.field, fieldset.field { display: block; margin: 0 0 12px; }
+fieldset.field { border: 0; padding: 0; min-width: 0; }
+label.field span, fieldset.field > legend {
+  display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; padding: 0;
+}
 ol.tracks { list-style: none; margin: 0; padding: 0; }
 ol.tracks li {
   display: flex; gap: 10px; align-items: center;
@@ -131,7 +135,8 @@ ol.tracks li:last-child { border-bottom: 0; }
    says there is nothing to show. */
 .warn, .info { border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
 .warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
-.info { background: color-mix(in srgb, var(--accent) 5%, var(--card)); border: 1px solid var(--line);
+/* Each color-mix comes after a plain colour for browsers without it (Safari before 16.2). */
+.info { background: var(--card); background: color-mix(in srgb, var(--accent) 5%, var(--card)); border: 1px solid var(--line);
         color: var(--ink); }
 .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
@@ -177,7 +182,9 @@ img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; 
 .listing[data-view=list] .listing-row:last-child { border-bottom: 0; }
 .list .item, a.item { display: flex; gap: 12px; align-items: center; padding: 8px 12px; }
 a.item, a.listing-row { color: inherit; text-decoration: none; }
-a.item:hover, a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+a.item:hover, a.listing-row:hover { background: var(--bg); background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+/* The card's overflow is hidden, so the ring is drawn inside the row. */
+a.item:focus-visible, a.listing-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Figures stand on white with room around them, so a picture is shown whole. */
 .list .item img, a.item img, .item .noart,
 .listing[data-view=list] .listing-row img, .listing[data-view=list] .listing-row .noart {
@@ -224,23 +231,24 @@ a.item:hover, a.listing-row:hover { background: color-mix(in srgb, var(--accent)
 .preview.grabbable { cursor: grab; touch-action: none; }
 .preview.grabbable:active { cursor: grabbing; }
 .preview .bg, .preview .fg {
-  position: absolute; inset: 0; background-size: cover; background-position: center;
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; background-size: cover; background-position: center;
   /* The crop preview sets an explicit size below 100 percent, which would
      tile the cover across the circle without this. */
   background-repeat: no-repeat;
 }
 .preview .bg { display: none; }
 .preview.is-fit .bg { display: block; filter: blur(4px); transform: scale(1.3); }
-.preview.is-fit .fg { inset: 15%; }
+.preview.is-fit .fg { top: 15%; right: 15%; bottom: 15%; left: 15%; }
 /* Zoomed out, the cover no longer reaches the rim. The blurred copy behind
    carries its colours into the gap, the same way the printed sticker does. */
 .preview.grabbable .bg { display: block; filter: blur(8px); transform: scale(1.25); }
 
-img.pick {
-  width: 40px; height: 40px; object-fit: cover; border-radius: 6px;
-  cursor: pointer; opacity: .45; border: 2px solid transparent;
+button.pick {
+  padding: 0; background: none; line-height: 0;
+  cursor: pointer; opacity: .45; border: 2px solid transparent; border-radius: 8px;
 }
-img.pick.chosen { opacity: 1; border-color: var(--accent); }
+button.pick img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+button.pick.chosen { opacity: 1; border-color: var(--accent); }
 input[type=range] { accent-color: var(--accent); }
 
 .boxnow { text-align: right; font-size: 14px; }
@@ -312,7 +320,7 @@ input[type=range] { accent-color: var(--accent); }
    ``hidden`` would take it out of the keyboard's reach too. */
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
-  clip-path: inset(50%); white-space: nowrap;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 
 /* A file input cannot be styled, so the label is the button. The input stays
@@ -320,7 +328,7 @@ input[type=range] { accent-color: var(--accent); }
    dialog; the label shows where the keyboard is. */
 label.button { display: inline-block; position: relative; }
 label.button > input[type=file] {
-  position: absolute; inset: 0; width: 100%; height: 100%;
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   opacity: 0; pointer-events: none;
 }
 label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -371,7 +379,7 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
 }
 .listing[data-view=grid] .listing-row img,
-.listing[data-view=grid] .listing-row .noart { width: 100%; aspect-ratio: 1; margin-bottom: 6px; }
+.listing[data-view=grid] .listing-row .noart { width: 100%; height: 0; padding-bottom: 100%; margin-bottom: 6px; }
 /* Two lines of the name, then cut: long episode titles are common. */
 .listing[data-view=grid] .t-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .listing[data-view=grid] .t-series,
@@ -407,7 +415,27 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 .listing[data-view=list] .t-series,
 .listing[data-view=list] .t-category { white-space: nowrap; }
 
+/* Between phone and desktop the full tables squeeze the name column to
+   nothing; the least needed columns go first. */
+@media (min-width: 641px) and (max-width: 900px) {
+  #tonies[data-view=list] .listing-head,
+  #tonies[data-view=list] .listing-row {
+    grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 90px minmax(0, 1fr) 60px;
+  }
+  #tonies[data-view=list] .t-kind, #tonies[data-view=list] .t-added { display: none; }
+  .listing.library .listing-head,
+  .listing.library .listing-row { grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px minmax(0, 1.6fr) 70px; }
+  .listing.library .t-size, .listing.library .t-added { display: none; }
+}
+
+/* Fingers need room: about 40 pixels for anything to tap. */
+@media (pointer: coarse) {
+  button.small, .button.small, .chip { min-height: 40px; min-width: 40px; }
+  .languages a, .languages b { display: inline-block; padding: 10px 6px; }
+}
+
 @media (max-width: 640px) {
+  .batchnames { grid-template-columns: 1fr; }
   .listing[data-view=grid] { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   /* Name and series only on a phone: a seven-column table does not fit. */
   .listing[data-view=list] .listing-head { display: none; }

@@ -1,7 +1,6 @@
 // The script of the page that watches a sheet being made; see templates/sheet_job.html.
 const data = pageData();
 const words = data.words;
-const fill = document.getElementById('fill');
 const detail = document.getElementById('detail');
 const download = document.getElementById('download');
 const skipped = document.getElementById('skipped');
@@ -20,7 +19,7 @@ window.every(POLL_MS, async () => {
   }
   if (!answer.ok) return true;
   const job = await answer.json();
-  fill.style.width = `${job.percent}%`;
+  progressTo(job.percent ?? 0);
   if (job.state === 'failed') {
     detail.textContent = '';
     ended(job.problem, true);

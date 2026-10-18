@@ -7,6 +7,7 @@
  "album.chosen": "{chosen} of {count} chosen",
  "album.conflict": "There is already a taf at:",
  "album.conflict_hint": "Choose another name, or replace it. While it is replaced, a tonie pointing at it plays nothing until the new taf is done.",
+ "album.cover_choice": "Use {name} as the cover",
  "album.crop_hint": "Drag to move, slider or two fingers to zoom.",
  "album.crop_reset": "Reset",
  "album.encode": "Create taf",
@@ -15,8 +16,8 @@
   "one": "{count} minute",
   "other": "{count} minutes"
  },
- "album.move_down": "Move down",
- "album.move_up": "Move up",
+ "album.move_down": "Move track {number} down",
+ "album.move_up": "Move track {number} up",
  "album.no_karaoke": "Without karaoke",
  "album.ordered_by": "ordered by {ordering}",
  "album.parts_after": "parts",
@@ -116,7 +117,7 @@
   "other": "{count} parts"
  },
  "batch.pick": "Set up the selected together",
- "batch.pick_label": "Select for several albums",
+ "batch.pick_label": "Select {name} for several albums",
  "batch.picked": {
   "one": "One album selected",
   "other": "{count} albums selected"
@@ -200,6 +201,7 @@
   "one": "{count} file",
   "other": "{count} files"
  },
+ "common.needs_script": "This app needs JavaScript: without it the search, the print sheet and the progress pages do nothing.",
  "common.none": "None",
  "common.nothing_chosen": "nothing chosen",
  "common.save": "Save",
@@ -319,7 +321,7 @@
  "job.state.queued": "queued",
  "job.state.running": "running",
  "job.taf_done": "Encoded. Now it gets a sticker.",
- "job.to_assign": "Choose a sticker",
+ "job.to_assign": "Put on a tonie",
  "job.to_podcasts": "To the podcasts",
  "job.to_tonies": "To the tonies",
  "job.uploaded": "Uploaded track {done} of {count}",
@@ -351,6 +353,7 @@
  "list.shown_of": "{shown} of {count} shown",
  "list.tick_shown": "Tick all shown",
  "list.untick": "Untick all",
+ "list.view": "View",
  "listening.all": "all",
  "listening.col_last": "Last placed",
  "listening.col_placed": "Placed",
@@ -562,7 +565,7 @@
  "sheet.no_sticker": "on no sticker",
  "sheet.none": "No model with its own cover yet. Record a tonie first and it shows up here.",
  "sheet.nothing_chosen": "None chosen yet",
- "sheet.on_sheet": "on the sheet",
+ "sheet.on_sheet": "{name} on the sheet",
  "sheet.only_ticked": "Only ticked",
  "sheet.overview": "Overview for the tin",
  "sheet.overview_hint": "Every tonie on one A4 sheet: cover, name, year, playing time.",

@@ -10,7 +10,7 @@
 {% if placing %}
 <div class="card" id="placing">
   <strong>{{ t("place.prompt") }}</strong>
-  <p class="muted mb-0" id="placemsg">
+  <p class="muted mb-0" id="placemsg" role="status">
     {%- if next_episode %}{{ t("place.next", episode=next_episode) }}{% else %}{{ t("place.all_done") }}{% endif -%}
   </p>
 </div>
@@ -28,7 +28,7 @@
     <span class="pill done assigned" {% if not (result and result.model) %}hidden{% endif %}>{{ t("batch.on_sticker") }}</span>
     <a class="button small assign" href="/job/{{ job.id }}/assign"
        {% if job.state.value != 'done' or (result and result.model) %}hidden{% endif %}>{{ t("parts.assign") }}</a>
-    <a class="small" href="/job/{{ job.id }}">{{ t("parts.details") }}</a>
+    <a class="small-text" href="/job/{{ job.id }}">{{ t("parts.details") }}</a>
   </div>
 {% endfor %}
 </div>

@@ -38,7 +38,7 @@
     {{ tick_buttons() }}
     <label class="row gap-8 clickable"><input type="checkbox" id="onlyticked">
       <span>{{ t("sheet.only_ticked") }}</span></label>
-    <span class="muted" id="shown"></span>
+    <span class="muted" id="shown" role="status"></span>
   </div>
   <div class="row sheethead">
     <span class="grow"></span>
@@ -52,7 +52,7 @@
     <div class="item sticker" data-src="{{ model.picture | cover_url(images_cached) }}"
          data-search="{{ row.search }}">
       <input type="checkbox" class="want" {% if row.ticked %}checked{% endif %}
-             aria-label="{{ t('sheet.on_sheet') }}">
+             aria-label="{{ t('sheet.on_sheet', name=(model.series ~ ' ' ~ model.episode) | trim) }}">
       <span class="grow truncate">
         <strong class="truncate">{{ model.series }}</strong>
         <span class="muted truncate">{{ model.episode }} &middot; {{ row.uid or t("sheet.no_sticker") }}</span>
@@ -96,7 +96,7 @@
 
   {% if rows %}
   <p class="row wrap gap-12 mt-12">
-    <strong id="total"></strong>
+    <strong id="total" role="status"></strong>
     <button type="button" class="small" id="fillsheet">{{ t("sheet.fill_sheet") }}</button>
   </p>
 

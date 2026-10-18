@@ -44,9 +44,11 @@
       {% if album.cover_candidates | length > 1 %}
       <div class="row wrap gap-6 mt-8">
         {% for candidate in album.cover_candidates %}
-        <img class="pick {% if loop.index0 == form.cover_index %}chosen{% endif %}" data-index="{{ loop.index0 }}"
-             src="/album/{{ id }}/cover?index={{ loop.index0 }}&size=64"
-             alt="{{ candidate.name }}" title="{{ candidate.name }}">
+        {%- set chosen = loop.index0 == form.cover_index %}
+        <button type="button" class="pick{% if chosen %} chosen{% endif %}" data-index="{{ loop.index0 }}"
+                aria-pressed="{{ 'true' if chosen else 'false' }}"
+                aria-label="{{ t('album.cover_choice', name=candidate.name) }}" title="{{ candidate.name }}">
+          <img src="/album/{{ id }}/cover?index={{ loop.index0 }}&size=64" alt=""></button>
         {% endfor %}
       </div>
       {% endif %}
@@ -83,8 +85,8 @@
         <span class="muted track-no">{{ loop.index }}</span>
         <input type="text" name="titles" value="{{ row.title }}" class="grow"
                aria-label="{{ t('album.track_title', number=loop.index) }}">
-        <button type="button" class="small" data-move="up" aria-label="{{ t('album.move_up') }}">&uarr;</button>
-        <button type="button" class="small" data-move="down" aria-label="{{ t('album.move_down') }}">&darr;</button>
+        <button type="button" class="small" data-move="up" aria-label="{{ t('album.move_up', number=loop.index) }}">&uarr;</button>
+        <button type="button" class="small" data-move="down" aria-label="{{ t('album.move_down', number=loop.index) }}">&darr;</button>
       </li>
       {% endfor %}
     </ol>
@@ -106,5 +108,5 @@
      <a class="button ml-12" href="/">{{ t("common.cancel") }}</a></p>
 </form>
 
-{{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit")}) }}
+{{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit", "album.track_use", "album.track_title", "album.move_up", "album.move_down")}) }}
 {% endblock %}

@@ -65,13 +65,20 @@
 
 {#- A form field: its caption above what is filled in. ``class`` adds to
     the field's own, such as "m-0" or "grow". A ``group`` of choices, such as
-    the sticker picker's, cannot sit in a label and gets a plain box. #}
+    the sticker picker's, cannot sit in a label: it is a fieldset, so its
+    caption names the whole group for a screen reader. #}
 {% macro field(caption, class="", group=False) -%}
-{%- set tag = "div" if group else "label" %}
-<{{ tag }} class="field{% if class %} {{ class }}{% endif %}">
+{%- if group %}
+<fieldset class="field{% if class %} {{ class }}{% endif %}">
+  <legend>{{ caption }}</legend>
+  {{ caller() }}
+</fieldset>
+{%- else %}
+<label class="field{% if class %} {{ class }}{% endif %}">
   <span>{{ caption }}</span>
   {{ caller() }}
-</{{ tag }}>
+</label>
+{%- endif %}
 {%- endmacro %}
 
 {#- Choosing files: a button, since a file field itself cannot be styled.

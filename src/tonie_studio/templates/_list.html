@@ -13,7 +13,7 @@
     </select>
   </label>
   {% if views %}
-  <span class="views" role="group">
+  <span class="views" role="group" aria-label="{{ t('list.view') }}">
     {% for key, label in views %}
     <button type="button" class="chip" data-view="{{ key }}">{{ t(label) }}</button>
     {% endfor %}
@@ -29,7 +29,7 @@
   {% for tag in filters %}
   <button type="button" class="chip" data-filter="{{ tag }}">{{ t(label ~ tag) }} <span>{{ counts[tag] }}</span></button>
   {% endfor %}
-  <span class="muted" id="count"></span>
+  <span class="muted" id="count" role="status"></span>
 </div>
 {% endmacro %}
 
@@ -40,7 +40,7 @@
 <div class="listing-head muted">
   <span></span>
   {% for column in columns %}
-  <span><button type="button" class="sorter" data-sort="{{ column.key }}">{{ t(column.heading) }}</button></span>
+  <span class="t-{{ column.key }}"><button type="button" class="sorter" data-sort="{{ column.key }}">{{ t(column.heading) }}</button></span>
   {% endfor %}
   {% if trailing %}<span></span>{% endif %}
 </div>

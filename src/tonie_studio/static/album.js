@@ -76,10 +76,14 @@ if (coverimg) {
   document.getElementById('coverreset').addEventListener('click', () => {
     zoom.value = 1; cx.value = 0; cy.value = 0; paint();
   });
-  document.querySelectorAll('img.pick').forEach(pick => {
+  document.querySelectorAll('.pick').forEach(pick => {
     pick.addEventListener('click', () => {
-      document.querySelectorAll('img.pick').forEach(other => other.classList.remove('chosen'));
+      document.querySelectorAll('.pick').forEach(other => {
+        other.classList.remove('chosen');
+        other.setAttribute('aria-pressed', 'false');
+      });
       pick.classList.add('chosen');
+      pick.setAttribute('aria-pressed', 'true');
       index.value = pick.dataset.index;
       paint();
     });
@@ -99,8 +103,10 @@ list.addEventListener('click', event => {
   const sibling = button.dataset.move === 'up'
     ? item.previousElementSibling : item.nextElementSibling;
   if (!sibling) return;
+  // The neighbour is the one that moves: the row holding the pressed button
+  // stays in the page, so the keyboard stays on that button.
   button.dataset.move === 'up'
-    ? list.insertBefore(item, sibling) : list.insertBefore(sibling, item);
+    ? list.insertBefore(sibling, item.nextElementSibling) : list.insertBefore(sibling, item);
   renumber();
 });
 
@@ -149,9 +155,19 @@ document.querySelectorAll('button[data-pick]').forEach(button => {
 list.addEventListener('change', recount);
 recount();
 
+// The number and every label that names it follow a row to its new place.
 function renumber() {
+  const words = pageData().words;
   [...list.children].forEach((item, index) => {
-    item.querySelector('span').textContent = index + 1;
+    const number = index + 1;
+    item.querySelector('span').textContent = number;
+    item.querySelector('input[type=checkbox]').setAttribute(
+      'aria-label', say(words['album.track_use'], {number}));
+    item.querySelector('input[type=text]').setAttribute(
+      'aria-label', say(words['album.track_title'], {number}));
+    item.querySelector('[data-move=up]').setAttribute('aria-label', say(words['album.move_up'], {number}));
+    item.querySelector('[data-move=down]').setAttribute(
+      'aria-label', say(words['album.move_down'], {number}));
   });
 }
 
