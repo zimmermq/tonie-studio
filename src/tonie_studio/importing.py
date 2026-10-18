@@ -304,6 +304,14 @@ def import_one(client: TeddyCloudClient, ruid: str, auth: str,
         client.create_dir(f"/{folder}")
     client.upload(io.BytesIO(json.dumps(entry, indent=4).encode("utf-8")), f"{file}.json",
                   path=f"/{folder}")
+    # teddyCloud takes the token for the download from this entry, and when
+    # it reads none it sends whatever token its connection last carried -
+    # another tonie's. The cloud refuses that, and a stream of such requests
+    # looks like misuse. So the entry is read back first, and without the
+    # tonie's own token nothing goes to the cloud.
+    written = client.content_entry(ruid).get("cloud_auth") or ""
+    if written.lower() != auth.lower():
+        raise ImportProblem("import.entry_not_written")
 
     if client.cache_content(folder, file) == 0:
         raise ImportProblem("import.no_taf")

@@ -166,6 +166,25 @@ class TestImportOne:
         assert import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None) == "content/11DFC517/500304E0"
 
 
+class TestNeverTheWrongToken:
+    """A download goes to the cloud only with the tonie's own token in place."""
+
+    def test_an_entry_teddycloud_did_not_keep_stops_before_the_cloud(self, teddycloud):
+        # teddyCloud can answer an upload it did not finish; downloading then
+        # would send the token another request left on the connection.
+        teddycloud.upload = lambda *args, **kwargs: None
+
+        with pytest.raises(ImportProblem) as raised:
+            import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda seconds: None)
+
+        assert raised.value.key == "import.entry_not_written"
+        assert teddycloud.cloud_requests == []
+
+    def test_a_kept_entry_goes_ahead(self, teddycloud):
+        assert import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda seconds: None)
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+
+
 class TestCloudOffOnceThere:
     """The cloud is needed once, to fetch a tonie's audio; after that it is not asked again."""
 

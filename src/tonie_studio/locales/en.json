@@ -292,6 +292,7 @@
  "import.branch": "Branch (empty: default branch)",
  "import.busy": "An import is already running. Pause or stop it before starting a new one.",
  "import.cloud_off": "Cloud access (cloud.enabled) or caching (cloud.cacheContent) is off in teddyCloud. Without both, teddyCloud cannot fetch anything.",
+ "import.entry_not_written": "teddyCloud did not keep this tonie's entry whole; without its token the cloud was not asked. The next import tries again.",
  "import.folder": "Choose folder",
  "import.from_files": "From files",
  "import.from_github": "From a GitHub repository",

@@ -601,3 +601,47 @@ class TestUploadGivesTeddyCloudAHeadStart:
 
         assert "Transfer-Encoding" not in prepared.headers
         assert int(prepared.headers["Content-Length"]) == len(_body(call.kwargs["data"]))
+
+
+class TestUploadKeepsTheFormHeadWithItsFile:
+    """teddyCloud 0.7.0 ends an upload as done when a read brings the form's
+    head but none of the file: it starts the file, finds nothing more, and
+    answers. Over a network the pieces of a body can arrive apart, so each
+    piece sent must be full, the head always with file bytes behind it. A
+    content entry left empty that way sends the next download to the cloud
+    with the token of the tonie fetched before."""
+
+    def _body(self, client, monkeypatch, content):
+        import io
+
+        import tonie_studio.teddycloud as teddycloud
+
+        monkeypatch.setattr(teddycloud.time, "sleep", lambda seconds: None)
+        with patch.object(client.session, "request", return_value=_ok()) as sent:
+            client.upload(io.BytesIO(content), "500304E0.json", path="/AB12CD34")
+        return sent.call_args.kwargs["data"]
+
+    def test_a_small_file_goes_in_one_piece(self, client, monkeypatch):
+        data = self._body(client, monkeypatch, b'{"cloud_auth": "ab"}')
+
+        first = data.read(8192)
+
+        assert first.endswith(b"--\r\n") and b'{"cloud_auth": "ab"}' in first
+        assert data.read(8192) == b""
+
+    def test_every_piece_of_a_large_file_is_full_and_the_head_never_alone(self, client,
+                                                                         monkeypatch):
+        content = bytes(range(256)) * 400
+        data = self._body(client, monkeypatch, content)
+
+        pieces = []
+        while True:
+            piece = data.read(8192)
+            if not piece:
+                break
+            pieces.append(piece)
+
+        assert all(len(piece) == 8192 for piece in pieces[:-1])
+        assert content[:100] in pieces[0]
+        assert b"".join(pieces).count(content) == 1
+

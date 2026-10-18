@@ -440,12 +440,18 @@ class _AfterHeadStart:
         if size is None or size < 0:
             rest, self._parts = b"".join(part.read() for part in self._parts), []
             return rest
-        while self._parts:
-            piece = self._parts[0].read(size)
+        # Filled across the parts: a read that brought teddyCloud 0.7.0 the
+        # form's head but none of the file ends the upload there, with the
+        # file begun and empty, and it answers as if all had arrived.
+        pieces, wanted = [], size
+        while self._parts and wanted:
+            piece = self._parts[0].read(wanted)
             if piece:
-                return piece
-            self._parts.pop(0)
-        return b""
+                pieces.append(piece)
+                wanted -= len(piece)
+            else:
+                self._parts.pop(0)
+        return b"".join(pieces)
 
 
 def _form_value(value: Any) -> str:
