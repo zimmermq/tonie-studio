@@ -48,6 +48,25 @@ class TestListTags:
 
         assert [tag.assigned for tag in list_tags(teddycloud)] == [False, True]
 
+    def test_a_tonie_teddycloud_keeps_beside_its_json_is_not_free(self, teddycloud):
+        # A real tonie the box read and teddyCloud cached in its content tree
+        # plays its own audio although it has no library source.
+        teddycloud.tag_entries["deb4ed0e500304e0"].update(exists=True, tonie_model="11000286")
+
+        tag = next(tag for tag in list_tags(teddycloud) if tag.ruid == "deb4ed0e500304e0")
+
+        assert tag.assigned
+
+    def test_a_tonie_named_by_a_model_is_not_free_either(self, teddycloud):
+        teddycloud.tag_entries["deb4ed0e500304e0"].update(tonie_model="11000286")
+
+        tag = next(tag for tag in list_tags(teddycloud) if tag.ruid == "deb4ed0e500304e0")
+
+        assert tag.assigned
+
+    def test_a_blank_sticker_is_free(self, teddycloud):
+        assert not any(tag.assigned for tag in list_tags(teddycloud))
+
     def test_reports_what_a_tag_already_plays(self, teddycloud):
         teddycloud.set_tag("deb4ed0e500304e0", source="lib://a.taf")
 

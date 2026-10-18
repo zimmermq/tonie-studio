@@ -36,10 +36,21 @@ class TonieTag:
     claimed: bool
     nocloud: bool = False
     live: bool = False
+    # Whether the audio it would play is there: in the library, or cached
+    # beside its content JSON, where teddyCloud keeps a real tonie's audio
+    # without giving it a source.
+    exists: bool = False
 
     @property
     def assigned(self) -> bool:
-        return bool(self.source)
+        """Whether the tag plays something or is named for something.
+
+        A source alone is not enough to tell: a real tonie teddyCloud cached
+        in its content tree has none, yet plays its own audio. A tag with a
+        model is somebody's tonie too. Only a tag with none of these is free
+        to be given something else without asking.
+        """
+        return bool(self.source or self.exists or self.model)
 
     @property
     def label(self) -> str:
@@ -94,4 +105,5 @@ def _tag(entry: Dict[str, Any]) -> TonieTag:
         claimed=bool(entry.get("claimed")),
         nocloud=bool(entry.get("nocloud")),
         live=bool(entry.get("live")),
+        exists=bool(entry.get("exists")),
     )

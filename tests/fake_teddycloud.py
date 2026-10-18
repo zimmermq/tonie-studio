@@ -169,7 +169,10 @@ class FakeTeddyCloud:
                 "ruid": ruid,
                 "uid": ":".join(ruid[index_:index_ + 2] for index_ in range(14, -2, -2)).upper(),
                 "type": "tag",
-                "valid": bool(entry["source"]),
+                "valid": bool(entry["source"]) or bool(entry.get("exists")),
+                # Whether the audio it would play is there, in the library or
+                # cached beside its content JSON.
+                "exists": bool(entry["source"]) or bool(entry.get("exists")),
                 "source": entry["source"],
                 "live": entry["live"],
                 "nocloud": entry["nocloud"],
