@@ -61,8 +61,18 @@ class TonieTag:
 
 
 def label(series: Optional[str], episode: Optional[str]) -> str:
-    """How a tonie is named in a list: series and episode, or whichever is there."""
-    return " - ".join(part for part in (series or "", episode or "") if part)
+    """How a tonie is named in a list: series and episode, or whichever is there.
+
+    The catalogue often starts the episode with the series already ("100%
+    Wolf" - "100% Wolf - Das Original zum Kinofilm"); the series is then not said
+    a second time. Only a whole word counts: "Bibi" does not name "Bibis".
+    """
+    series, episode = (series or "").strip(), (episode or "").strip()
+    if series and episode.casefold().startswith(series.casefold()):
+        rest = episode[len(series):]
+        if not rest or not rest[0].isalnum():
+            return episode
+    return " - ".join(part for part in (series, episode) if part)
 
 
 def is_real_tag(entry: Dict[str, Any]) -> bool:
