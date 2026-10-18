@@ -44,15 +44,15 @@
   </span>
 </div>
 <div class="chips">
-  <button type="button" class="chip" data-kind-filter="">{{ t("tonies.kind_all") }} <span>{{ tonies | length }}</span></button>
+  <button type="button" class="chip" data-filter="">{{ t("tonies.kind_all") }} <span>{{ tonies | length }}</span></button>
   {% for kind in kinds %}
-  <button type="button" class="chip" data-kind-filter="{{ kind }}">{{ t("tonies.kind." ~ kind) }} <span>{{ counts[kind] }}</span></button>
+  <button type="button" class="chip" data-filter="{{ kind }}">{{ t("tonies.kind." ~ kind) }} <span>{{ counts[kind] }}</span></button>
   {% endfor %}
   <span class="muted" id="count"></span>
 </div>
 {% endif %}
 
-<div id="tonies" class="tonies" data-view="grid">
+<div id="tonies" class="tonies" data-list data-view="grid" data-remember="tonies.view">
   {% if tonies %}
   {#- A heading orders by its column; again, the other way round. #}
   <div class="tonies-head muted">
@@ -66,7 +66,7 @@
   {%- set tag = row.tag %}
   {%- set picture = tag.picture | cover_url(false) %}
   <a class="tonie" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
-     data-kind="{{ row.kind }}" data-picture="{{ 'yes' if picture else 'no' }}"
+     data-kind="{{ row.kind }}" data-tags="{{ row.kind }}{% if not picture %} nopicture{% endif %}"
      data-name="{{ row.name }}" data-series="{{ (tag.series ~ ' ' ~ row.name) | trim | lower }}"
      data-added="{{ row.added.timestamp() | int if row.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
      data-category="{{ row.category | lower }}" data-age="{{ row.age if row.age is not none else '' }}"
@@ -94,6 +94,9 @@
 
 <p><a class="button" href="/sheet">{{ t("tonies.print") }}</a></p>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "tonies.shown_of")} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "list.shown_of"), "first": "name", "orders": {
+    "name": {}, "series": {}, "kind": {}, "category": {}, "age": {"number": true},
+    "added": {"number": true, "desc": true}, "chapters": {"number": true, "desc": true}}} | tojson }}</script>
+<script src="{{ asset('list.js') }}"></script>
 <script src="{{ asset('tonies.js') }}"></script>
 {% endblock %}

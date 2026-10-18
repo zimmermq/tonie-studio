@@ -28,9 +28,11 @@ export function element(id, text = '', { dataset = {}, children = {} } = {}) {
 // in #page-data; ``answers`` maps a fetched URL to the JSON it answers with;
 // ``queries`` maps a selector to the elements document.querySelectorAll finds;
 // ``texts`` gives elements by id with their content, such as other JSON blocks;
-// ``prepared`` gives elements by id built with ``element``, children and all.
+// ``prepared`` gives elements by id built with ``element``, children and all;
+// ``found`` maps a selector to what document.querySelector answers.
 export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
-                                         queries = {}, texts = {}, prepared = {} } = {}) {
+                                         queries = {}, texts = {}, prepared = {},
+                                         found = {} } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, element(id)]));
   for (const [id, text] of Object.entries(texts)) elements[id] = element(id, text);
   Object.assign(elements, prepared);
@@ -42,7 +44,7 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
   const fetched = [];
   const document = {
     getElementById: id => elements[id] || null,
-    querySelector: () => null,
+    querySelector: selector => found[selector] || null,
     querySelectorAll: selector => queries[selector] || [],
     addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
     dispatchEvent() {},

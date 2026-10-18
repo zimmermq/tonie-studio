@@ -5,40 +5,88 @@
 <h1>{{ t("nav.library") }}</h1>
 <p class="sub">
   {{ t("library.intro") }}
-  {{ t("library.summary", count=tafs | length, size=t.size(total)) }}
+  {{ t("library.summary", count=shelf | length, size=t.size(total)) }}
 </p>
 
-<div class="list">
-{% for taf, used_by in tafs %}
-  <div class="album">
-    <span class="grow truncate">
-      <strong class="truncate">{{ taf.name }}</strong>
-      <span class="muted truncate">
-        {{ taf.path }} &middot; {{ t("library.chapters", count=taf.chapters) }} &middot;
-        {{ t.size(taf.size) }}
-        {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}
-      </span>
-    </span>
-    {% if used_by %}
-    <span class="muted truncate" style="max-width: 14em; text-align: right">
-      {{ t("library.played_by") }}<br>
-      {% for tag in used_by %}{{ tag.label }}{% if not loop.last %}, {% endif %}{% endfor %}
-    </span>
-    {% endif %}
-    <form method="post" action="/library/delete"
-          {#- Deleting a taf a sticker plays leaves that tonie silent. Sometimes
-              that is the intent - replacing the audio underneath - so it asks
-              rather than refuses. #}
-          {% if used_by %}data-confirm="{{ t('library.confirm_used', used=used_by | map(attribute='label') | join(', ')) }}"{% endif %}>
-      <input type="hidden" name="path" value="{{ taf.path }}">
-      <button type="submit" class="small">{{ t("common.delete") }}</button>
-    </form>
-  </div>
-{% else %}
-  <div class="album muted">{{ t("library.empty") }}</div>
-{% endfor %}
+{% if shelf %}
+<div class="toolbar">
+  <input type="search" id="search" placeholder="{{ t('library.search') }}"
+         autocomplete="off" aria-label="{{ t('library.search_label') }}">
+  <label class="muted">{{ t("tonies.sort") }}
+    <select id="sort">
+      {% for key in ("name", "origin", "played", "chapters", "size", "added") %}
+      <option value="{{ key }}">{{ t("library.col_" ~ key) }}</option>
+      {% endfor %}
+    </select>
+  </label>
 </div>
+<div class="chips">
+  <button type="button" class="chip" data-filter="">{{ t("library.all") }} <span>{{ shelf | length }}</span></button>
+  {% for tag in filters %}
+  <button type="button" class="chip" data-filter="{{ tag }}">{{ t("library.origin." ~ tag) }} <span>{{ counts[tag] }}</span></button>
+  {% endfor %}
+  <span class="muted" id="count"></span>
+</div>
+{% endif %}
+
+<div id="library" class="tonies library" data-list data-view="list">
+  {% if shelf %}
+  {#- A heading orders by its column; again, the other way round. #}
+  <div class="tonies-head muted">
+    <span></span>
+    {% for key in ("name", "origin", "chapters", "size", "added", "played") %}
+    <span><button type="button" class="sorter" data-sort="{{ key }}">{{ t("library.col_" ~ key) }}</button></span>
+    {% endfor %}
+    <span></span>
+  </div>
+  {% endif %}
+  {% for item in shelf %}
+  {%- set taf = item.taf %}
+  {%- set picture = taf.picture | cover_url(false) %}
+  {%- set players = item.played_by | map(attribute="label") | join(", ") %}
+  <div class="taf tonie" data-path="{{ taf.path }}" data-tags="{{ item.tags }}"
+       data-name="{{ item.label | lower }}" data-origin="{{ t('library.origin.' ~ item.origin) | lower }}"
+       data-played="{{ players | lower }}" data-chapters="{{ taf.chapters or '' }}"
+       data-size="{{ taf.size or '' }}" data-added="{{ taf.date or '' }}"
+       data-search="{{ (item.label ~ ' ' ~ taf.path ~ ' ' ~ players) | lower }}">
+    {% if picture %}
+    <img src="{{ picture }}" alt="" loading="lazy">
+    {% else %}
+    <span class="noart" aria-hidden="true"></span>
+    {% endif %}
+    <span class="t-name"><strong>{{ item.label }}</strong>
+      <span class="muted small-text block truncate">{{ taf.path }}
+        {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}</span></span>
+    <span class="t-kind"><span class="pill done">{{ t("library.origin." ~ item.origin) }}</span></span>
+    <span class="t-chapters muted">{% if taf.chapters %}{{ t("library.chapters", count=taf.chapters) }}{% endif %}</span>
+    <span class="t-size muted">{{ t.size(taf.size) }}</span>
+    <span class="t-added muted">{% if item.added %}{{ t.day(item.added) }}{% endif %}</span>
+    <span class="t-played muted">
+      {%- for tag in item.played_by %}<a href="/tonies/{{ tag.ruid }}">{{ tag.label }}</a>{% if not loop.last %}, {% endif %}{% endfor -%}
+    </span>
+    <span class="t-delete">
+      {#- The box's own sounds are played by the box itself and stay. Deleting a
+          taf a sticker plays leaves that tonie silent; sometimes that is the
+          intent - replacing the audio underneath - so it asks rather than refuses. #}
+      {% if item.origin != "box" %}
+      <form method="post" action="/library/delete"
+            {% if players %}data-confirm="{{ t('library.confirm_used', used=players) }}"{% endif %}>
+        <input type="hidden" name="path" value="{{ taf.path }}">
+        <button type="submit" class="small">{{ t("common.delete") }}</button>
+      </form>
+      {% endif %}
+    </span>
+  </div>
+  {% else %}
+  <div class="album muted">{{ t("library.empty") }}</div>
+  {% endfor %}
+</div>
+<p class="muted" id="nohits" hidden>{{ t("library.no_match") }}</p>
 
 <p><a class="button" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 
+<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "name", "orders": {
+    "name": {}, "origin": {}, "played": {}, "chapters": {"number": true, "desc": true},
+    "size": {"number": true, "desc": true}, "added": {"number": true, "desc": true}}} | tojson }}</script>
+<script src="{{ asset('list.js') }}"></script>
 {% endblock %}

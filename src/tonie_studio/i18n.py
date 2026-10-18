@@ -109,7 +109,9 @@ class Translator:
         return f"{value:.{digits}f}".replace(".", self._decimal)
 
     def size(self, value: int) -> str:
-        """A file size as people read it: 1.2 MB, 340 KB."""
+        """A file size as people read it: 21.2 GB, 1.2 MB, 340 KB."""
+        if value >= 1024 ** 3:
+            return f"{self.number(value / 1024 ** 3)} GB"
         if value >= 1024 * 1024:
             return f"{self.number(value / (1024 * 1024))} MB"
         if value >= 1024:

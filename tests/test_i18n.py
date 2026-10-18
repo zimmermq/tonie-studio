@@ -18,7 +18,8 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
            "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
-           "sheet.layout.", "sheet.intro.", "tonies.col_")
+           "sheet.layout.", "sheet.intro.", "tonies.col_",
+           "library.origin.", "library.col_")
 
 
 def placeholders(text):
@@ -103,6 +104,12 @@ class TestCatalogs:
         assert {f"tonies.col_{column}" for column in (
             "name", "series", "kind", "chapters", "category", "age", "added")} <= keys
 
+        from tonie_studio.pages.tonies import BOX, IMPORTED, RECORDED, UNUSED
+
+        assert {f"library.origin.{origin}" for origin in (RECORDED, IMPORTED, BOX, UNUSED)} <= keys
+        assert {f"library.col_{column}" for column in (
+            "name", "origin", "chapters", "size", "added", "played")} <= keys
+
         from tonie_studio.sheet import LAYOUTS
 
         assert {f"sheet.{part}.{key}" for key in LAYOUTS for part in ("layout", "intro")} <= keys
@@ -137,6 +144,7 @@ class TestTranslator:
 
     @pytest.mark.parametrize("size, shown", [
         (812, "812 Byte"), (340 * 1024, "340 KB"), (1_268_644, "1,2 MB"),
+        (22_202_000_000, "20,7 GB"),
     ])
     def test_sizes_read_like_a_person_says_them(self, size, shown):
         assert Translator("de").size(size) == shown

@@ -92,8 +92,14 @@ class Taf:
     chapters: int = 0
     # False for a file teddyCloud could not read a taf header from.
     valid: bool = False
-    # The model teddyCloud matched the audio to, or "" when it knows none.
+    # What teddyCloud matched the audio to, from the catalogue or the custom
+    # models: its model, name and picture; empty where it knows none.
     model: str = ""
+    series: str = ""
+    episode: str = ""
+    picture: str = ""
+    # When the file was written, in seconds since 1970; 0 when not known.
+    date: int = 0
 
     @property
     def name(self) -> str:
@@ -149,13 +155,18 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
             found.extend(list_tafs(client, full, strict=strict))
         elif name.lower().endswith(TAF_SUFFIX):
             header = entry.get("tafHeader") or {}
+            info = entry.get("tonieInfo") or {}
             found.append(Taf(
                 path=full,
                 size=entry.get("size") or 0,
                 audio_id=header.get("audioId"),
                 chapters=len(header.get("trackSeconds") or []),
                 valid=bool(header.get("valid")),
-                model=(entry.get("tonieInfo") or {}).get("model") or "",
+                model=info.get("model") or "",
+                series=info.get("series") or "",
+                episode=info.get("episode") or "",
+                picture=info.get("picture") or "",
+                date=entry.get("date") or 0,
             ))
     return sorted(found, key=lambda taf: taf.path.lower())
 

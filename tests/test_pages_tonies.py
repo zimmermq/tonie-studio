@@ -195,8 +195,58 @@ class TestLibraryPage:
 
         page = client.get("/library").text
 
-        assert "wird gespielt von" in page
-        assert "Lichterkinder - Halloween" in page
+        assert 'href="/tonies/7ab4ed0e500304e0">Lichterkinder - Halloween</a>' in page
+
+    @staticmethod
+    def imported(teddycloud, name="1636444326.taf", info=None, ruid="11dfc517500304e0"):
+        """A taf teddyCloud fetched from the cloud, filed under its audio id."""
+        teddycloud.dirs.update({"/by", "/by/audioID"})
+        path = f"/by/audioID/{name}"
+        teddycloud.files[path] = b"taf"
+        teddycloud.taf_headers[path] = {"valid": True, "trackSeconds": [0, 60]}
+        teddycloud.taf_info[path] = info or {"model": "10000681", "series": "Barbie",
+                                             "episode": "Princess Adventure"}
+        if ruid:
+            teddycloud.add_tag(ruid, source=f"lib:/{path}", tonie_model="10000681")
+        return path
+
+    def test_an_imported_taf_is_named_after_its_tonie_not_its_number(self, client, teddycloud):
+        self.imported(teddycloud)
+
+        shown = self.row(client.get("/library").text, "/by/audioID/1636444326.taf")
+
+        assert "Barbie - Princess Adventure" in shown
+        assert 'data-tags="imported"' in shown
+
+    def test_says_where_each_taf_comes_from_and_whether_it_is_used(self, client, runner,
+                                                                  teddycloud):
+        publish_album(client, runner, teddycloud)
+        self.imported(teddycloud, ruid="")
+
+        page = client.get("/library").text
+
+        assert 'data-tags="recorded"' in page and 'data-tags="imported unused"' in page
+
+    def test_the_box_s_own_sounds_are_shown_but_cannot_be_deleted(self, client, teddycloud):
+        path = self.imported(teddycloud, "1580745093.taf", ruid="",
+                             info={"model": "box-en-us-02-00000000",
+                                   "series": "System sounds en-us", "episode": "Jingle (Startup)"})
+
+        shown = self.row(client.get("/library").text, path)
+
+        assert 'data-tags="box"' in shown and "/library/delete" not in shown
+
+    def test_is_in_the_main_navigation(self, client):
+        page = client.get("/").text
+
+        nav = page[page.index('<nav class="mainnav"'):page.index("</nav>")]
+        assert nav.index('href="/library"') < nav.index("<details")
+
+    @staticmethod
+    def row(page, path):
+        start = page.rindex("<div", 0, page.index(f'data-path="{path}"'))
+        end = page.find('<div class="taf', start + 10)
+        return page[start:end if end != -1 else len(page)]
 
     def test_deletes_one(self, client, runner, teddycloud):
         encode_and_assign_page(client, runner)

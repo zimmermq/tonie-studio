@@ -18,12 +18,12 @@
   {%- set path = request.url.path %}
   {%- set making = [("/", "nav.albums", ("/album", "/batch", "/upload", "/job", "/parts")),
                     ("/tonies", "nav.tonies", ("/tonies",)),
+                    ("/library", "nav.library", ("/library",)),
                     ("/sheet", "nav.sheet", ("/sheet",))] %}
   {%- set menus = [("nav.extras", [("/radio", "nav.radio", ("/radio",)),
                                    ("/podcasts", "nav.podcasts", ("/podcasts",)),
                                    ("/listening", "nav.listening", ("/listening",))]),
-                   ("nav.upkeep", [("/library", "nav.library", ("/library",)),
-                                   ("/checkup", "nav.checkup", ("/checkup",)),
+                   ("nav.upkeep", [("/checkup", "nav.checkup", ("/checkup",)),
                                    ("/backup", "nav.backup", ("/backup", "/restore")),
                                    ("/import", "nav.import", ("/import",))])] %}
   <a class="brand" href="/">tonie-studio</a>

@@ -15,7 +15,8 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from ..albumnotes import forget_model
-from ..encode import EncodeError, delete_taf, list_tafs
+from ..checkup import BOX_SOUND_PREFIX
+from ..encode import EncodeError, Taf, delete_taf, list_tafs
 from ..library import same
 from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, cover_url,
                       fetch_cover, find_model, images_cached, is_cover_name, list_models,
@@ -27,6 +28,7 @@ from ..shop import LANGUAGE as SHOP_LANGUAGE
 from ..shop import Shop
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, TonieTag, list_tags
+from ..tags import label as tag_label
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..tonie import copy_tag, move_tag, plan_removal, publish_stream, remove_tonie
 from .common import Context, Refused
@@ -342,9 +344,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         for tag in list_tags(connection):
             if tag.source:
                 users.setdefault(same(tag.source), []).append(tag)
+        shelf = sorted((Shelved(taf, _origin(taf), users.get(same(taf.source), []))
+                        for taf in tafs), key=lambda item: item.label.casefold())
+        counts = Counter(tag for item in shelf for tag in item.tags.split())
         return templates.TemplateResponse(request, "library.html", {
-            "tafs": [(taf, users.get(same(taf.source), [])) for taf in tafs],
+            "shelf": shelf,
             "total": sum(taf.size for taf in tafs),
+            "counts": counts,
+            "filters": [tag for tag in (RECORDED, IMPORTED, BOX, UNUSED) if counts[tag]],
         })
 
 
@@ -490,3 +497,49 @@ def _library_dates(connection: TeddyCloudClient) -> Dict[str, datetime]:
         return {}
     return {LIBRARY_PREFIX + entry["name"]: datetime.fromtimestamp(entry["date"], timezone.utc)
             for entry in files if not entry.get("isDir") and entry.get("date")}
+
+
+# Where a taf of the library comes from; the library page filters by it.
+RECORDED, IMPORTED, BOX = "recorded", "imported", "box"
+# Not where it comes from but filtered the same way: no sticker plays it.
+UNUSED = "unused"
+
+
+def _origin(taf: Taf) -> str:
+    """Recorded here, fetched from the Tonies cloud, or one of the box's own sounds.
+
+    teddyCloud files what it fetches from the cloud under its audio id in
+    one folder, and names the box's own sounds after the box in its
+    catalogue; everything else in the library was put there, by this app's
+    encodes or by hand.
+    """
+    if taf.model.lower().startswith(BOX_SOUND_PREFIX):
+        return BOX
+    if same(taf.path).startswith(same(LIBRARY_FOLDER) + "/"):
+        return IMPORTED
+    return RECORDED
+
+
+@dataclass
+class Shelved:
+    """A taf of the library as its page shows it: the file, its origin, who plays it."""
+
+    taf: Taf
+    origin: str
+    played_by: List[TonieTag]
+
+    @property
+    def label(self) -> str:
+        """The tonie teddyCloud knows the audio as, or else the file's name."""
+        return tag_label(self.taf.series, self.taf.episode) or self.taf.name
+
+    @property
+    def added(self) -> Optional[datetime]:
+        """When the file was written into the library, or None when teddyCloud does not say."""
+        return datetime.fromtimestamp(self.taf.date, timezone.utc) if self.taf.date else None
+
+    @property
+    def tags(self) -> str:
+        """What the filters match. The box's sounds are played by the box, never unused."""
+        unused = not self.played_by and self.origin != BOX
+        return f"{self.origin} {UNUSED}" if unused else self.origin

@@ -1,0 +1,127 @@
+// Search, filter, order and view for the list of a page: the tonies, the
+// library. The page sends every row, so nothing is asked of teddyCloud again.
+//
+// What the page provides:
+// - the list, marked data-list, its rows each with data-search (lower case
+//   text the search looks through), data-tags (what the filter chips match)
+//   and data-name, plus one data value per order;
+// - #search, #sort, #count, #nohits, chips with data-filter ("" for all),
+//   column headings with data-sort, and optionally buttons with data-view;
+// - in #page-data: "orders", each order's {number, desc}, "first", the order
+//   the list starts in, and the words "list.shown_of".
+//
+// The choice is kept in the address, so the back button and a bookmark bring
+// it back; the view is also remembered in this browser, under the list's
+// data-remember, as the way this person likes to look.
+{
+  const list = document.querySelector('[data-list]');
+  const rows = list ? [...list.querySelectorAll('[data-search]')] : [];
+  if (rows.length) {
+    const pageData = JSON.parse(document.getElementById('page-data').textContent);
+    const ORDERS = pageData.orders;
+    const shownOf = pageData.words['list.shown_of'];
+    const search = document.getElementById('search');
+    const sort = document.getElementById('sort');
+    const count = document.getElementById('count');
+    const nohits = document.getElementById('nohits');
+    const chips = [...document.querySelectorAll('[data-filter]')];
+    const sorters = [...document.querySelectorAll('[data-sort]')];
+    const views = [...document.querySelectorAll('[data-view]')];
+    const viewKey = list.dataset.remember;
+
+    // Storage can be switched off or full; the page works without it.
+    const remembered = () => { try { return localStorage.getItem(viewKey); } catch { return null; } };
+    const remember = view => { try { localStorage.setItem(viewKey, view); } catch { /* not kept */ } };
+
+    // Named rather than taken as the first of "orders": the page's JSON comes
+    // with its keys in alphabetical order.
+    const firstKey = ORDERS[pageData.first] ? pageData.first : Object.keys(ORDERS)[0];
+    const asked = new URLSearchParams(location.search || '');
+    const state = {
+      q: asked.get('q') || '',
+      // "kind" is what the tonie list called its filter before it had a name of its own.
+      filter: asked.get('filter') || asked.get('kind') || '',
+      sort: ORDERS[asked.get('sort')] ? asked.get('sort') : firstKey,
+      view: asked.get('view') || (views.length && remembered()) || list.dataset.view || '',
+    };
+    const firstWay = key => ORDERS[key].desc ? 'desc' : 'asc';
+    state.dir = asked.get('dir') || firstWay(state.sort);
+
+    // A row without the value goes last either way round; rows alike go by name.
+    function compare(a, b) {
+      const left = a.dataset[state.sort], right = b.dataset[state.sort];
+      if (!left !== !right) return left ? -1 : 1;
+      const way = state.dir === 'desc' ? -1 : 1;
+      const by = !left ? 0
+        : ORDERS[state.sort].number ? Number(left) - Number(right) : left.localeCompare(right);
+      return way * by || a.dataset.name.localeCompare(b.dataset.name);
+    }
+
+    function keep() {
+      const params = new URLSearchParams();
+      if (state.q) params.set('q', state.q);
+      if (state.filter) params.set('filter', state.filter);
+      if (state.sort !== firstKey) params.set('sort', state.sort);
+      if (state.dir !== firstWay(state.sort)) params.set('dir', state.dir);
+      if (views.length && state.view !== list.dataset.view) params.set('view', state.view);
+      const query = params.toString();
+      try { history.replaceState(null, '', query ? `?${query}` : location.pathname); } catch { /* no history */ }
+    }
+
+    function filter() {
+      const terms = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const row of rows) {
+        const tagged = !state.filter || row.dataset.tags.split(' ').includes(state.filter);
+        row.hidden = !(tagged && terms.every(term => row.dataset.search.includes(term)));
+        if (!row.hidden) shown += 1;
+      }
+      count.textContent = shown === rows.length ? '' : say(shownOf, { shown, count: rows.length });
+      nohits.hidden = shown > 0;
+      for (const chip of chips) chip.ariaPressed = String(chip.dataset.filter === state.filter);
+    }
+
+    // Appending moves a row, so the rows end up in order behind the column heads.
+    function order() {
+      for (const row of [...rows].sort(compare)) list.append(row);
+      sort.value = state.sort;
+      for (const sorter of sorters) {
+        sorter.dataset.dir = sorter.dataset.sort === state.sort ? state.dir : '';
+      }
+    }
+
+    function lay() {
+      if (!views.length) return;
+      list.dataset.view = state.view;
+      for (const button of views) button.ariaPressed = String(button.dataset.view === state.view);
+    }
+
+    search.value = state.q;
+    filter(); order(); lay();
+
+    search.addEventListener('input', () => { state.q = search.value; filter(); keep(); });
+    sort.addEventListener('change', () => {
+      state.sort = sort.value;
+      state.dir = firstWay(state.sort);
+      order(); keep();
+    });
+    for (const sorter of sorters) {
+      sorter.addEventListener('click', () => {
+        const again = sorter.dataset.sort === state.sort;
+        state.sort = sorter.dataset.sort;
+        state.dir = !again ? firstWay(state.sort) : state.dir === 'asc' ? 'desc' : 'asc';
+        order(); keep();
+      });
+    }
+    for (const chip of chips) {
+      chip.addEventListener('click', () => { state.filter = chip.dataset.filter; filter(); keep(); });
+    }
+    for (const button of views) {
+      button.addEventListener('click', () => {
+        state.view = button.dataset.view;
+        remember(state.view);
+        lay(); keep();
+      });
+    }
+  }
+}

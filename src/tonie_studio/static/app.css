@@ -352,6 +352,13 @@ a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
   display: grid; align-items: center; gap: 12px; padding: 6px 12px;
   grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 100px 90px minmax(0, 1fr) 60px 100px;
 }
+/* The library: always a table, with the file's path under its name. */
+.tonies.library .tonies-head,
+.tonies.library .tonie {
+  grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px 80px 100px minmax(0, 1.6fr) 70px;
+}
+.tonies.library .t-played { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tonies.library .t-delete form { margin: 0; }
 /* A column heading is a button that reads like the heading it is. */
 .tonies-head .sorter {
   border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
@@ -376,6 +383,9 @@ a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
   .tonies[data-view=list] .tonie { grid-template-columns: 44px minmax(0, 1fr) auto; }
   .tonies[data-view=list] .t-series { grid-column: 2; grid-row: 2; font-size: 13px; }
   .tonies[data-view=list] .t-name { grid-row: 1; }
+  .tonies.library .tonie { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .tonies.library .t-size, .tonies.library .t-played { display: none; }
+  .tonies.library .t-delete { grid-column: 3; grid-row: 1 / span 2; }
   .tonies[data-view=list] .t-kind,
   .tonies[data-view=list] .t-category,
   .tonies[data-view=list] .t-age,

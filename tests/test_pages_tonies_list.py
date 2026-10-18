@@ -58,7 +58,7 @@ class TestEachTonie:
         assert 'title="Lichterkinder - ' in row(client.get("/tonies").text, "7ab4ed0e500304e0")
 
     def test_a_tonie_without_a_picture_says_so_for_the_filter(self, client, official):
-        assert 'data-picture="no"' in row(client.get("/tonies").text, OFFICIAL)
+        assert 'data-tags="official nopicture"' in row(client.get("/tonies").text, OFFICIAL)
 
 
 class TestFreeStickers:
@@ -75,8 +75,8 @@ class TestTheControls:
 
         page = client.get("/tonies").text
 
-        assert 'data-kind-filter="official"' in page
-        chip = page[page.index('data-kind-filter="official"'):]
+        assert 'data-filter="official"' in page
+        chip = page[page.index('data-filter="official"'):]
         assert ">1<" in chip[:chip.index("</button>")].replace(" ", "")
 
     def test_offer_both_views_and_every_order(self, client, official):
