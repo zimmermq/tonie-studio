@@ -37,7 +37,10 @@ for (const choice of layoutChoices) {
 function showCover(row) {
   if (row.dataset.shown) return;
   row.dataset.shown = 'yes';
-  const url = `url("${row.dataset.src}")`;
+  // A circle of 46 pixels, drawn at twice that for a sharp screen; a picture
+  // straight from its host comes as the host sends it.
+  const src = row.dataset.src;
+  const url = `url("${src.startsWith('/cover/') ? `${src}?size=184` : src}")`;
   for (const layer of row.querySelectorAll('.preview span')) layer.style.backgroundImage = url;
 }
 const watcher = typeof IntersectionObserver === 'function'

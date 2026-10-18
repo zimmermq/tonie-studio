@@ -14,7 +14,7 @@
 <div class="list">
   {% for tag in streams %}
   <div class="item">
-    {{ thumb(tag.picture | cover_url(false)) }}
+    {{ thumb(tag.picture | cover_url(false, 96)) }}
     <span class="grow truncate">
       <strong class="truncate">{{ tag.label }}</strong>
       <span class="muted truncate">{{ tag.source }}</span>

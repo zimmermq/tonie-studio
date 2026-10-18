@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from .encode import Taf, delete_taf, list_tafs
+from .encode import Taf, aside_of, delete_taf, list_tafs
 from .library import is_library, played, same
 from .models import MODEL_PREFIX, Model, find_model, list_models, update_model
 from .tags import TonieError, TonieTag, find_tag, list_tags
@@ -223,6 +223,9 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
     for taf in tafs or []:
         path = same(taf.path)
         if same(taf.source) in playing or path in busy or path.startswith(busy_folders):
+            continue
+        # The copy a running replace encodes beside its target is in use too.
+        if same(aside_of(taf.path) or "") in busy:
             continue
         if taf.model.lower().startswith(BOX_SOUND_PREFIX):
             continue

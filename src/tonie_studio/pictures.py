@@ -40,6 +40,27 @@ _cache: "OrderedDict[Tuple[str, float, int], bytes]" = OrderedDict()
 _lock = Lock()
 
 
+def shrink(data: bytes, size: int) -> Tuple[bytes, str]:
+    """A picture scaled to fit ``size`` pixels, whole, and its media type.
+
+    PNG where the picture has transparency, which the figures of official
+    tonies are drawn on; JPEG otherwise. A picture already that small comes
+    back as it is. Raises OSError or ValueError for what Pillow cannot read.
+    """
+    with Image.open(io.BytesIO(data)) as picture:
+        if max(picture.size) <= size:
+            return data, Image.MIME.get(picture.format or "", "image/jpeg")
+        clear = picture.mode in ("RGBA", "LA", "PA") or "transparency" in picture.info
+        small = picture.convert("RGBA" if clear else "RGB")
+    small.thumbnail((size, size), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    if clear:
+        small.save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue(), "image/png"
+    small.save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue(), "image/jpeg"
+
+
 def thumbnail(path: Path, size: int = DEFAULT_SIZE) -> Optional[bytes]:
     """A square JPEG preview of ``path``, or None when it cannot be read.
 

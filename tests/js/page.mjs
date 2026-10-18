@@ -25,8 +25,16 @@ export function element(id, text = '', { dataset = {}, children = {} } = {}) {
   };
 }
 
+// An answer with a status of its own, for ``answers``: ``status(404)``.
+export function status(code, body = {}) {
+  return { [STATUS]: code, body };
+}
+const STATUS = Symbol('status');
+
 // ``ids`` are the elements the page has; ``pageData`` is what the server puts
-// in #page-data; ``answers`` maps a fetched URL to the JSON it answers with;
+// in #page-data; ``answers`` maps a fetched URL to the JSON it answers with,
+// to ``status(code)`` for another status, or to an Error the fetch rejects
+// with; a URL not in it answers 404;
 // ``queries`` maps a selector to the elements document.querySelectorAll finds;
 // ``texts`` gives elements by id with their content, such as other JSON blocks;
 // ``prepared`` gives elements by id built with ``element``, children and all;
@@ -63,8 +71,12 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     setTimeout: step => timers.push(step),
     fetch: async (url, options = {}) => {
       fetched.push({ url, method: options.method || 'GET', body: options.body });
-      return { ok: url in answers, json: async () => answers[url],
-               text: async () => String(answers[url]) };
+      const answer = answers[url];
+      if (answer instanceof Error) throw answer;
+      const code = !(url in answers) ? 404 : answer && answer[STATUS] ? answer[STATUS] : 200;
+      const body = answer && answer[STATUS] ? answer.body : answer;
+      return { ok: code >= 200 && code < 300, status: code, json: async () => body,
+               text: async () => String(body) };
     },
   };
   context.window = context;

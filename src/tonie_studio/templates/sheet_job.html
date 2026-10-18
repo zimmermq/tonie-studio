@@ -1,7 +1,9 @@
 {% extends "_progress_page.html" %}
 {% set page_title = t("sheet.job_title") %}
 {% set percent, detail = job.percent or 0, t("sheet.job_waiting") %}
-{% set page_data = {"id": job.id, "words": t.strings("sheet.job_waiting", "sheet.job_pictures", "sheet.job_pdf", "sheet.job_done", "sheet.skipped")} %}
+{% set page_data = {"id": job.id, "finished": job.state.value in ("done", "failed"),
+                    "words": t.strings("sheet.job_waiting", "sheet.job_pictures", "sheet.job_pdf",
+                                       "sheet.job_done", "sheet.skipped", "sheet.job_gone")} %}
 
 {% block outcome %}<p class="muted mb-0" id="skipped" hidden></p>{% endblock %}
 

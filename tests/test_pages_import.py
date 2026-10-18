@@ -106,6 +106,16 @@ class TestStarting:
         assert [item.path for item in run.items] == ["Meine/Wolf.nfc", "Meine/Fest.nfc"]
         assert run.source["label"] == "Meine"
 
+    def test_a_folder_of_more_than_a_thousand_dumps_is_taken(self, site, importer):
+        # The form parser's default stops at a thousand files.
+        files = [("files", (f"Viele/{index:04}.nfc", dump("17 C5 DF 11").encode(), "text/plain"))
+                 for index in range(1001)]
+
+        response = site.post("/import/files", data=PACE, files=files, follow_redirects=False)
+
+        assert response.status_code == 303
+        assert len(importer.current().items) == 1001
+
     def test_an_upload_without_dumps_is_refused(self, site):
         response = site.post("/import/files", data=PACE,
                              files=[("files", ("README.md", b"hello", "text/markdown"))])

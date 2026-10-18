@@ -34,6 +34,37 @@ def eventually(condition, timeout=5.0):
     raise AssertionError("condition never became true")
 
 
+def waits_for_writing(action, held_for=0.2):
+    """Whether ``action`` waits for the lock every model and tag write shares.
+
+    The lock is held here while ``action`` runs on another thread; an action
+    still running after ``held_for`` seconds is taken to be waiting for it.
+    It must then finish once the lock is let go.
+    """
+    import threading
+
+    from tonie_studio.models import WRITING
+
+    errors = []
+
+    def run():
+        try:
+            action()
+        except BaseException as error:  # noqa: BLE001 - handed to the test
+            errors.append(error)
+
+    worker = threading.Thread(target=run)
+    with WRITING:
+        worker.start()
+        worker.join(held_for)
+        waited = worker.is_alive()
+    worker.join(5)
+    assert not worker.is_alive(), "still running after the lock was let go"
+    if errors:
+        raise errors[0]
+    return waited
+
+
 def finish_job(runner, response):
     """Wait for the job a redirect points at and return it."""
     job_id = response.headers["location"].rsplit("/", 1)[1]

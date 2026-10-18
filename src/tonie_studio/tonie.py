@@ -18,7 +18,6 @@ that does not exist yet reads as unknown until something reloads the index.
 from __future__ import annotations
 
 import logging
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Union
@@ -26,20 +25,14 @@ from typing import Optional, Sequence, Union
 from .albumnotes import forget_model
 from .encode import EncodeResult, delete_taf, taf_exists
 from .library import is_library, path_of, same
-from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, find_model, find_model_by_audio,
-                     new_model, next_model_id, release_from_year, remove_model, upload_cover)
+from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, WRITING, find_model,
+                     find_model_by_audio, new_model, next_model_id, release_from_year,
+                     remove_model, upload_cover)
 from .runtimes import forget
 from .tags import TonieError, find_tag, list_tags, require_tag
 from .teddycloud import TeddyCloudClient
 
 log = logging.getLogger(__name__)
-
-# Held from picking a model id to writing the model and pointing the tag at
-# it. The id is the next free one, so two publishes running at once - a batch
-# encode finishing while a sticker is placed by hand - would otherwise pick
-# the same id and the second would overwrite the first tonie's name and cover.
-_WRITING = threading.Lock()
-
 
 def publish(
     client: TeddyCloudClient,
@@ -71,7 +64,7 @@ def publish(
         raise TonieError("tonie.no_taf", target=encoded.target)
     require_tag(client, ruid)
 
-    with _WRITING:
+    with WRITING:
         if require_free and require_tag(client, ruid).assigned:
             raise TonieError("tonie.sticker_taken", ruid=ruid)
         model_id = model_id or next_model_id(client)
@@ -137,7 +130,7 @@ def publish_stream(
         raise TonieError("tonie.only_http")
     require_tag(client, ruid)
 
-    with _WRITING:
+    with WRITING:
         model_id = model_id or next_model_id(client)
         model = new_model(model_id, series, episode, (), language, category)
         if cover is not None:
@@ -201,7 +194,7 @@ def move_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     Copied first and forgotten only once the copy stands: should anything
     fail in between, two stickers play the tonie rather than none.
     """
-    with _WRITING:
+    with WRITING:
         copy_tag(client, from_ruid, to_ruid)
         forget_tag(client, from_ruid)
 
@@ -261,7 +254,7 @@ def remove_tonie(client: TeddyCloudClient, ruid: str, data_dir: Path) -> Removal
     The sticker is emptied first: should a deletion after it fail, nothing
     points at audio that is gone, and the leftover shows up in the checkup.
     """
-    with _WRITING:
+    with WRITING:
         removal = plan_removal(client, ruid)
         client.set_tag(ruid, source="", tonie_model="")
         if removal.model:

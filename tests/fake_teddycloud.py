@@ -117,9 +117,9 @@ class FakeTeddyCloud:
 
     def create_dir(self, path: str, special: Optional[str] = None) -> None:
         if path in self.dirs:
-            raise TeddyCloudError(f"directory exists: {path}")
+            raise TeddyCloudError(f"directory exists: {path}", refused=True)
         if _parent(path) not in self.dirs:
-            raise TeddyCloudError(f"no such directory: {_parent(path)}")
+            raise TeddyCloudError(f"no such directory: {_parent(path)}", refused=True)
         self.dirs.add(path)
 
     def upload(self, stream, filename: str, path: str = "/", special: Optional[str] = None) -> None:
@@ -135,16 +135,16 @@ class FakeTeddyCloud:
     def encode(self, target: str, sources, special: str = "library") -> None:
         sources = list(sources)
         if self.encode_fails:
-            raise TeddyCloudError(self.encode_fails)
+            raise TeddyCloudError(self.encode_fails, refused=True)
         if not sources:
             raise ValueError("an encode needs at least one source file")
         if target in self.files:
-            raise TeddyCloudError(f"target exists: {target}")
+            raise TeddyCloudError(f"target exists: {target}", refused=True)
         if _parent(target) not in self.dirs:
-            raise TeddyCloudError(f"no such directory: {_parent(target)}")
+            raise TeddyCloudError(f"no such directory: {_parent(target)}", refused=True)
         for source in sources:
             if source not in self.files:
-                raise TeddyCloudError(f"no such file: {source}")
+                raise TeddyCloudError(f"no such file: {source}", refused=True)
 
         self.encoded.append((target, sources))
         self.files[target] = b"".join(self.files[source] for source in sources)
@@ -160,11 +160,11 @@ class FakeTeddyCloud:
         if path.startswith("/custom_img/"):
             name = path[len("/custom_img/"):]
             if name not in self.images:
-                raise TeddyCloudError(f"no such image: {path}")
+                raise TeddyCloudError(f"no such image: {path}", status=404)
             return self.images[name]
         if path in self.files:
             return self.files[path]
-        raise TeddyCloudError(f"no such file: {path}")
+        raise TeddyCloudError(f"no such file: {path}", status=404)
 
     def tags(self) -> List[dict]:
         """The tag index, shaped the way getTagIndex answers."""
@@ -207,7 +207,7 @@ class FakeTeddyCloud:
         # and a tonie only an import wrote are changed the same way.
         stored = f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json"
         if ruid not in self.tag_entries and stored not in self.files:
-            raise TeddyCloudError(f"no such tag: {ruid}")
+            raise TeddyCloudError(f"no such tag: {ruid}", refused=True)
         if not fields:
             raise ValueError("set_tag needs at least one field to change")
         if ruid in self.tag_entries:
@@ -270,10 +270,10 @@ class FakeTeddyCloud:
         if path in self.dirs:
             prefix = f"{path}/"
             if any(item.startswith(prefix) for item in list(self.files) + list(self.dirs)):
-                raise TeddyCloudError(f"directory not empty: {path}")
+                raise TeddyCloudError(f"directory not empty: {path}", refused=True)
             self.dirs.discard(path)
             return
-        raise TeddyCloudError(f"no such file: {path}")
+        raise TeddyCloudError(f"no such file: {path}", refused=True)
 
     # --- content and the Tonies cloud ---------------------------------------
 

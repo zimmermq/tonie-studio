@@ -173,6 +173,36 @@ class TestRemoveOrphanedStaging:
 
         assert "/Lichterkinder" in teddycloud.dirs
 
+    def test_spares_what_an_encode_of_this_run_is_using(self, teddycloud, tmp_path):
+        # The sweep runs once teddyCloud answers, which can be after the first
+        # encode has begun uploading into its own staging folder.
+        import threading
+
+        from tonie_studio.encode import encode_files
+
+        source = tmp_path / "01.flac"
+        source.write_bytes(b"x")
+        uploading, swept = threading.Event(), threading.Event()
+        original = teddycloud.upload
+
+        def upload(*args, **kwargs):
+            uploading.set()
+            swept.wait(5)
+            return original(*args, **kwargs)
+
+        teddycloud.upload = upload
+        teddycloud.create_dir("/Neu")
+        worker = threading.Thread(target=encode_files, args=(teddycloud, [source], "/Neu/X.taf"))
+        worker.start()
+        assert uploading.wait(5)
+
+        removed = remove_orphaned_staging(teddycloud)
+        swept.set()
+        worker.join(5)
+
+        assert removed == 0
+        assert "/Neu/X.taf" in teddycloud.files
+
     def test_does_nothing_when_no_staging_area_exists(self, teddycloud):
         assert remove_orphaned_staging(teddycloud) == 0
 

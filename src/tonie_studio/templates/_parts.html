@@ -3,7 +3,7 @@
 {#- A row's picture, or a grey square of the same size where there is none,
     so rows with and without one line up. ``src`` is empty for none. #}
 {% macro thumb(src, class="", no_referrer=False) -%}
-{% if src %}<img{% if class %} class="{{ class }}"{% endif %} src="{{ src }}" alt="" loading="lazy"
+{% if src %}<img{% if class %} class="{{ class }}"{% endif %} src="{{ src }}" alt="" loading="lazy" decoding="async"
   {%- if no_referrer %} referrerpolicy="no-referrer"{% endif %}>
 {%- else %}<span class="noart" aria-hidden="true"></span>{% endif %}
 {%- endmacro %}

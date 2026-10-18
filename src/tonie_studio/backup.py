@@ -24,20 +24,23 @@ import logging
 import os
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .albumnotes import MADE_FILE, add_made
+from .calibration import FILE_NAME as CALIBRATION_FILE
 from .encode import list_tafs
 from .i18n import Problem
 from .library import is_library, played, same
 from .listening import FILE_NAME as LISTENING_FILE
-from .models import Model, fetch_cover, is_cover_name
+from .models import WRITING, Model, fetch_cover, is_cover_name
+from .podcast import FILE_NAME as PODCASTS_FILE
+from .podcast import Subscription, add_subscription, load_subscriptions
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
-from .store import sweep
+from .store import from_record, sweep
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -70,11 +73,12 @@ FAILED = "failed"
 ACTIONS = (SAME, NEW, CHANGES, REPLACES, SKIPPED, KEPT, FAILED)
 
 MODEL, COVER, TAG, TIMES, LISTENING, MADE = "model", "cover", "tag", "times", "listening", "made"
-KINDS = (MODEL, COVER, TAG, TIMES, LISTENING, MADE)
+PODCASTS, CALIBRATION = "podcasts", "calibration"
+KINDS = (MODEL, COVER, TAG, TIMES, LISTENING, MADE, PODCASTS, CALIBRATION)
 
 # The parts of a backup as the backup page lists them; texts in backup.part.*.
 PART_MODELS, PART_TAGS, PART_COVERS = "models", "tags", "covers"
-PARTS = (PART_MODELS, PART_TAGS, PART_COVERS, TIMES, LISTENING, MADE)
+PARTS = (PART_MODELS, PART_TAGS, PART_COVERS, TIMES, LISTENING, MADE, PODCASTS, CALIBRATION)
 
 
 class BackupError(Problem, ValueError):
@@ -91,6 +95,9 @@ class Backup:
     listening: Optional[bytes]
     # Which album each tonie was made from; absent from backups made before.
     made: Optional[bytes] = None
+    # Podcast subscriptions and the printer calibration; absent from older backups.
+    podcasts: Optional[bytes] = None
+    calibration: Optional[bytes] = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +147,11 @@ def describe_backup(client: TeddyCloudClient, data_dir: Path) -> List[Part]:
     parts.append(Part(LISTENING, len(_entries(listening)), _size(listening)))
     made = data_dir / MADE_FILE
     parts.append(Part(MADE, len(_entries(made, json_object=True)), _size(made)))
+    subscriptions = _saved_subscriptions(data_dir)
+    parts.append(Part(PODCASTS, len(subscriptions),
+                      len(_json(subscriptions).encode("utf-8")) if subscriptions else 0))
+    calibration = data_dir / CALIBRATION_FILE
+    parts.append(Part(CALIBRATION, 1 if calibration.is_file() else 0, _size(calibration)))
     return parts
 
 
@@ -190,11 +202,21 @@ def create_backup(client: TeddyCloudClient, data_dir: Path) -> bytes:
                 # A model whose picture is gone still has a name worth keeping.
                 log.warning("backup: cover %s cannot be read: %s", name, error)
 
-        for file_name in (TIMES_FILE, LISTENING_FILE, MADE_FILE):
+        for file_name in (TIMES_FILE, LISTENING_FILE, MADE_FILE, CALIBRATION_FILE):
             path = data_dir / file_name
             if path.is_file():
                 archive.write(path, file_name)
+        subscriptions = _saved_subscriptions(data_dir)
+        if subscriptions:
+            archive.writestr(PODCASTS_FILE, _json(subscriptions))
     return buffer.getvalue()
+
+
+def _saved_subscriptions(data_dir: Path) -> List[Dict]:
+    """The subscriptions as a backup keeps them: without how the last refresh went."""
+    return [{key: value for key, value in asdict(subscription).items()
+             if key not in ("error", "error_key", "error_params")}
+            for subscription in load_subscriptions(data_dir)]
 
 
 def read_backup(data: bytes) -> Backup:
@@ -247,6 +269,8 @@ def read_backup(data: bytes) -> Backup:
             times=archive.read(TIMES_FILE) if TIMES_FILE in names else None,
             listening=archive.read(LISTENING_FILE) if LISTENING_FILE in names else None,
             made=archive.read(MADE_FILE) if MADE_FILE in names else None,
+            podcasts=archive.read(PODCASTS_FILE) if PODCASTS_FILE in names else None,
+            calibration=archive.read(CALIBRATION_FILE) if CALIBRATION_FILE in names else None,
         )
 
 
@@ -256,8 +280,13 @@ def plan_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> Li
 
 
 def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> List[Step]:
-    """Restore, and return what was done."""
-    return _restore(client, backup, data_dir, write=True)
+    """Restore, and return what was done.
+
+    Under the lock every model write shares: a model is written whole, and
+    one changed meanwhile would be overwritten with what was read before.
+    """
+    with WRITING:
+        return _restore(client, backup, data_dir, write=True)
 
 
 def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bool) -> List[Step]:
@@ -304,6 +333,9 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     steps += _restore_times(backup, data_dir, write)
     steps += _restore_listening(backup, data_dir, write)
     steps += _restore_made(backup, data_dir, write)
+    steps += _restore_podcasts(backup, data_dir, write)
+    steps += _restore_only_where_none(backup.calibration, data_dir, CALIBRATION,
+                                      CALIBRATION_FILE, write)
     if write:
         log.info("restored a backup from %s", backup.manifest.get("created"))
     return steps
@@ -370,6 +402,43 @@ def _restore_made(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     if not changed:
         return [Step(MADE, MADE_FILE, SAME)]
     return [Step(MADE, MADE_FILE, CHANGES if had_records else NEW)]
+
+
+def _restore_podcasts(backup: Backup, data_dir: Path, write: bool) -> List[Step]:
+    """Subscriptions the backup has and this volume does not are added.
+
+    One here with the same id stays as it is: it was set up or changed since.
+    """
+    if backup.podcasts is None:
+        return []
+    try:
+        saved = [from_record(Subscription, entry)
+                 for entry in json.loads(backup.podcasts.decode("utf-8"))
+                 if isinstance(entry, dict) and entry.get("id") and entry.get("feed")]
+    except (ValueError, UnicodeDecodeError, TypeError):
+        return [Step(PODCASTS, PODCASTS_FILE, SKIPPED, "restore.note.unreadable")]
+    here = {subscription.id for subscription in load_subscriptions(data_dir)}
+    missing = [subscription for subscription in saved if subscription.id not in here]
+    if not missing:
+        return [Step(PODCASTS, PODCASTS_FILE, SAME)]
+    if write:
+        for subscription in missing:
+            add_subscription(data_dir, subscription)
+    return [Step(PODCASTS, PODCASTS_FILE, CHANGES if here else NEW)]
+
+
+def _restore_only_where_none(saved: Optional[bytes], data_dir: Path, what: str,
+                             file_name: str, write: bool) -> List[Step]:
+    """A record that comes back only where there is none: the one here is newer."""
+    if saved is None:
+        return []
+    path = data_dir / file_name
+    if path.is_file():
+        return [Step(what, file_name, SAME if path.read_bytes() == saved else KEPT)]
+    if write:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(saved)
+    return [Step(what, file_name, NEW)]
 
 
 def _restore_listening(backup: Backup, data_dir: Path, write: bool) -> List[Step]:

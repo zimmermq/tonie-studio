@@ -79,3 +79,21 @@ class TestTtlCache:
             cache.get("a")
 
         assert cache.get("a") == "back"
+
+    def test_an_answer_loaded_across_a_forget_is_not_kept(self):
+        # A scan that began before an upload must not put the old list back.
+        cache = None
+
+        def load(key):
+            calls.append(key)
+            if len(calls) == 1:
+                cache.forget()
+                return "before"
+            return "after"
+
+        calls = []
+        cache = TtlCache(load, ttl=10, clock=lambda: 0.0)
+
+        assert cache.get("a") == "before"
+        assert cache.get("a") == "after"
+

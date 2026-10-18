@@ -46,7 +46,7 @@ from .encode import EncodeError, cut_to_bytes, delete_taf, encode_files, library
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
-from .models import find_model, picture_suffix
+from .models import WRITING, find_model, picture_suffix
 from .runtimes import remember
 from .store import LOCK, from_record, read_json, write_json
 from .tags import find_tag, list_tags
@@ -216,25 +216,43 @@ def download(url: str, limit: int = LARGEST_DOWNLOAD) -> bytes:
     raise FeedError("feed.redirects", count=MOST_REDIRECTS, url=url)
 
 
-def check_public(url: str, resolve: Callable = socket.getaddrinfo) -> None:
+def check_public(url: str, resolve: Optional[Callable] = None) -> None:
     """Refuse any address that is not on the public internet.
 
     The name is resolved here and again by the request itself, so a name that
     answers differently the second time is not caught. That narrows what a
     hostile feed can reach to someone running such a name server for it.
+    ``resolve`` defaults to socket.getaddrinfo, looked up on each call.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise FeedError("feed.not_http", url=url)
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
-        answers = resolve(parsed.hostname, port, type=socket.SOCK_STREAM)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as error:
+        # A port that is not a number, or out of range: a typo in the address.
+        raise FeedError("feed.bad_address", url=url) from error
+    try:
+        answers = (resolve or socket.getaddrinfo)(parsed.hostname, port,
+                                                  type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError) as error:
         raise FeedError("feed.not_found", host=parsed.hostname, detail=str(error)) from error
     for answer in answers:
         address = ipaddress.ip_address(str(answer[4][0]).split("%", 1)[0])
-        if not address.is_global:
+        if not address.is_global or not _embedded_ipv4_global(address):
             raise FeedError("feed.not_public", host=parsed.hostname, address=str(address))
+
+
+# NAT64 addresses carry an IPv4 address in their last 32 bits and count as
+# global themselves, whatever that address is.
+NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _embedded_ipv4_global(address) -> bool:
+    """False for a NAT64 address whose IPv4 address is not public; True otherwise."""
+    if address.version == 6 and address in NAT64:
+        return ipaddress.ip_address(int(address) & 0xFFFFFFFF).is_global
+    return True
 
 
 def refresh(
@@ -283,16 +301,18 @@ def refresh(
         shutil.rmtree(folder, ignore_errors=True)
 
     try:
-        # Again, right before writing: the download and the encode took
-        # minutes, and the sticker may have been given something else since.
-        _check_sticker(client, subscription)
         cover = _cover(client, subscription, feed, fetch)
-        model_id = publish(
-            client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
-            tracks=[episode.title for episode in chosen], cover=cover,
-            cover_name=picture_suffix(feed.image or ""),
-            model_id=subscription.model or None,
-        )
+        # Checked again right before writing, under the lock writes share: the
+        # download and the encode took minutes, and the sticker may have been
+        # given something else since, or be given it between check and write.
+        with WRITING:
+            _check_sticker(client, subscription)
+            model_id = publish(
+                client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
+                tracks=[episode.title for episode in chosen], cover=cover,
+                cover_name=picture_suffix(feed.image or ""),
+                model_id=subscription.model or None,
+            )
     except Exception:
         # The sticker still plays the old episodes; the new taf would only be
         # a file nothing points at.

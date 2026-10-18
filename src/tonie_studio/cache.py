@@ -27,7 +27,8 @@ class TtlCache(Generic[K, T]):
     A missing or stale answer is loaded while the caller waits; a load that
     raises is passed on and not kept, so the next call tries again. Two
     callers missing at once may both load, which costs time, never a wrong
-    answer. ``clock`` is for tests.
+    answer. An answer whose load began before a ``forget`` is handed to its
+    caller but not kept. ``clock`` is for tests.
     """
 
     def __init__(self, load: Callable[[K], T], ttl: float,
@@ -36,23 +37,28 @@ class TtlCache(Generic[K, T]):
         self.ttl = ttl
         self.clock = clock
         self._answers: Dict[K, Tuple[float, T]] = {}
+        # Counts forgets, so a load can tell one happened while it ran.
+        self._generation = 0
         self._lock = threading.Lock()
 
     def get(self, key: K) -> T:
         now = self.clock()
         with self._lock:
             kept = self._answers.get(key)
+            generation = self._generation
         if kept and now - kept[0] < self.ttl:
             return kept[1]
         value = self.load(key)
         with self._lock:
-            self._answers[key] = (now, value)
+            if generation == self._generation:
+                self._answers[key] = (now, value)
         return value
 
     def forget(self) -> None:
         """Drop every answer, for a change that has to show on the next call."""
         with self._lock:
             self._answers.clear()
+            self._generation += 1
 
 
 class BackgroundCache(Generic[T]):

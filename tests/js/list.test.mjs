@@ -13,7 +13,7 @@ function tonie(name, { kind = 'official', picture = 'yes', added = 0, chapters =
                                       search: `${series} ${name}`.toLowerCase() } });
 }
 
-async function page(rows) {
+async function page(rows, globals = {}) {
   const order = [];
   const list = element('tonies', '', { dataset: { view: 'grid', remember: 'tonies.view' } });
   list.querySelectorAll = () => rows;
@@ -36,6 +36,7 @@ async function page(rows) {
                 orders: { added: { number: true, desc: true }, name: {}, series: {}, kind: {}, category: {}, age: { number: true },
                           chapters: { number: true, desc: true } } },
     queries: { '[data-filter]': chips, '[data-view]': views, '[data-sort]': sorters },
+    globals,
   });
   const names = () => order.filter(row => !row.hidden).map(row => row.dataset.name);
   const chip = kind => chips.find(c => c.dataset.filter === kind);
@@ -128,3 +129,17 @@ async function page(rows) {
   const { names } = await page([tonie('b', { added: 900 }), tonie('a', { added: 100 })]);
   assert.deepEqual(names(), ['a', 'b']);
 }
+
+// What the page's own address carries beyond the list - the listening
+// page's period - stays when the list writes its state into the address.
+{
+  const written = [];
+  const { search } = await page([tonie('a'), tonie('b')], {
+    location: { search: '?period=7', pathname: '/listening', href: 'http://localhost/listening?period=7' },
+    history: { replaceState: (state, title, url) => written.push(url) },
+  });
+  search.value = 'a';
+  search.fire('input');
+  assert.equal(written.at(-1), '?period=7&q=a');
+}
+

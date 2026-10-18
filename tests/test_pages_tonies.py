@@ -100,7 +100,7 @@ class TestEditTonie:
         assert "offizielle Katalog" in page and "10000581" in page
         assert 'class="warn"' not in page
         assert 'href="/sheet?model=10000581"' in page
-        assert 'src="/cover/cache/' + "A" * 64 + '.png"' in page
+        assert 'src="/cover/cache/' + "A" * 64 + '.png?size=' in page
 
     def test_saves_a_corrected_title(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
@@ -275,6 +275,56 @@ class TestLibraryPage:
         assert response.status_code == 303
         assert "/Lichterkinder/Halloween.taf" not in teddycloud.files
 
+    def test_always_asks_first(self, client, runner):
+        encode_and_assign_page(client, runner)
+
+        row = self.row(client.get("/library").text, "/Lichterkinder/Halloween.taf")
+
+        assert "data-confirm=" in row
+
+    def test_a_taf_given_to_a_sticker_since_the_page_was_drawn_stays(self, client, runner,
+                                                                     teddycloud):
+        # The page showed it unused and so asked nothing about stickers; a
+        # page left open must not delete what has since been put on one.
+        encode_and_assign_page(client, runner)
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Lichterkinder/Halloween.taf"
+
+        response = client.post("/library/delete",
+                               data={"path": "/Lichterkinder/Halloween.taf", "players": ""},
+                               follow_redirects=False)
+
+        assert response.status_code == 409
+        assert "/Lichterkinder/Halloween.taf" in teddycloud.files
+
+    def test_a_taf_shown_as_played_is_deleted_when_asked(self, client, runner, teddycloud):
+        encode_and_assign_page(client, runner)
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Lichterkinder/Halloween.taf"
+
+        response = client.post("/library/delete", data={
+            "path": "/Lichterkinder/Halloween.taf", "players": "7ab4ed0e500304e0"},
+            follow_redirects=False)
+
+        assert response.status_code == 303
+        assert "/Lichterkinder/Halloween.taf" not in teddycloud.files
+
+    def test_refuses_a_taf_the_library_does_not_have(self, client, teddycloud):
+        response = client.post("/library/delete", data={"path": "/Weg/../Weg.taf"},
+                               follow_redirects=False)
+
+        assert response.status_code == 404
+
+    def test_refuses_a_taf_an_encode_is_making(self, client, runner, teddycloud):
+        job, _page = encode_and_assign_page(client, runner)
+        hold = __import__("threading").Event()
+        runner.submit("encode", job.label, lambda progress: hold.wait(5))
+
+        response = client.post("/library/delete", data={"path": job.label},
+                               follow_redirects=False)
+        hold.set()
+
+        assert response.status_code == 409
+        assert job.label in teddycloud.files
+
     def test_refuses_a_path_that_is_not_a_taf(self, client, teddycloud):
         teddycloud.files["/wichtig.json"] = b"{}"
 
@@ -284,14 +334,21 @@ class TestLibraryPage:
         assert response.status_code == 400
         assert "/wichtig.json" in teddycloud.files
 
-    @pytest.mark.parametrize("status, answer", [(403, 502), (None, 503)])
-    def test_teddycloud_failing_is_answered_as_everywhere(self, client, status, answer):
+    @pytest.mark.parametrize("error, answer", [
+        ({"status": 403}, 502),
+        # A command endpoint says no at status 200, in its body.
+        ({"refused": True}, 502),
+        ({}, 503),
+    ])
+    def test_teddycloud_failing_is_answered_as_everywhere(self, client, runner, error, answer):
         # Refusing and being away read differently, and the same on every page.
         from tonie_studio.teddycloud import TeddyCloudError
 
+        encode_and_assign_page(client, runner)
         with patch("tonie_studio.pages.library.delete_taf",
-                   side_effect=TeddyCloudError("no", status=status)):
-            response = client.post("/library/delete", data={"path": "/Weg/Weg.taf"},
+                   side_effect=TeddyCloudError("no", **error)):
+            response = client.post("/library/delete",
+                                   data={"path": "/Lichterkinder/Halloween.taf"},
                                    follow_redirects=False)
 
         assert response.status_code == answer

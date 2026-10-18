@@ -108,6 +108,8 @@ class TestCreateDir:
             client.create_dir("/_staging/job-1", special="library")
 
         assert "directory exists" in str(excinfo.value)
+        # It answered: that is a refusal, not teddyCloud being away.
+        assert excinfo.value.refused
 
 
 class TestDelete:
@@ -417,6 +419,16 @@ class TestEncoding:
 
         with patch.object(client.session, "request", return_value=response):
             assert client.fetch("/custom_img/a.jpg") == b"\xff\xd8\xff"
+
+
+class TestRefusedOrAway:
+    @pytest.mark.parametrize("status, refused", [(404, True), (400, True), (500, False),
+                                                 (503, False), (None, False)])
+    def test_a_status_says_which_it_is(self, status, refused):
+        assert TeddyCloudError("x", status=status).refused is refused
+
+    def test_a_refusal_can_be_said_without_a_status(self):
+        assert TeddyCloudError("x", refused=True).refused
 
 
 class TestRequest:

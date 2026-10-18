@@ -14,7 +14,7 @@
 
 {% block row %}
 {%- set taf = item.taf %}
-{%- set picture = taf.picture | cover_url(false) %}
+{%- set picture = taf.picture | cover_url(false, 96) %}
 {%- set players = item.played_by | map(attribute="label") | join(", ") %}
 <div class="taf listing-row" data-path="{{ taf.path }}" data-tags="{{ item.tags | join(' ') }}"
      data-name="{{ item.label | lower }}" data-origin="{{ t('library.origin.' ~ item.origin) | lower }}"
@@ -35,11 +35,14 @@
   <span class="t-delete">
     {#- The box's own sounds are played by the box itself and stay. Deleting a
         taf a sticker plays leaves that tonie silent; sometimes that is the
-        intent - replacing the audio underneath - so it asks rather than refuses. #}
+        intent - replacing the audio underneath - so it asks rather than refuses.
+        ``players`` tells the server which stickers were asked about. #}
     {% if item.origin != "box" %}
     <form method="post" action="/library/delete"
-          {% if players %}data-confirm="{{ t('library.confirm_used', used=players) }}"{% endif %}>
+          data-confirm="{{ t('library.confirm_used', used=players) if players
+                           else t('library.confirm_delete', name=item.label) }}">
       <input type="hidden" name="path" value="{{ taf.path }}">
+      <input type="hidden" name="players" value="{{ item.played_by | map(attribute='ruid') | join(',') }}">
       <button type="submit" class="small">{{ t("common.delete") }}</button>
     </form>
     {% endif %}

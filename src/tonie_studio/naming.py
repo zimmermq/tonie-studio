@@ -42,7 +42,7 @@ from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .cache import TtlCache
-from .models import CATEGORIES, MODEL_PREFIX, Model, list_models
+from .models import CATEGORIES, MODEL_PREFIX, WRITING, Model, list_models
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -438,7 +438,6 @@ class Namer:
         self.dumps = dumps
         self._catalog: TtlCache[None, Tuple[Catalog, AudioIndex]] = TtlCache(
             lambda _key: self._load_catalog(), CATALOG_TTL, clock)
-        self._lock = threading.Lock()
 
     def catalog(self) -> Tuple[Catalog, AudioIndex]:
         return self._catalog.get(None)
@@ -463,12 +462,12 @@ class Namer:
                     library_headers(client), migrate=migrate, retitle=migrate)
 
     def upkeep(self, migrate: bool = False, expect: Optional[str] = None) -> Plan:
-        """Plan and carry out the upkeep in one go, under the lock writes share.
+        """Plan and carry out the upkeep in one go, under the lock all model writes share.
 
         With ``expect``, the fingerprint of the plan a person was shown, nothing
         is written unless the plan is still that one; :class:`PlanChanged` says so.
         """
-        with self._lock:
+        with WRITING:
             todo = self.preview(migrate)
             if expect is not None and fingerprint(todo) != expect:
                 raise PlanChanged()
@@ -478,7 +477,7 @@ class Namer:
 
     def name_one(self, ruid: str, path: str) -> None:
         """Name one tonie just imported, if teddyCloud cannot name it by itself."""
-        with self._lock:
+        with WRITING:
             client = self.client()
             catalog, by_audio = self.catalog()
             todo = plan(list_tags(client), {ruid: path}, catalog, by_audio, list_models(client),

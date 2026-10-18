@@ -9,9 +9,15 @@ const skipped = document.getElementById('skipped');
 // A second a poll: a sheet takes seconds to a minute, and the bar should move.
 const POLL_MS = 1000;
 
-// Asked until the sheet is done or failed; a missed answer is asked again.
+// Asked until the sheet is done or failed; a missed answer is asked again,
+// but a sheet the server no longer knows - it restarted - is gone for good.
 window.every(POLL_MS, async () => {
   const answer = await fetch(`/api/sheet/print/${data.id}`);
+  if (answer.status === 404) {
+    detail.textContent = '';
+    ended(words['sheet.job_gone'], true);
+    return false;
+  }
   if (!answer.ok) return true;
   const job = await answer.json();
   fill.style.width = `${job.percent}%`;
@@ -29,7 +35,8 @@ window.every(POLL_MS, async () => {
       skipped.hidden = false;
     }
     // The file is what was asked for; the button stays for a second copy.
-    location.href = download.href;
+    // A page opened on a finished sheet, by the back button say, only offers it.
+    if (!data.finished) location.href = download.href;
     return false;
   }
   detail.textContent = !job.total ? words['sheet.job_waiting']

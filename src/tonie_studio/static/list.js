@@ -57,13 +57,19 @@
       return way * by || a.dataset.name.localeCompare(b.dataset.name);
     }
 
+    // The list's own keys in the address; anything else there belongs to the
+    // page, such as the listening page's period, and is kept as it is.
     function keep() {
-      const params = new URLSearchParams();
-      if (state.q) params.set('q', state.q);
-      if (state.filter) params.set('filter', state.filter);
-      if (state.sort !== firstKey) params.set('sort', state.sort);
-      if (state.dir !== firstWay(state.sort)) params.set('dir', state.dir);
-      if (views.length && state.view !== list.dataset.view) params.set('view', state.view);
+      const params = new URLSearchParams(location.search || '');
+      const put = (key, value, wanted) => {
+        if (wanted) params.set(key, value); else params.delete(key);
+      };
+      params.delete('kind');
+      put('q', state.q, state.q);
+      put('filter', state.filter, state.filter);
+      put('sort', state.sort, state.sort !== firstKey);
+      put('dir', state.dir, state.dir !== firstWay(state.sort));
+      put('view', state.view, views.length && state.view !== list.dataset.view);
       const query = params.toString();
       try { history.replaceState(null, '', query ? `?${query}` : location.pathname); } catch { /* no history */ }
     }

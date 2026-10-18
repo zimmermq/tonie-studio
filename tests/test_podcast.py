@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 import pytest
+import requests
 from fake_teddycloud import FakeTeddyCloud
 
 from tonie_studio.podcast import (LARGEST_FEED, FeedError, Subscription, check_public,
@@ -284,6 +285,115 @@ class TestOnlyPublicAddresses:
             return [(2, 1, 6, "", ("93.184.215.14", port))]
 
         check_public("https://example.org/ep.mp3", resolve=outside)
+
+    @pytest.mark.parametrize("url", ["http://example.org:99999/feed.xml",
+                                     "http://example.org:abc/feed.xml"])
+    def test_a_mistyped_port_is_said_rather_than_failing(self, url):
+        with pytest.raises(FeedError) as caught:
+            check_public(url)
+
+        assert caught.value.key == "feed.bad_address"
+
+    def test_refuses_an_inside_address_behind_nat64(self):
+        # 64:ff9b::/96 carries an IPv4 address and counts as global itself.
+        def nat64(host, port, *args, **kwargs):
+            return [(10, 1, 6, "", ("64:ff9b::a00:1", port, 0, 0))]
+
+        with pytest.raises(FeedError) as caught:
+            check_public("http://example.org/x.mp3", resolve=nat64)
+
+        assert caught.value.key == "feed.not_public"
+
+
+class FakeResponse:
+    """What download() reads of a requests response."""
+
+    def __init__(self, body=b"", location=None, status=200):
+        self.body, self.status_code = body, status
+        self.headers = {"location": location} if location else {}
+        self.is_redirect = location is not None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+    def iter_content(self, size):
+        for start in range(0, len(self.body), size):
+            yield self.body[start:start + size]
+
+
+class TestDownload:
+    """The fetch every feed, episode and picture goes through."""
+
+    @pytest.fixture
+    def web(self, monkeypatch):
+        """Answers by URL; every host resolves to the address ``hosts`` gives it."""
+        answers, hosts, asked = {}, {}, []
+
+        def get(url, **kwargs):
+            assert kwargs["allow_redirects"] is False
+            asked.append(url)
+            return answers[url]
+
+        def resolve(host, port, *args, **kwargs):
+            return [(2, 1, 6, "", (hosts.get(host, "93.184.215.14"), port))]
+
+        monkeypatch.setattr("tonie_studio.podcast.requests.get", get)
+        monkeypatch.setattr("tonie_studio.podcast.socket.getaddrinfo", resolve)
+        return answers, hosts, asked
+
+    def test_a_redirect_inside_is_refused(self, web):
+        from tonie_studio.podcast import download
+
+        answers, hosts, _asked = web
+        answers["https://example.org/feed.xml"] = FakeResponse(location="http://intern.example/x")
+        hosts["intern.example"] = "10.0.0.1"
+
+        with pytest.raises(FeedError) as caught:
+            download("https://example.org/feed.xml")
+
+        assert caught.value.key == "feed.not_public"
+
+    def test_a_relative_redirect_is_followed(self, web):
+        from tonie_studio.podcast import download
+
+        answers, _hosts, asked = web
+        answers["https://example.org/old/feed.xml"] = FakeResponse(location="../new/feed.xml")
+        answers["https://example.org/new/feed.xml"] = FakeResponse(b"<rss/>")
+
+        assert download("https://example.org/old/feed.xml") == b"<rss/>"
+        assert asked[-1] == "https://example.org/new/feed.xml"
+
+    def test_too_large_is_refused(self, web):
+        from tonie_studio.podcast import download
+
+        answers, _hosts, _asked = web
+        answers["https://example.org/ep.mp3"] = FakeResponse(b"x" * (3 * 1024 * 1024))
+
+        with pytest.raises(FeedError) as caught:
+            download("https://example.org/ep.mp3", limit=2 * 1024 * 1024)
+
+        assert caught.value.key == "feed.too_large"
+
+    def test_endless_redirects_are_refused(self, web):
+        from tonie_studio.podcast import MOST_REDIRECTS, download
+
+        answers, _hosts, asked = web
+        for hop in range(MOST_REDIRECTS + 2):
+            answers[f"https://example.org/{hop}"] = FakeResponse(
+                location=f"https://example.org/{hop + 1}")
+
+        with pytest.raises(FeedError) as caught:
+            download("https://example.org/0")
+
+        assert caught.value.key == "feed.redirects"
+        assert len(asked) == MOST_REDIRECTS + 1
 
 
 class TestStoringSafely:

@@ -31,7 +31,7 @@
      data-name="{{ tag.label | lower }}" data-placed="{{ item.placed }}" data-played="{{ item.played }}"
      data-last="{{ item.last.timestamp() | int if item.last else 0 }}"
      data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.uid | replace(':', '')) | lower }}">
-  {{ thumb(tag.picture | cover_url(false)) }}
+  {{ thumb(tag.picture | cover_url(false, 96)) }}
   <span class="t-name"><a href="/tonies/{{ tag.ruid }}"><strong>{{ tag.label }}</strong></a></span>
   <span class="t-played muted">{% if item.played %}{{ t.duration(item.entry.played) }}{% endif %}</span>
   <span class="t-placed muted">{% if item.placed %}{{ t("listening.placed", count=item.placed) }}{% endif %}</span>

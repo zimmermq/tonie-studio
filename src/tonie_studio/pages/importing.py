@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.datastructures import FormData
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..teddycloud import TeddyCloudError
@@ -18,7 +20,7 @@ from ..times import from_seconds
 from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
                          ImportProblem, Pace, Run)
 from .. import naming
-from .common import Context, Refused, refused
+from .common import Context, Refused, refused, upload_form
 
 # The order the counts are shown in.
 STATES = (PENDING, IMPORTED, CACHED, FAILED, DUPLICATE, UNREADABLE)
@@ -71,8 +73,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         return RedirectResponse("/import", 303)
 
     @app.post("/import/files")
-    def start_files(files: List[UploadFile], per_hour: float = Form(...),
-                    jitter: float = Form(...), max_failures: int = Form(...)):
+    def start_files(form: FormData = Depends(upload_form)):
+        try:
+            per_hour = float(form["per_hour"])
+            jitter = float(form["jitter"])
+            max_failures = int(form["max_failures"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise Refused(400, "import.bad_pace") from error
+        files = [part for part in form.getlist("files") if isinstance(part, StarletteUploadFile)]
         dumps = []
         for upload in files:
             name = upload.filename or ""

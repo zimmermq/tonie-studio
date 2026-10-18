@@ -208,6 +208,19 @@ class TestWorkInProgress:
 
         assert "orphan_taf" not in kinds(found)
 
+    def test_the_copy_a_replace_encodes_beside_its_target_is_not_offered(self, cloud):
+        # Replacing a taf encodes the new audio beside it first, for minutes.
+        cloud.files["/Lichterkinder/Tierische Tierlieder.new-0a1b2c3d.taf"] = b"x"
+
+        found = examine(cloud, busy={"/Lichterkinder/Tierische Tierlieder.taf"})
+
+        assert "orphan_taf" not in kinds(found)
+
+    def test_a_copy_a_failed_replace_left_is_offered(self, cloud):
+        cloud.files["/Lichterkinder/Tierische Tierlieder.new-0a1b2c3d.taf"] = b"x"
+
+        assert "orphan_taf" in kinds(examine(cloud))
+
     def test_nothing_under_a_busy_folder_is_offered(self, cloud):
         # A podcast refresh builds its new taf before the sticker is switched.
         cloud.create_dir("/Podcasts")

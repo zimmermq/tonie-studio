@@ -71,7 +71,13 @@ document.addEventListener('box', async event => {
     if (ruid && ruid !== lastSticker) {
       const body = new FormData();
       body.append('ruid', ruid);
-      const answer = await (await fetch(`/api/batch/${group}/place`, {method: 'POST', body})).json();
+      const response = await fetch(`/api/batch/${group}/place`, {method: 'POST', body});
+      const answer = await response.json();
+      if (!response.ok) {
+        // Said where the person is looking; lifting the sticker asks again.
+        placemsg.textContent = say(data.words['parts.place_refused'], {detail: answer.detail});
+        return;
+      }
       placemsg.textContent = `${answer.message} ${answer.then}`;
       if (answer.status !== 'unknown') lastSticker = ruid;
       if (answer.job) {
@@ -80,8 +86,10 @@ document.addEventListener('box', async event => {
       }
     }
   } catch (error) {
-    // A dropped answer changes nothing; the next box report asks again.
+    // Nothing placed; the next box report asks again.
+    placemsg.textContent = data.words['parts.place_no_answer'];
+  } finally {
+    asking = false;
   }
-  asking = false;
 });
 }

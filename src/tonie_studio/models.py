@@ -11,6 +11,7 @@ import hashlib
 import io
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -86,22 +87,28 @@ def cache_name(picture: Optional[str]) -> Optional[str]:
     return f"{digest}.{extension or 'jpg'}"
 
 
-def cover_url(picture: Optional[str], cached: bool = True) -> Optional[str]:
+def cover_url(picture: Optional[str], cached: bool = True, size: int = 0) -> Optional[str]:
     """Where a page asks for ``picture``, or None when there is no picture to show.
 
     Through this app wherever it can: the browser reaches it but not
     teddyCloud. A picture hosted elsewhere goes through teddyCloud's cache
     when that keeps pictures (``cached``), and straight to its host otherwise.
+    ``size`` asks this app for the picture scaled to fit that many pixels; a
+    picture fetched from its host comes as the host sends it.
     """
     name = cover_name(picture)
     if name:
-        return f"/cover/custom/{quote(name)}"
-    if picture and picture.startswith(CACHE):
+        url = f"/cover/custom/{quote(name)}"
+    elif picture and picture.startswith(CACHE):
         name = cache_name(picture)
-        return f"/cover/cache/{name}" if name else None
-    if picture and picture.startswith(("http://", "https://")):
-        return f"/cover/cache/{cache_name(picture)}" if cached else picture
-    return None
+        url = f"/cover/cache/{name}" if name else None
+    elif picture and picture.startswith(("http://", "https://")):
+        if not cached:
+            return picture
+        url = f"/cover/cache/{cache_name(picture)}"
+    else:
+        url = None
+    return f"{url}?size={size}" if url and size else url
 
 
 def images_cached(client: TeddyCloudClient) -> Optional[bool]:
@@ -138,6 +145,16 @@ def cover_name(picture: Optional[str]) -> Optional[str]:
     name = picture[len(CUSTOM_IMG):]
     return name if name and "/" not in name else None
 
+
+# Held by everything that writes models or tags in teddyCloud: from picking a
+# model id to writing the model and pointing the tag at it, and around every
+# read-change-write of a model. The id is the next free one and a model is
+# written whole, so two writers at once - a batch encode finishing while a
+# sticker is placed by hand, the naming after an import, a title being saved
+# while a podcast refresh publishes new audio - would otherwise take the same
+# id, or write back what the other just changed. Re-entrant, so a writer
+# holding it can call update_model.
+WRITING = threading.RLock()
 
 # Where a model of this app keeps the article number of the shop product it
 # took its picture and details from. teddyCloud stores a custom model whole,
@@ -291,6 +308,15 @@ def update_model(
     teddyCloud recognise the taf, and rewriting a title must not cost that.
     What is not named stays as it is.
     """
+    with WRITING:
+        return _update_model(client, model_id, series, episode, category, tracks, cover,
+                             cover_name, shop_link)
+
+
+def _update_model(client: TeddyCloudClient, model_id: str, series: Optional[str],
+                  episode: Optional[str], category: Optional[str],
+                  tracks: Optional[Sequence[str]], cover: Optional[Union[Path, bytes]],
+                  cover_name: str, shop_link: Optional[str]) -> Model:
     model = find_model(client, model_id)
     if model is None:
         raise TonieError("tonie.model_missing", model=model_id)

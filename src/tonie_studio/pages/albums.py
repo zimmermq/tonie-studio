@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from starlette.datastructures import FormData
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from ..album import Album, Track, album_id, cover_candidates, read_album
 from ..albumnotes import albums_with_tonies, first_sightings, is_new
+from ..catalogue import UPLOAD, Catalogue
 from ..encode import taf_exists
 from ..i18n import Problem
 from ..library import same
@@ -22,9 +25,8 @@ from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
 from ..planning import chosen_tracks, expected_targets, plan_parts
 from ..publishing import Crop, Details, encode_job
-from ..catalogue import UPLOAD, Catalogue
 from ..uploads import spool
-from .common import Context, Refused, album_or_404, refused
+from .common import Context, Refused, album_or_404, refused, upload_form
 
 log = logging.getLogger(__name__)
 
@@ -77,8 +79,9 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/upload")
-    def upload(files: List[UploadFile]):
+    def upload(form: FormData = Depends(upload_form)):
         """Spool a browser upload, then hand its albums to the batch page together."""
+        files = [part for part in form.getlist("files") if isinstance(part, StarletteUploadFile)]
         albums = spool(settings.upload_dir, [(file.filename, file.file) for file in files])
         if not albums:
             raise Refused(400, "error.no_audio")

@@ -39,5 +39,5 @@
 </p>
 {% endif %}
 
-{{ page_script("parts", {"words": t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed"), "placing": placing, "group": group}) }}
+{{ page_script("parts", {"words": t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed", "parts.place_refused", "parts.place_no_answer"), "placing": placing, "group": group}) }}
 {% endblock %}

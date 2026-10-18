@@ -34,7 +34,7 @@
 
 {% block row %}
 {%- set tag = item.tag %}
-{%- set picture = tag.picture | cover_url(false) %}
+{%- set picture = tag.picture | cover_url(false, 192) %}
 <a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
    data-kind="{{ item.kind }}" data-tags="{{ item.tags | join(' ') }}"
    data-name="{{ item.name }}" data-series="{{ (tag.series ~ ' ' ~ item.name) | trim | lower }}"

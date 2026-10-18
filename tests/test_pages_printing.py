@@ -445,6 +445,8 @@ class TestTheSheetIsMadeInTheBackground:
         assert client.get(f"/sheet/print/{job_id}").status_code == 200
         state = client.get(f"/api/sheet/print/{job_id}").json()
         assert (state["state"], state["percent"]) == ("done", 100)
+        # Opened again, the page offers the file instead of downloading it anew.
+        assert '"finished": true' in client.get(f"/sheet/print/{job_id}").text
 
     def test_a_job_nobody_started_is_unknown(self, client):
         assert client.get("/sheet/print/nope").status_code == 404

@@ -1,7 +1,7 @@
 {% extends "_details_page.html" %}
 {% from "_parts.html" import category_select, danger, field, file_button, picked, section, sticker_picker, technical with context %}
 {% set page_title = tag.label %}
-{% set picture, no_picture = tag.picture | cover_url(false), "tonie.no_picture" %}
+{% set picture, no_picture = tag.picture | cover_url(false, 320), "tonie.no_picture" %}
 {% set title = tag.episode or tag.label %}
 {% set subtitle = tag.series if tag.episode and tag.series and tag.series != tag.episode else "" %}
 {%- if model %}{% set tracks = model.tracks %}{% elif entry %}{% set tracks = entry.tracks or [] %}{% else %}{% set tracks = [] %}{% endif %}

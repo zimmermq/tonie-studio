@@ -236,6 +236,16 @@ class TestUpdateModel:
         with pytest.raises(TonieError):
             update_model(teddycloud, "TS-9999", series="x")
 
+    def test_waits_for_other_writes(self, teddycloud, encoded):
+        # It writes the whole model back: done during a publish of new audio
+        # for it, it would put the old audio ids back.
+        from web_helpers import waits_for_writing
+
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        assert waits_for_writing(lambda: update_model(teddycloud, model_id, series="Neu"))
+
     def test_keeps_the_shop_product_it_was_linked_to(self, teddycloud, encoded):
         model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
                            series="L", episode="H", tracks=[])

@@ -223,6 +223,8 @@ def encode_files(
         raise EncodeError("encode.exists", target=target)
 
     job = uuid.uuid4().hex[:12]
+    with _OURS_LOCK:
+        _OURS.add(job)
     staging = f"{STAGING_ROOT}/{job}"
     _ensure_dir(client, STAGING_ROOT)
     client.create_dir(staging, special="library")
@@ -267,6 +269,18 @@ def _encode(client: TeddyCloudClient, staged: Sequence[str], target: str,
     _report(progress, ENCODE, int(total_seconds or len(staged)), int(total_seconds or len(staged)))
 
 
+# What a replace puts between a target's name and its suffix for the copy it
+# encodes beside it; aside_of reads it back.
+ASIDE_MARK = ".new-"
+_ASIDE = re.compile(r"^(.*)" + re.escape(ASIDE_MARK) + r"[0-9a-f]{8}" + re.escape(TAF_SUFFIX) + "$")
+
+
+def aside_of(path: str) -> Optional[str]:
+    """The target a replace encodes ``path`` beside, or None for any other taf."""
+    match = _ASIDE.match(path)
+    return match.group(1) + TAF_SUFFIX if match else None
+
+
 def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
              progress: Optional[Progress], total_seconds: Optional[float]) -> None:
     """Put new audio where a taf is, never leaving a moment with neither.
@@ -280,7 +294,7 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     """
     # A name of its own each time: a copy an earlier failed replace left
     # behind may be what the stickers play now, and is not this one's to delete.
-    aside = f"{target[:-len(TAF_SUFFIX)]}.new-{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
+    aside = f"{target[:-len(TAF_SUFFIX)]}{ASIDE_MARK}{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
     _encode(client, staged, aside, progress, total_seconds)
 
     log.info("replacing the taf at %s", target)
@@ -318,11 +332,19 @@ def _result(target: str, header: dict, tracks: int) -> EncodeResult:
     )
 
 
-def remove_orphaned_staging(client: TeddyCloudClient) -> int:
-    """Delete every staging folder left over, and report how many there were.
+# The staging folders this process made. Jobs do not outlive the process, so
+# any other folder under the staging root belongs to a run that was
+# interrupted; one named here may be in use right now. Never shrinks: a
+# dozen characters per encode for as long as the process runs.
+_OURS: set = set()
+_OURS_LOCK = threading.Lock()
 
-    Jobs do not outlive the process, so at startup every folder under the
-    staging root belongs to a run that was interrupted.
+
+def remove_orphaned_staging(client: TeddyCloudClient) -> int:
+    """Delete every staging folder an earlier run left over; returns how many.
+
+    Run at startup, which can be after the first encode of this run began
+    when teddyCloud answers late; that encode's folder is spared.
     """
     # Asking teddyCloud to list a directory that does not exist does not get a
     # 404: it closes the connection, the client retries twice, and the log
@@ -342,6 +364,9 @@ def remove_orphaned_staging(client: TeddyCloudClient) -> int:
         if _is_parent_link(name):
             continue
         path = f"{STAGING_ROOT}/{name}"
+        with _OURS_LOCK:
+            if name in _OURS:
+                continue
         if entry.get("isDir"):
             _remove_tree(client, path)
             removed += 1

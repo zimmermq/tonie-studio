@@ -330,6 +330,28 @@ class TestUpload:
         page = album_page_after_upload(client, response)
         assert "Eins" in page and "Zwei" in page
 
+    def test_a_folder_of_more_than_a_thousand_files_is_taken(self, client):
+        # A series folder with its notes and pictures soon passes the form
+        # parser's default of a thousand files.
+        files = [("files", (f"Serie/Folge 1/{index:04}.txt", b"x", "text/plain"))
+                 for index in range(1000)]
+        files.append(("files", ("Serie/Folge 1/01-eins.mp3", b"\x01" * 8, "audio/mpeg")))
+
+        response = client.post("/upload", files=files, follow_redirects=False)
+
+        assert response.status_code == 303
+
+    def test_too_many_files_are_refused_in_words(self, client, monkeypatch):
+        from tonie_studio.i18n import Translator
+
+        monkeypatch.setattr("tonie_studio.pages.common.MOST_UPLOAD_PARTS", 2)
+        files = [("files", (f"A/0{index}.mp3", b"x", "audio/mpeg")) for index in range(3)]
+
+        response = client.post("/upload", files=files, follow_redirects=False)
+
+        assert response.status_code == 400
+        assert Translator("de")("error.upload_too_many", most=2) in response.text
+
     def test_refuses_a_upload_without_audio(self, client):
         response = client.post("/upload", files=[
             ("files", ("notes.txt", b"hello", "text/plain")),

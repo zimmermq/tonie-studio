@@ -51,6 +51,54 @@ def wiped(cloud):
     return fresh
 
 
+class TestSettingsOfThisApp:
+    """Podcast subscriptions and the printer calibration are set up by hand; a lost volume takes them."""
+
+    @staticmethod
+    def subscribed(data_dir, **fields):
+        from tonie_studio.podcast import Subscription, add_subscription
+
+        fields = {"keep": 3, "guids": ["ep-1"], **fields}
+        subscription = Subscription(id="kakadu", feed="https://example.org/feed.xml", ruid=TIERE,
+                                    **fields)
+        add_subscription(data_dir, subscription)
+        return subscription
+
+    def test_come_back_on_a_fresh_volume(self, cloud, data_dir, tmp_path):
+        from tonie_studio.calibration import read_shift, save_measurement
+        from tonie_studio.podcast import load_subscriptions
+
+        subscription = self.subscribed(data_dir, error="feed was away")
+        save_measurement(data_dir, 30.0, 30.0)
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = tmp_path / "fresh"
+
+        apply_restore(wiped(cloud), backup, fresh)
+
+        (restored,) = load_subscriptions(fresh)
+        assert (restored.feed, restored.keep, restored.guids) == (
+            subscription.feed, 3, ["ep-1"])
+        # Last time's failure is no setting worth keeping.
+        assert restored.error == ""
+        assert read_shift(fresh) == read_shift(data_dir)
+
+    def test_what_is_set_here_stays(self, cloud, data_dir, tmp_path):
+        from tonie_studio.calibration import read_shift, reset, save_measurement
+        from tonie_studio.podcast import load_subscriptions
+
+        self.subscribed(data_dir)
+        save_measurement(data_dir, 30.0, 30.0)
+        backup = read_backup(create_backup(cloud, data_dir))
+        here = tmp_path / "here"
+        self.subscribed(here, keep=7)
+        reset(here)
+
+        apply_restore(cloud, backup, here)
+
+        assert [entry.keep for entry in load_subscriptions(here)] == [7]
+        assert read_shift(here) == (0.0, 0.0)
+
+
 class TestCreating:
     def test_holds_models_tags_covers_and_the_apps_records(self, cloud, data_dir):
         archive = zipfile.ZipFile(io.BytesIO(create_backup(cloud, data_dir)))
@@ -89,6 +137,14 @@ class TestReading:
 
 
 class TestRestoring:
+    def test_waits_for_other_writes(self, cloud, data_dir, tmp_path):
+        from web_helpers import waits_for_writing
+
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+
+        assert waits_for_writing(lambda: apply_restore(fresh, backup, tmp_path / "fresh-data"))
+
     def test_brings_everything_back_after_the_volume_was_lost(self, cloud, data_dir, tmp_path):
         backup = read_backup(create_backup(cloud, data_dir))
         fresh = wiped(cloud)
@@ -301,6 +357,14 @@ class TestRestoringAHostileFile:
         with zipfile.ZipFile(buffer, "a", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr(name, content)
         return buffer.getvalue()
+
+    @pytest.mark.parametrize("name", ["../evil.jpg", "a/b.jpg", "a\\b.jpg", ".hidden.jpg"])
+    def test_a_cover_named_with_a_path_is_left_out(self, cloud, data_dir, name):
+        # The cover names are written into teddyCloud's custom_img folder; one
+        # with a path in it would land somewhere else.
+        data = self._backup_with(cloud, data_dir, f"covers/{name}", b"\xff\xd8\xff")
+
+        assert name not in read_backup(data).covers
 
     def test_refuses_a_backup_that_unpacks_to_far_more_than_any_backup(self, cloud, data_dir,
                                                                        monkeypatch):

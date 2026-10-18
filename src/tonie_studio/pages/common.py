@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, Iterator, Optional, Set, Tuple, Type
 
 from fastapi import Request, UploadFile
+from starlette.datastructures import FormData
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.templating import Jinja2Templates
 
 from .. import encode
@@ -39,6 +41,11 @@ from ..teddycloud import TeddyCloudClient
 
 TEMPLATES = Path(__file__).parent.parent / "templates"
 STATIC = Path(__file__).parent.parent / "static"
+
+# The most files and fields one upload may carry. A folder upload sends every
+# file in the folder, notes and pictures included: a series of sixty episodes,
+# or a folder of a thousand dumps, passes the form parser's default of 1000.
+MOST_UPLOAD_PARTS = 20000
 
 # Below this many seconds of audio an encode is done before minutes would mean
 # anything, so its progress is not counted in them.
@@ -98,6 +105,20 @@ def refusing(*kinds: Type[BaseException], status: int = 400) -> Iterator[None]:
         yield
     except kinds as error:
         raise Refused(status, "error.failed", detail=error) from error
+
+
+async def upload_form(request: Request) -> FormData:
+    """The request's form, read with room for a whole folder of files.
+
+    A dependency, ``Depends(upload_form)``, for routes that declare no form
+    parameters of their own: FastAPI would otherwise read the form first,
+    with the parser's defaults. Being async, only the reading happens on the
+    event loop; the route itself still runs in the thread pool.
+    """
+    try:
+        return await request.form(max_files=MOST_UPLOAD_PARTS, max_fields=MOST_UPLOAD_PARTS)
+    except StarletteHTTPException as error:
+        raise Refused(400, "error.upload_too_many", most=MOST_UPLOAD_PARTS) from error
 
 
 def album_or_404(catalogue: Catalogue, identifier: str) -> Path:

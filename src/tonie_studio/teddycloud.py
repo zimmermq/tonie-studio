@@ -85,17 +85,17 @@ class TeddyCloudError(RuntimeError):
     """Raised when teddyCloud cannot be reached or refuses a call.
 
     ``status`` is the HTTP status teddyCloud answered with, or ``None`` when it
-    did not answer at all.
+    did not answer at all. ``refused`` is true when it answered and said no:
+    a 4xx status, or a command endpoint's error text, which comes at 200 and
+    so has to be said explicitly.
     """
 
-    def __init__(self, message: str, status: Optional[int] = None):
+    def __init__(self, message: str, status: Optional[int] = None,
+                 refused: Optional[bool] = None):
         super().__init__(message)
         self.status = status
-
-    @property
-    def refused(self) -> bool:
-        """teddyCloud answered and said no, as opposed to not answering at all."""
-        return bool(self.status) and 400 <= self.status < 500
+        self.refused = (refused if refused is not None
+                        else bool(status) and 400 <= status < 500)
 
 
 class TeddyCloudClient:
@@ -393,7 +393,8 @@ class TeddyCloudClient:
         """Check the body of a command endpoint, which reports failure at 200."""
         body = (response.text or "").strip()
         if body != COMMAND_OK:
-            raise TeddyCloudError(f"teddyCloud refused {path}: {body[:200] or 'empty answer'}")
+            raise TeddyCloudError(f"teddyCloud refused {path}: {body[:200] or 'empty answer'}",
+                                  refused=True)
 
 
 def _multipart(filename: str, stream: BinaryIO) -> Tuple[bytes, str]:

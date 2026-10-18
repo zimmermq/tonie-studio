@@ -1,8 +1,8 @@
 // The page that watches a sheet being made: progress, the download, a failure.
 import assert from 'node:assert/strict';
-import { element, runPage } from './page.mjs';
+import { element, runPage, status } from './page.mjs';
 
-async function watch(state) {
+async function watch(state, extra = {}) {
   const download = element('download');
   download.href = '/sheet/print/x/pdf';
   download.hidden = true;
@@ -13,10 +13,11 @@ async function watch(state) {
   return runPage(['app.js', 'sheet_job.js'], {
     ids: ['fill', 'detail', 'message'],
     prepared: { download, outcome, skipped },
-    pageData: { id: 'x', words: { 'sheet.job_waiting': 'waiting',
-                                  'sheet.job_pictures': '{done} of {total}',
-                                  'sheet.job_pdf': 'pdf', 'sheet.job_done': 'done',
-                                  'sheet.skipped': 'left off: {names}' } },
+    pageData: { id: 'x', ...extra,
+                words: { 'sheet.job_waiting': 'waiting',
+                         'sheet.job_pictures': '{done} of {total}',
+                         'sheet.job_pdf': 'pdf', 'sheet.job_done': 'done',
+                         'sheet.skipped': 'left off: {names}', 'sheet.job_gone': 'gone' } },
     answers: { '/api/sheet/print/x': state },
   });
 }
@@ -53,3 +54,29 @@ async function watch(state) {
   assert.equal(page.download.hidden, true);
   assert.equal(page.timers.length, 0);
 }
+
+// Opened again once the sheet is done - by the back button, say - it shows
+// the download but does not start it a second time.
+{
+  const page = await watch({ state: 'done', percent: 100, done: 2, total: 2, skipped: [] },
+                           { finished: true });
+  assert.equal(page.download.hidden, false);
+  assert.notEqual(page.location.href, '/sheet/print/x/pdf');
+}
+
+// A sheet the server no longer knows - the app restarted - ends the watching
+// and says so, rather than waiting for ever.
+{
+  const page = await watch(status(404));
+  assert.equal(page.message.textContent, 'gone');
+  assert.equal(page.message.className, 'mt-0 state-failed');
+  assert.equal(page.timers.length, 0);
+}
+
+// Any other bad answer is a hiccup: it asks again.
+{
+  const page = await watch(status(502));
+  assert.equal(page.outcome.hidden, true);
+  assert.equal(page.timers.length, 1);
+}
+

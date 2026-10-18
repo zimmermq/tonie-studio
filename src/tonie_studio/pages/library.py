@@ -10,14 +10,15 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..checkup import BOX_SOUND_PREFIX
-from ..encode import EncodeError, Taf, delete_taf, list_tafs
+from ..encode import TAF_SUFFIX, EncodeError, Taf, delete_taf, list_tafs
+from ..jobs import JobState
 from ..library import same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
 from ..tags import TonieTag, list_tags
 from ..tags import label as tag_label
 from ..times import from_seconds
-from .common import Context, refusing
+from .common import Context, Refused, refusing
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -28,13 +29,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     def library_page(request: Request):
         connection = client()
         tafs = list_tafs(connection)
-        # Which tag plays which taf, so deleting one can say what it breaks.
-        users: Dict[str, List] = {}
-        for tag in list_tags(connection):
-            if tag.source:
-                users.setdefault(same(tag.source), []).append(tag)
-        shelf = sorted((Shelved(taf, _origin(taf), users.get(same(taf.source), []))
-                        for taf in tafs), key=lambda item: item.label.casefold())
+        shelf = sorted(_shelve(tafs, list_tags(connection)), key=lambda item: item.label.casefold())
         counts, offered = filters((item.tags for item in shelf), (RECORDED, IMPORTED, BOX, UNUSED))
         return templates.TemplateResponse(request, "library.html", {
             "shelf": shelf,
@@ -46,9 +41,32 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/library/delete")
-    def library_delete(path: str = Form(...)):
+    def library_delete(path: str = Form(...), players: str = Form("")):
+        """Delete a taf, after checking again what the page showed about it.
+
+        ``players`` are the stickers the page said play it, which the person
+        was asked about. A page left open must not delete what has since been
+        put on another sticker or is being written by an encode right now.
+        """
+        if not path.endswith(TAF_SUFFIX):
+            raise Refused(400, "error.failed", detail=EncodeError("encode.not_a_taf", path=path))
+        connection = client()
+        item = next((item for item in _shelve(list_tafs(connection), list_tags(connection))
+                     if item.taf.path == path), None)
+        if item is None:
+            raise Refused(404, "library.gone")
+        if item.origin == BOX:
+            raise Refused(400, "library.box_sound")
+        if any(job.kind == "encode" and same(job.label) == same(path)
+               and job.state in (JobState.QUEUED, JobState.RUNNING) for job in ctx.jobs.all()):
+            raise Refused(409, "library.being_made")
+        shown = set(filter(None, players.split(",")))
+        added = [tag for tag in item.played_by if tag.ruid not in shown]
+        if added:
+            raise Refused(409, "library.now_used",
+                          used=", ".join(tag.label for tag in added))
         with refusing(EncodeError):
-            delete_taf(client(), path)
+            delete_taf(connection, path)
         return RedirectResponse("/library", 303)
 
 
@@ -66,6 +84,15 @@ LIBRARY_COLUMNS = (
 RECORDED, IMPORTED, BOX = "recorded", "imported", "box"
 # Not where it comes from but filtered the same way: no sticker plays it.
 UNUSED = "unused"
+
+
+def _shelve(tafs: List[Taf], tags: List[TonieTag]) -> List["Shelved"]:
+    """Each taf with its origin and the stickers that play it."""
+    users: Dict[str, List[TonieTag]] = {}
+    for tag in tags:
+        if tag.source:
+            users.setdefault(same(tag.source), []).append(tag)
+    return [Shelved(taf, _origin(taf), users.get(same(taf.source), [])) for taf in tafs]
 
 
 def _origin(taf: Taf) -> str:

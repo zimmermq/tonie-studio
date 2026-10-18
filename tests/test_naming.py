@@ -423,6 +423,19 @@ class TestNamer:
         (made,) = fake.custom_models
         assert (made["series"], made["episodes"], made["audio_id"]) == ("Comics", "Fledermaus", ["1"])
 
+    def test_naming_waits_for_other_writes(self):
+        # Naming picks the next free model id, as a publish does; two at once
+        # would take the same one and the later would overwrite the other.
+        from web_helpers import waits_for_writing
+
+        from tonie_studio.naming import Namer
+
+        fake = self.teddycloud_with(1, "11", ruid("00000001"))
+        namer = Namer(lambda: fake, dict)
+
+        assert waits_for_writing(lambda: namer.name_one(ruid("00000001"), "Comics/Fledermaus.nfc"))
+        assert waits_for_writing(lambda: namer.upkeep(migrate=True))
+
     def test_leaves_a_tonie_teddycloud_names_by_itself(self):
         from tonie_studio.naming import Namer
 
