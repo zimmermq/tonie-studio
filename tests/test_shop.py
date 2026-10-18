@@ -1,6 +1,7 @@
 """Tests for what the tonies.com shop says about a tonie: looking it up, searching, keeping it."""
 
-from tonie_studio.shop import API, BASE, SEARCH_REQUESTS, Shop, clean_description, search_words
+from tonie_studio.shop import (API, BASE, BATCH, SEARCH_REQUESTS, Shop, clean_description,
+                               search_words)
 
 
 def product(sales_id, name, series="Madagascar", description="<b>Das Original</b><p></p>Zoo.",
@@ -24,7 +25,8 @@ class Api:
         assert url == API
         self.asked.append(dict(params))
         if "salesId" in params:
-            found = [p for p in self.products if p["salesId"] == params["salesId"]]
+            wanted = params["salesId"].split(",")
+            found = [p for p in self.products if p["salesId"] in wanted]
         else:
             word = params["search"].lower()
             found = [p for p in self.products
@@ -91,6 +93,43 @@ class TestLookup:
 
         assert Shop(tmp_path, fetch=api).lookup("10001924", language="en-gb") is None
         assert api.asked == []
+
+
+class TestLookupMany:
+    """The tonie list asks about hundreds of tonies; the shop answers many per request."""
+
+    def test_asks_for_many_in_one_request(self, tmp_path):
+        api = Api([SIMBA, MADAGASCAR])
+
+        found = Shop(tmp_path, fetch=api).lookup_many(["11003868", "10001924", "99"])
+
+        assert set(found) == {"11003868", "10001924"}
+        assert api.asked == [{"shopLocale": "de-DE", "salesId": "11003868,10001924,99",
+                              "limit": "3"}]
+
+    def test_asks_in_batches(self, tmp_path):
+        api = Api([])
+
+        Shop(tmp_path, fetch=api).lookup_many([str(n) for n in range(BATCH + 1)])
+
+        assert [len(params["salesId"].split(",")) for params in api.asked] == [BATCH, 1]
+
+    def test_what_it_knows_or_missed_lately_is_not_asked_again(self, tmp_path):
+        api = Api([MADAGASCAR])
+        shop = Shop(tmp_path, fetch=api)
+        shop.lookup_many(["10001924", "99"])
+
+        found = shop.lookup_many(["10001924", "99"])
+
+        assert list(found) == ["10001924"] and len(api.asked) == 1
+
+    def test_a_batch_the_shop_did_not_answer_is_asked_again(self, tmp_path):
+        def broken(url, params):
+            raise OSError("no route")
+        api = Api([MADAGASCAR])
+
+        assert Shop(tmp_path, fetch=broken).lookup_many(["10001924"]) == {}
+        assert list(Shop(tmp_path, fetch=api).lookup_many(["10001924"])) == ["10001924"]
 
 
 class TestSearch:

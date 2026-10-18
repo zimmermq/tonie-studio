@@ -23,6 +23,8 @@ from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_na
 from ..naming import LIBRARY_FOLDER, LIBRARY_PREFIX
 from ..podcast import LARGEST_IMAGE, FeedError, load_subscriptions, remove_subscription
 from ..runtimes import forget
+from ..shop import LANGUAGE as SHOP_LANGUAGE
+from ..shop import Shop
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, TonieTag, list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
@@ -59,7 +61,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     def tonies(request: Request):
         connection = client()
         tags = list_tags(connection)
-        rows = _listed(connection, tags, ctx.namer.catalog()[0].by_model)
+        rows = _listed(connection, tags, ctx.namer.catalog()[0].by_model, ctx.shop)
         tonies = sorted((row for row in rows if row.kind != FREE), key=lambda row: row.name)
         counts = Counter(row.kind for row in tonies)
         counts[NO_PICTURE] = sum(1 for row in tonies if not cover_url(row.tag.picture, False))
@@ -425,6 +427,7 @@ class Listed:
     kind: str
     category: str = ""
     added: Optional[datetime] = None  # when its taf was written into the library
+    age: Optional[int] = None  # the youngest age tonies.com recommends it for
 
     @property
     def name(self) -> str:
@@ -433,11 +436,12 @@ class Listed:
 
 
 def _listed(connection: TeddyCloudClient, tags: List[TonieTag],
-            catalogue: Dict[str, Dict]) -> List[Listed]:
-    """Every tag with its kind, category and the day its audio came into the library.
+            catalogue: Dict[str, Dict], shop: Shop) -> List[Listed]:
+    """Every tag with its kind, category, recommended age and when its audio came in.
 
-    Two requests besides the tag index, for the custom models and the
-    library, however many tonies there are.
+    Two requests to teddyCloud besides the tag index, for the custom models
+    and the library, and the shop's answers in batches, however many tonies
+    there are.
     """
     own = {model.id: model for model in list_models(connection)}
     added = _library_dates(connection)
@@ -452,6 +456,21 @@ def _listed(connection: TeddyCloudClient, tags: List[TonieTag],
             rows.append(Listed(tag, OFFICIAL, category, added.get(tag.source)))
         else:
             rows.append(Listed(tag, NO_MODEL, "", added.get(tag.source)))
+
+    # What the shop sells each as: an official tonie under its article
+    # number, if the catalogue entry is from the German shop that is asked;
+    # an own model as the product it took its picture from.
+    sold_as = {}
+    for row in rows:
+        if row.kind == OFFICIAL:
+            if (catalogue.get(row.tag.model) or {}).get("language") == SHOP_LANGUAGE:
+                sold_as[row.tag.ruid] = row.tag.model
+        elif row.kind == OWN and own[row.tag.model].other.get(SHOP_LINK):
+            sold_as[row.tag.ruid] = str(own[row.tag.model].other[SHOP_LINK])
+    known = shop.lookup_many(sold_as.values())
+    for row in rows:
+        info = known.get(sold_as.get(row.tag.ruid, ""))
+        row.age = info.age_min if info else None
     return rows
 
 

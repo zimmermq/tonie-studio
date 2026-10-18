@@ -88,3 +88,60 @@ class TestTheControls:
 
     def test_are_left_out_while_there_is_no_tonie_to_find(self, client):
         assert 'id="search"' not in client.get("/tonies").text
+
+
+def known_to_the_shop(settings, **ages):
+    """What the shop said earlier, kept beside the app's data: its age per article number."""
+    import json
+
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    (settings.data_dir / "shop.json").write_text(json.dumps(
+        {sales_id: {"sales_id": sales_id, "age_min": age} for sales_id, age in ages.items()}))
+
+
+class TestAge:
+    def test_an_official_tonie_shows_the_age_the_shop_recommends(self, client, settings,
+                                                                 official):
+        known_to_the_shop(settings, **{"10000001": 4})
+
+        shown = row(client.get("/tonies").text, OFFICIAL)
+
+        assert say("tonies.age", age=4) in shown and 'data-age="4"' in shown
+
+    def test_an_own_model_linked_to_the_shop_shows_it_too(self, client, runner, teddycloud,
+                                                          settings):
+        publish_album(client, runner, teddycloud)
+        next(m for m in teddycloud.custom_models if m["model"] == "TS-0001")["shop_sales_id"] = "77"
+        known_to_the_shop(settings, **{"77": 6})
+
+        assert 'data-age="6"' in row(client.get("/tonies").text, "7ab4ed0e500304e0")
+
+    def test_without_an_answer_the_age_stays_empty(self, client, official):
+        assert 'data-age=""' in row(client.get("/tonies").text, OFFICIAL)
+
+    def test_the_shop_is_asked_about_every_tonie_in_one_request(self, client, teddycloud,
+                                                               official, no_real_shop):
+        teddycloud.catalogue.append({"model": "10000002", "series": "S", "episodes": "E",
+                                     "language": "de-de"})
+        teddycloud.add_tag("22dfc517500304e0", source="lib://by/audioID/2.taf",
+                           tonie_model="10000002")
+        asked = []
+
+        def shop(url, params):
+            asked.append(params["salesId"])
+            return {"documents": []}
+
+        no_real_shop.side_effect = shop
+        client.get("/tonies")
+
+        assert asked == ["10000001,10000002"]
+
+
+class TestSortableColumns:
+    def test_every_column_but_the_picture_sorts(self, client, official):
+        page = client.get("/tonies").text
+
+        head = page[page.index('class="tonies-head'):page.index("</div>", page.index('class="tonies-head'))]
+        assert [key for key in ("name", "series", "kind", "chapters", "category", "age", "added")
+                if f'data-sort="{key}"' in head] == \
+            ["name", "series", "kind", "chapters", "category", "age", "added"]

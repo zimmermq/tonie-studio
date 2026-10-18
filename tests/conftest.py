@@ -23,6 +23,19 @@ from tonie_studio.settings import Settings  # noqa: E402
 from tonie_studio.web import create_app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def no_real_shop():
+    """tonies.com is never asked from a test: a page would wait on it, or pass because of it.
+
+    A test that wants an answer sets ``side_effect`` on what this yields.
+    """
+    def unreachable(url, params):
+        raise OSError("tests do not reach tonies.com")
+
+    with patch("tonie_studio.shop._get", side_effect=unreachable) as shop:
+        yield shop
+
+
 @pytest.fixture
 def tags():
     """No tags anywhere; names come from the file names."""

@@ -36,6 +36,7 @@ if (rows.length) {
   const count = document.getElementById('count');
   const nohits = document.getElementById('nohits');
   const chips = [...document.querySelectorAll('[data-kind-filter]')];
+  const sorters = [...document.querySelectorAll('[data-sort]')];
   const views = [...document.querySelectorAll('[data-view]')];
   const VIEW_KEY = 'tonies.view';
 
@@ -51,21 +52,38 @@ if (rows.length) {
     view: asked.get('view') || remembered() || 'grid',
   };
 
-  const byName = (a, b) => a.dataset.name.localeCompare(b.dataset.name);
-  // Bigger first for numbers; a row without one (0) goes last. Ties by name.
-  const byNumber = field => (a, b) => Number(b.dataset[field]) - Number(a.dataset[field]) || byName(a, b);
+  // Each order and the way it first runs: dates and chapters newest and
+  // most first, everything else from the start of the alphabet or the
+  // youngest age. A row without the value goes last either way round, and
+  // rows alike go by name.
   const ORDERS = {
-    name: byName,
-    series: (a, b) => a.dataset.series.localeCompare(b.dataset.series),
-    added: byNumber('added'),
-    chapters: byNumber('chapters'),
+    name: { number: false, desc: false },
+    series: { number: false, desc: false },
+    kind: { number: false, desc: false },
+    category: { number: false, desc: false },
+    age: { number: true, desc: false },
+    added: { number: true, desc: true },
+    chapters: { number: true, desc: true },
   };
+  const firstWay = key => (ORDERS[key] || ORDERS.name).desc ? 'desc' : 'asc';
+  state.dir = asked.get('dir') || firstWay(state.sort);
+
+  function compare(a, b) {
+    const key = ORDERS[state.sort] ? state.sort : 'name';
+    const left = a.dataset[key], right = b.dataset[key];
+    if (!left !== !right) return left ? -1 : 1;
+    const way = state.dir === 'desc' ? -1 : 1;
+    const by = !left ? 0
+      : ORDERS[key].number ? Number(left) - Number(right) : left.localeCompare(right);
+    return way * by || a.dataset.name.localeCompare(b.dataset.name);
+  }
 
   function keep() {
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.kind) params.set('kind', state.kind);
     if (state.sort !== 'name') params.set('sort', state.sort);
+    if (state.dir !== firstWay(state.sort)) params.set('dir', state.dir);
     if (state.view !== 'grid') params.set('view', state.view);
     const query = params.toString();
     try { history.replaceState(null, '', query ? `?${query}` : location.pathname); } catch { /* no history */ }
@@ -88,7 +106,11 @@ if (rows.length) {
 
   // Appending moves a row, so the rows end up in order behind the column heads.
   function order() {
-    for (const row of [...rows].sort(ORDERS[state.sort] || byName)) list.append(row);
+    for (const row of [...rows].sort(compare)) list.append(row);
+    sort.value = state.sort;
+    for (const sorter of sorters) {
+      sorter.dataset.dir = sorter.dataset.sort === state.sort ? state.dir : '';
+    }
   }
 
   function lay() {
@@ -101,7 +123,19 @@ if (rows.length) {
   filter(); order(); lay();
 
   search.addEventListener('input', () => { state.q = search.value; filter(); keep(); });
-  sort.addEventListener('change', () => { state.sort = sort.value; order(); keep(); });
+  sort.addEventListener('change', () => {
+    state.sort = sort.value;
+    state.dir = firstWay(state.sort);
+    order(); keep();
+  });
+  for (const sorter of sorters) {
+    sorter.addEventListener('click', () => {
+      const again = sorter.dataset.sort === state.sort;
+      state.sort = sorter.dataset.sort;
+      state.dir = !again ? firstWay(state.sort) : state.dir === 'asc' ? 'desc' : 'asc';
+      order(); keep();
+    });
+  }
   for (const chip of chips) {
     chip.addEventListener('click', () => { state.kind = chip.dataset.kindFilter; filter(); keep(); });
   }

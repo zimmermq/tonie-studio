@@ -17,7 +17,7 @@ belong to.
 
 A tonie's answer is kept beside the app's data, so the shop is asked once
 per tonie; one it does not know is asked again after MISS_DAYS, since the
-shop gains products over time.
+shop gains products over time. Many tonies are asked for in one request.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import unicodedata
 from dataclasses import asdict, dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
 
@@ -59,6 +59,10 @@ SEARCH_REQUESTS = 4
 
 # How many candidates a search hands back.
 MOST_FOUND = 6
+
+# How many products one request asks for by article number. The service
+# answers 200 in well under a second; a list of every tonie takes a few.
+BATCH = 100
 
 TIMEOUT = 15
 
@@ -198,41 +202,64 @@ def _get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
 class Shop:
     """Asks the shop about tonies and keeps what it said."""
 
-    def __init__(self, data_dir: Path, fetch: Fetch = _get,
+    def __init__(self, data_dir: Path, fetch: Optional[Fetch] = None,
                  clock: Callable[[], float] = time.time):
         self.data_dir = data_dir
-        self.fetch = fetch
+        # Looked up when the shop is made, not when this module loads, so a
+        # test can keep the real shop out by replacing _get.
+        self.fetch = fetch or _get
         self.clock = clock
 
     def lookup(self, sales_id: str, language: str = LANGUAGE) -> Optional[ShopInfo]:
         """What the shop says about the product with article number ``sales_id``."""
         if language != LANGUAGE or not sales_id:
             return None
-        with LOCK:
-            known = read_json(self.data_dir / FILE_NAME, {}).get(sales_id)
-        if isinstance(known, dict):
-            if known.get("sales_id"):
-                fields = ShopInfo.__dataclass_fields__
-                return ShopInfo(**{key: value for key, value in known.items() if key in fields})
-            if self.clock() - known.get("missed", 0) < MISS_DAYS * 86400:
-                return None
+        return self.lookup_many([sales_id]).get(sales_id)
 
-        try:
-            answer = self.fetch(API, {"shopLocale": SHOP_LOCALE, "salesId": sales_id, "limit": "1"})
-        except (OSError, ValueError, requests.RequestException) as error:
-            # Not remembered: the shop being away says nothing about the tonie.
-            log.warning("tonies.com could not be asked about %s: %s", sales_id, error)
-            return None
-        found = [info_from(document) for document in answer.get("documents") or []]
-        info = next((item for item in found if item.sales_id == sales_id), None)
-        self.remember(sales_id, info)
-        return info
+    def lookup_many(self, sales_ids: Iterable[str]) -> Dict[str, ShopInfo]:
+        """What the shop says about each of ``sales_ids`` it knows, by article number.
 
-    def remember(self, sales_id: str, info: Optional[ShopInfo]) -> None:
+        Kept answers are used as they are and the rest asked for, BATCH at a
+        time. A product the shop does not know is remembered as missing; a
+        batch the shop did not answer is not remembered at all, since the
+        shop being away says nothing about the tonies.
+        """
         with LOCK:
             known = read_json(self.data_dir / FILE_NAME, {})
-            known[sales_id] = asdict(info) if info else {"missed": self.clock()}
-            write_json(self.data_dir / FILE_NAME, known)
+        found: Dict[str, ShopInfo] = {}
+        ask = []
+        for sales_id in dict.fromkeys(sales_id for sales_id in sales_ids if sales_id):
+            kept = known.get(sales_id)
+            if isinstance(kept, dict) and kept.get("sales_id"):
+                fields = ShopInfo.__dataclass_fields__
+                found[sales_id] = ShopInfo(**{key: value for key, value in kept.items()
+                                              if key in fields})
+            elif not (isinstance(kept, dict)
+                      and self.clock() - kept.get("missed", 0) < MISS_DAYS * 86400):
+                ask.append(sales_id)
+
+        answers: Dict[str, Optional[ShopInfo]] = {}
+        for start in range(0, len(ask), BATCH):
+            batch = ask[start:start + BATCH]
+            try:
+                answer = self.fetch(API, {"shopLocale": SHOP_LOCALE, "salesId": ",".join(batch),
+                                          "limit": str(len(batch))})
+            except (OSError, ValueError, requests.RequestException) as error:
+                log.warning("tonies.com could not be asked about %d product(s): %s",
+                            len(batch), error)
+                continue
+            infos = {info.sales_id: info
+                     for info in map(info_from, answer.get("documents") or [])}
+            answers.update({sales_id: infos.get(sales_id) for sales_id in batch})
+
+        if answers:
+            with LOCK:
+                known = read_json(self.data_dir / FILE_NAME, {})
+                for sales_id, info in answers.items():
+                    known[sales_id] = asdict(info) if info else {"missed": self.clock()}
+                write_json(self.data_dir / FILE_NAME, known)
+            found.update({sales_id: info for sales_id, info in answers.items() if info})
+        return found
 
     def search(self, series: str, episode: str) -> List[ShopInfo]:
         """The shop's products whose names share most words with this one, best first."""

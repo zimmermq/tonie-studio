@@ -31,6 +31,9 @@
     <select id="sort">
       <option value="name">{{ t("tonies.sort_name") }}</option>
       <option value="series">{{ t("tonies.sort_series") }}</option>
+      <option value="kind">{{ t("tonies.sort_kind") }}</option>
+      <option value="category">{{ t("tonies.sort_category") }}</option>
+      <option value="age">{{ t("tonies.sort_age") }}</option>
       <option value="added">{{ t("tonies.sort_added") }}</option>
       <option value="chapters">{{ t("tonies.sort_chapters") }}</option>
     </select>
@@ -51,10 +54,12 @@
 
 <div id="tonies" class="tonies" data-view="grid">
   {% if tonies %}
-  <div class="tonies-head muted" aria-hidden="true">
-    <span></span><span>{{ t("tonies.col_name") }}</span><span>{{ t("tonies.col_series") }}</span>
-    <span>{{ t("tonies.col_kind") }}</span><span>{{ t("tonies.col_chapters") }}</span>
-    <span>{{ t("tonies.col_category") }}</span><span>{{ t("tonies.col_added") }}</span>
+  {#- A heading orders by its column; again, the other way round. #}
+  <div class="tonies-head muted">
+    <span></span>
+    {% for key in ("name", "series", "kind", "chapters", "category", "age", "added") %}
+    <span><button type="button" class="sorter" data-sort="{{ key }}">{{ t("tonies.col_" ~ key) }}</button></span>
+    {% endfor %}
   </div>
   {% endif %}
   {% for row in tonies %}
@@ -63,7 +68,8 @@
   <a class="tonie" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
      data-kind="{{ row.kind }}" data-picture="{{ 'yes' if picture else 'no' }}"
      data-name="{{ row.name }}" data-series="{{ (tag.series ~ ' ' ~ row.name) | trim | lower }}"
-     data-added="{{ row.added.timestamp() | int if row.added else 0 }}" data-chapters="{{ tag.chapters }}"
+     data-added="{{ row.added.timestamp() | int if row.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
+     data-category="{{ row.category | lower }}" data-age="{{ row.age if row.age is not none else '' }}"
      data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ row.category) | lower }}">
     {% if picture %}
     <img src="{{ picture }}" alt="" loading="lazy">
@@ -76,6 +82,7 @@
     <span class="t-kind"><span class="pill done">{{ t("tonies.kind." ~ row.kind) }}</span></span>
     <span class="t-chapters muted">{% if tag.chapters %}{{ t("tonies.chapters", count=tag.chapters) }}{% endif %}</span>
     <span class="t-category muted">{{ row.category }}</span>
+    <span class="t-age muted">{% if row.age is not none %}{{ t("tonies.age", age=row.age) }}{% endif %}</span>
     <span class="t-added muted">{% if row.added %}{{ t.day(row.added) }}{% endif %}</span>
   </a>
   {% endfor %}

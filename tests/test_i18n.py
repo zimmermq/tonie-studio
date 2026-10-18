@@ -18,7 +18,7 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
            "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
-           "sheet.layout.", "sheet.intro.")
+           "sheet.layout.", "sheet.intro.", "tonies.col_")
 
 
 def placeholders(text):
@@ -100,6 +100,8 @@ class TestCatalogs:
         from tonie_studio.pages.tonies import NO_MODEL, NO_PICTURE, OFFICIAL, OWN
 
         assert {f"tonies.kind.{kind}" for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE)} <= keys
+        assert {f"tonies.col_{column}" for column in (
+            "name", "series", "kind", "chapters", "category", "age", "added")} <= keys
 
         from tonie_studio.sheet import LAYOUTS
 

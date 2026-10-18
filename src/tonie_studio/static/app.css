@@ -333,6 +333,7 @@ a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 .tonies[data-view=grid] .tonies-head,
 .tonies[data-view=grid] .t-kind,
 .tonies[data-view=grid] .t-category,
+.tonies[data-view=grid] .t-age,
 .tonies[data-view=grid] .t-added { display: none; }
 .tonies[data-view=grid] .tonie {
   display: flex; flex-direction: column; gap: 2px; padding: 10px;
@@ -349,8 +350,16 @@ a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 .tonies[data-view=list] .tonies-head,
 .tonies[data-view=list] .tonie {
   display: grid; align-items: center; gap: 12px; padding: 6px 12px;
-  grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 100px 90px minmax(0, 1fr) 100px;
+  grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 100px 90px minmax(0, 1fr) 60px 100px;
 }
+/* A column heading is a button that reads like the heading it is. */
+.tonies-head .sorter {
+  border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
+}
+.tonies-head .sorter:hover, .tonies-head .sorter[data-dir=asc],
+.tonies-head .sorter[data-dir=desc] { color: var(--ink); }
+.tonies-head .sorter[data-dir=asc]::after { content: " \25B2"; font-size: 10px; }
+.tonies-head .sorter[data-dir=desc]::after { content: " \25BC"; font-size: 10px; }
 .tonies[data-view=list] .tonies-head { font-size: 13px; border-bottom: 1px solid var(--line); }
 .tonies[data-view=list] .tonie { border-bottom: 1px solid var(--line); }
 .tonies[data-view=list] .tonie:last-child { border-bottom: 0; }
@@ -369,6 +378,7 @@ a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
   .tonies[data-view=list] .t-name { grid-row: 1; }
   .tonies[data-view=list] .t-kind,
   .tonies[data-view=list] .t-category,
+  .tonies[data-view=list] .t-age,
   .tonies[data-view=list] .t-added { display: none; }
   .tonies[data-view=list] .tonie img,
   .tonies[data-view=list] .tonie .noart { grid-row: 1 / span 2; }
