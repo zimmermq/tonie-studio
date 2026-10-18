@@ -25,7 +25,7 @@
       {%- if id in done %} <span class="pill done" title="{{ done[id] }}">{{ t("albums.has_tonie") }}</span>{% endif -%}
     </strong>
     <span class="muted truncate">
-      {{- album.artist or t("albums.various") }}{% if album.year %} &middot; {{ album.year }}{% endif %}
+      {{- album.artist or t("album.various_artists") }}{% if album.year %} &middot; {{ album.year }}{% endif %}
       &middot; {{ t("albums.tracks", count=album.track_count) }}
       {%- if not album.has_cover %} &middot; {{ t("albums.no_cover") }}{% endif -%}
     </span>

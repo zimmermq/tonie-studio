@@ -19,7 +19,7 @@
         {%- if info.tracks %} &middot;
         {%- if chapters and info.tracks | length == chapters %} <span class="state-done">{{ t("shop.chapters_match", count=chapters) }}</span>
         {%- elif chapters %} {{ t("shop.chapters_differ", shop=info.tracks | length, taf=chapters) }}
-        {%- else %} {{ t("shop.chapters", count=info.tracks | length) }}{% endif %}
+        {%- else %} {{ t("common.chapters", count=info.tracks | length) }}{% endif %}
         {%- endif %}
       </span>
     </span>

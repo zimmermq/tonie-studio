@@ -1,9 +1,10 @@
 """Tests for clearing out what browser uploads leave behind."""
 
+import io
 import os
 import time
 
-from tonie_studio.uploads import remove_old_uploads
+from tonie_studio.uploads import remove_old_uploads, spool
 
 
 def _upload(root, name, age_days=0, size=1024):
@@ -119,3 +120,42 @@ class TestHousekeepingRepeats:
         web._housekeeping(settings, lambda: None, stop)
 
         assert len(rounds) == 2
+
+
+class TestSpool:
+    @staticmethod
+    def sent(*names):
+        return [(name, io.BytesIO(name.encode())) for name in names]
+
+    @staticmethod
+    def tree(root):
+        return sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_file())
+
+    def test_one_folder_becomes_one_album(self, tmp_path):
+        albums = spool(tmp_path, self.sent("Hits/01-a.mp3", "Hits/cover.jpg", "Hits/notes.txt"))
+
+        assert len(albums) == 1
+        assert sorted(path.name for path in albums[0].iterdir()) == ["01-a.mp3", "cover.jpg"]
+
+    def test_a_series_keeps_its_name_and_episode_order(self, tmp_path):
+        albums = spool(tmp_path, self.sent("Bibi/Folge 10/01.mp3", "Bibi/Folge 2/01.mp3",
+                                           "Bibi/cover.jpg"))
+
+        assert [(path.parent.name, path.name) for path in albums] == [
+            ("Bibi", "Folge 2"), ("Bibi", "Folge 10")]
+
+    def test_folders_that_end_alike_get_a_number(self, tmp_path):
+        albums = spool(tmp_path, self.sent("A/Best/01.mp3", "B/A/Best/01.mp3"))
+
+        assert sorted(str(path.relative_to(path.parents[1])) for path in albums) == [
+            "A/Best", "A/Best (2)"]
+
+    def test_a_name_cannot_climb_out_of_its_folder(self, tmp_path):
+        spool(tmp_path, self.sent("x/..\\..\\evil.mp3"))
+
+        assert all(".." not in part for part in self.tree(tmp_path))
+        assert not (tmp_path.parent / "evil.mp3").exists()
+
+    def test_no_audio_is_no_album(self, tmp_path):
+        assert spool(tmp_path, self.sent("Bilder/cover.jpg")) == []
+        assert self.tree(tmp_path) == []

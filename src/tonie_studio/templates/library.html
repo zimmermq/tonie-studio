@@ -26,7 +26,7 @@
     <span class="muted small-text block truncate">{{ taf.path }}
       {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}</span></span>
   <span class="t-kind"><span class="pill done">{{ t("library.origin." ~ item.origin) }}</span></span>
-  <span class="t-chapters muted">{% if taf.chapters %}{{ t("library.chapters", count=taf.chapters) }}{% endif %}</span>
+  <span class="t-chapters muted">{% if taf.chapters %}{{ t("common.chapters", count=taf.chapters) }}{% endif %}</span>
   <span class="t-size muted">{{ t.size(taf.size) }}</span>
   <span class="t-added muted">{% if item.added %}{{ t.day(item.added) }}{% endif %}</span>
   <span class="t-played muted">

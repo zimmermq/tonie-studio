@@ -2,12 +2,10 @@
 
 import pytest
 from markupsafe import escape
-from fastapi.testclient import TestClient
 from web_helpers import jpeg_bytes, publish_album
 
 from tonie_studio.i18n import Translator
 from tonie_studio.shop import ShopInfo
-from tonie_studio.web import create_app
 
 say = Translator("de")
 RUID = "7ab4ed0e500304e0"
@@ -55,11 +53,9 @@ def pictures():
 
 
 @pytest.fixture
-def site(settings, teddycloud, runner, box, tags, shop, pictures):
-    app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box,
-                     shop=shop, fetch=pictures)
-    with TestClient(app) as client:
-        yield client
+def site(make_site, shop, pictures):
+    client = make_site(shop=shop, fetch=pictures)
+    yield client
 
 
 class TestAnOfficialTonie:

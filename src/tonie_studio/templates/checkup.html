@@ -4,7 +4,7 @@
 {% block intro %}{{ t("checkup.intro") }}{% endblock %}
 {% block body %}
 {% if done %}
-<div class="card">{{ t("checkup.done") }}</div>
+<div class="info">{{ t("checkup.done") }}</div>
 {% endif %}
 {% if stale %}
 <div class="info">
@@ -13,9 +13,9 @@
 {% endif %}
 
 {% if not findings %}
-<div class="card"><strong>{{ t("checkup.healthy") }}</strong>
-  <span class="muted">{{ t("checkup.healthy_hint") }}</span>
-</div>
+<p class="empty"><strong>{{ t("checkup.healthy") }}</strong>
+  {{ t("checkup.healthy_hint") }}
+</p>
 {% endif %}
 
 {% for severity in ("error", "warning", "note") %}

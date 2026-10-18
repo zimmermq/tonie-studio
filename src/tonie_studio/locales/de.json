@@ -58,7 +58,6 @@
   "one": "{count} Track",
   "other": "{count} Tracks"
  },
- "albums.various": "Verschiedene",
  "assign.confirm_replace": "{label} spielt schon etwas. Ersetzen?",
  "assign.duplicate": "Dieses Audio gibt es schon:",
  "assign.duplicate_hint": "teddyCloud lässt die Audio-Kennung nur in einem Modell zu. Legst du denselben Inhalt auf einen zweiten Tonie, bekommt er ein eigenes Modell ohne sie: Name und Cover gelten trotzdem, nur erkennt teddyCloud dieses Audio auf anderen Stickern weiter am ersten Modell. Soll der zweite Tonie genau dasselbe zeigen, nimm auf der Tonie-Seite des ersten \"Bespielen\".",
@@ -183,9 +182,16 @@
  "checkup.severity.note": "Hinweise",
  "checkup.severity.warning": "Warnungen",
  "checkup.stale": "Dieser Befund war nicht mehr aktuell, darum wurde nichts geändert. Die Liste unten ist neu geprüft.",
+ "col.added": "Hinzugefügt",
+ "col.chapters": "Kapitel",
+ "col.name": "Name",
  "common.all": "Alle",
  "common.back": "Zurück",
  "common.cancel": "Abbrechen",
+ "common.chapters": {
+  "one": "{count} Kapitel",
+  "other": "{count} Kapitel"
+ },
  "common.choose_picture": "Bild wählen",
  "common.delete": "Löschen",
  "common.files": {
@@ -205,7 +211,6 @@
  "encode.target_not_taf": "Das Ziel muss eine .taf-Datei sein, nicht {target}.",
  "encode.unreadable": "Nicht lesbar: {files}",
  "error.album_gone": "Dieses Album ist nicht mehr da.",
- "error.back": "Zurück",
  "error.batch_nothing_new": "Alle diese Alben sind schon encodiert; nichts zu tun.",
  "error.cover_unreadable": "Dieses Cover lässt sich nicht lesen.",
  "error.cross_site": "Eine andere Seite wollte hier etwas ändern; das ist abgelehnt.",
@@ -312,13 +317,6 @@
  "job.to_podcasts": "Zu den Podcasts",
  "job.to_tonies": "Zu den Tonies",
  "job.uploaded": "Track {done} von {count} hochgeladen",
- "library.chapters": {
-  "one": "{count} Kapitel",
-  "other": "{count} Kapitel"
- },
- "library.col_added": "Hinzugefügt",
- "library.col_chapters": "Kapitel",
- "library.col_name": "Name",
  "library.col_origin": "Herkunft",
  "library.col_played": "Gespielt von",
  "library.col_size": "Größe",
@@ -344,7 +342,6 @@
  "list.untick": "Alle abwählen",
  "listening.all": "alles",
  "listening.col_last": "Zuletzt aufgelegt",
- "listening.col_name": "Name",
  "listening.col_placed": "Aufgelegt",
  "listening.col_played": "Gespielt",
  "listening.days": {
@@ -565,10 +562,6 @@
   "one": "{count} Cover",
   "other": "{count} Cover"
  },
- "shop.chapters": {
-  "one": "{count} Kapitel",
-  "other": "{count} Kapitel"
- },
  "shop.chapters_differ": "{shop} Kapitel, dein Hörspiel hat {taf}",
  "shop.chapters_match": {
   "one": "{count} Kapitel, passt",
@@ -627,16 +620,9 @@
  "tonie.technical": "Technisches",
  "tonie.unknown_tag": "teddyCloud kennt den Sticker {ruid} nicht; leg ihn einmal auf die Box.",
  "tonies.age": "ab {age}",
- "tonies.chapters": {
-  "one": "{count} Kapitel",
-  "other": "{count} Kapitel"
- },
- "tonies.col_added": "Hinzugefügt",
  "tonies.col_age": "Alter",
  "tonies.col_category": "Kategorie",
- "tonies.col_chapters": "Kapitel",
  "tonies.col_kind": "Art",
- "tonies.col_name": "Name",
  "tonies.col_series": "Serie",
  "tonies.free_title": "Freie Sticker",
  "tonies.kind.none": "Ohne Modell",

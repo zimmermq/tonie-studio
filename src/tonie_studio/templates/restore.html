@@ -9,13 +9,11 @@
 {% block body %}
 {% set changing = steps | rejectattr("action", "equalto", "same") | list %}
 {% if not done %}
-<div class="{% if changing %}warn{% else %}card{% endif %}">
-  {% if changing %}
-  {{ t("restore.changes", count=changing | length) }}
-  {% else %}
-  {{ t("restore.nothing") }}
-  {% endif %}
-</div>
+{% if changing %}
+<div class="warn">{{ t("restore.changes", count=changing | length) }}</div>
+{% else %}
+<p class="empty">{{ t("restore.nothing") }}</p>
+{% endif %}
 {% endif %}
 
 <div class="list">
@@ -36,7 +34,7 @@
 {% if not done and changing %}
 <form class="mt-14" method="post" action="/restore/{{ token }}">
   <button class="primary" type="submit">{{ t("restore.confirm") }}</button>
-  <a class="ml-12" href="/backup">{{ t("common.cancel") }}</a>
+  <a class="button ml-12" href="/backup">{{ t("common.cancel") }}</a>
 </form>
 {% else %}
 <p><a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a></p>

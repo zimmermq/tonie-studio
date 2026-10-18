@@ -11,17 +11,16 @@ from tonie_studio.web import create_app
 
 
 class TestStartup:
-    def test_clears_staging_that_an_earlier_run_abandoned(self, settings, teddycloud, runner, tags):
+    def test_clears_staging_that_an_earlier_run_abandoned(self, make_site, teddycloud):
         teddycloud.create_dir("/_tonie-studio-staging")
         teddycloud.create_dir("/_tonie-studio-staging/abandoned")
         teddycloud.files["/_tonie-studio-staging/abandoned/001.flac"] = b"x"
 
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner)
-        with TestClient(app) as started:
-            eventually(lambda: teddycloud.files == {})
-            assert started.get("/health").status_code == 200
+        started = make_site()
+        eventually(lambda: teddycloud.files == {})
+        assert started.get("/health").status_code == 200
 
-    def test_clears_uploads_nobody_came_back_for(self, settings, teddycloud, runner, tags, box):
+    def test_clears_uploads_nobody_came_back_for(self, make_site, settings):
         import os
         import time
 
@@ -31,9 +30,8 @@ class TestStartup:
         long_ago = time.time() - 30 * 86400
         os.utime(stale, (long_ago, long_ago))
 
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-        with TestClient(app):
-            eventually(lambda: not stale.exists())
+        make_site()
+        eventually(lambda: not stale.exists())
 
     def test_starts_while_teddycloud_is_unreachable(self, settings, runner, tags):
         # An unreachable teddyCloud answers only after DNS timeouts and
@@ -58,16 +56,15 @@ class TestStartup:
 
 class TestTeddyCloudDown:
     @pytest.fixture
-    def offline(self, settings, runner, tags):
+    def offline(self, make_site):
         class Offline:
             def __getattr__(self, _name):
                 def unreachable(*args, **kwargs):
                     raise TeddyCloudError("teddyCloud at http://teddycloud.test is unreachable")
                 return unreachable
 
-        app = create_app(settings, client_factory=Offline, runner=runner)
-        with TestClient(app) as client:
-            yield client
+        client = make_site(client_factory=Offline)
+        yield client
 
     def test_the_album_list_still_works(self, offline):
         # Browsing the archive needs nothing from teddyCloud.
@@ -82,7 +79,7 @@ class TestTeddyCloudDown:
     def test_the_sheet_page_says_it_too(self, offline):
         assert offline.get("/sheet").status_code == 503
 
-    def test_a_refusal_is_not_called_an_outage(self, settings, runner, tags):
+    def test_a_refusal_is_not_called_an_outage(self, make_site):
         class Refusing:
             def __getattr__(self, _name):
                 def refuse(*args, **kwargs):
@@ -90,9 +87,8 @@ class TestTeddyCloudDown:
                                           status=400)
                 return refuse
 
-        app = create_app(settings, client_factory=Refusing, runner=runner)
-        with TestClient(app) as client:
-            response = client.get("/tonies")
+        client = make_site(client_factory=Refusing)
+        response = client.get("/tonies")
 
         assert response.status_code == 502
         assert "answered 400" in response.text
@@ -339,17 +335,14 @@ class TestProgressInWords:
 
 
 class TestModelsAreLoadedAtStartup:
-    def test_the_first_page_after_a_restart_already_knows_the_models(self, settings, runner,
-                                                                      teddycloud, box, tags):
+    def test_the_first_page_after_a_restart_already_knows_the_models(self, make_site, teddycloud):
         # The cache fills in the background; started only by the first page,
         # that page would go without the "has a tonie" markers.
         asked = []
         original = teddycloud.custom_tonies
         teddycloud.custom_tonies = lambda: asked.append(1) or original()
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-
-        with TestClient(app):
-            eventually(lambda: asked)
+        make_site()
+        eventually(lambda: asked)
 
 
 class TestBuild:

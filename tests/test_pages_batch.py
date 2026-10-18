@@ -4,13 +4,11 @@ box.
 
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 from web_helpers import (batch_ids, checked_ruid, current_step, encode_and_assign_page,
                          first_album_id, group_jobs, place_sticker, publish_album, run_batch,
                          start_placing, start_placing_archive, upload_series)
 
 from tonie_studio.jobs import JobState
-from tonie_studio.web import create_app
 
 
 class TestSeveralFolders:
@@ -449,14 +447,12 @@ class TestWalkthrough:
 
 
 class TestWalkthroughHints:
-    def test_an_empty_album_list_says_why_and_what_to_do(self, settings, teddycloud, runner, tags, box,
-                                                         tmp_path):
+    def test_an_empty_album_list_says_why_and_what_to_do(self, make_site, settings, tmp_path):
         import shutil
 
         shutil.rmtree(settings.archive_dir)
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-        with TestClient(app) as empty:
-            page = empty.get("/").text
+        empty = make_site()
+        page = empty.get("/").text
 
         assert "Keine Alben gefunden" in page
 

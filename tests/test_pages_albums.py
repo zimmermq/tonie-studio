@@ -53,12 +53,10 @@ class TestIndex:
         assert preview.headers["content-type"] == "image/jpeg"
         assert len(preview.content) < len(full.content) / 4
 
-    def test_survives_an_archive_that_is_not_mounted(self, settings, teddycloud, runner, tags):
+    def test_survives_an_archive_that_is_not_mounted(self, make_site, settings):
         settings.archive_dir = Path("/nowhere-at-all")
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner)
-
-        with TestClient(app) as client:
-            assert client.get("/").status_code == 200
+        client = make_site()
+        assert client.get("/").status_code == 200
 
 
 class TestAlbumPage:
@@ -84,16 +82,15 @@ class TestAlbumPage:
 
 
 class TestTrackSelection:
-    def test_offers_karaoke_takes_unticked(self, client, settings, archive, teddycloud, runner, box):
+    def test_offers_karaoke_takes_unticked(self, make_site, client, archive):
         folder = archive / "Lichterkinder-Halloween-WEB-FLAC-2023-WALKMAN"
         (folder / "04-karaoke.flac").write_bytes(b"\x04" * 8)
 
         with patch("tonie_studio.album._read_tags",
                    side_effect=lambda p: TrackTags(
                        title="Lied (Karaoke Version)" if "karaoke" in p.name else "Lied")):
-            app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-            with TestClient(app) as fresh:
-                page = fresh.get(f"/album/{first_album_id(fresh)}").text
+            fresh = make_site()
+            page = fresh.get(f"/album/{first_album_id(fresh)}").text
 
         assert page.count('name="selected"') == 4
         # "checked>" is the rendered attribute; the word alone also appears in
@@ -579,16 +576,15 @@ class TestAlbumMarkers:
 
         assert page.count('class="pill new"') == 1
 
-    def test_the_list_works_without_teddycloud(self, settings, runner, tags, box):
+    def test_the_list_works_without_teddycloud(self, make_site):
         class Offline:
             def __getattr__(self, name):
                 def refuse(*args, **kwargs):
                     raise TeddyCloudError("teddyCloud is away")
                 return refuse
 
-        app = create_app(settings, client_factory=Offline, runner=runner, watcher=box)
-        with TestClient(app) as offline:
-            assert offline.get("/").status_code == 200
+        offline = make_site(client_factory=Offline)
+        assert offline.get("/").status_code == 200
 
     def test_job_states_read_in_german(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
@@ -830,30 +826,28 @@ class TestNotInTheLibrary:
         return dict((ident, state) for state, ident in re.findall(
             r'data-library="(\w+)"[^>]*>\s*<input type="checkbox" name="ids" value="(\w+)"', page))
 
-    def test_an_encoded_album_is_in_it_and_the_others_are_not(self, settings, runner, teddycloud,
+    def test_an_encoded_album_is_in_it_and_the_others_are_not(self, make_site, settings, runner, teddycloud,
                                                              box, tags, monkeypatch):
         from tonie_studio import web
         from tonie_studio.planning import expected_targets
 
         monkeypatch.setattr(web, "LIBRARY_TTL", 0)
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-        with TestClient(app) as client:
-            upload_series(client, episodes=2)
-            uploads = [(ident, summary) for ident, summary, _origin
-                       in app.state.catalogue.albums() if ident.startswith("u")]
-            (encoded, summary), (missing, _summary) = uploads
-            for target in expected_targets(summary, settings.archive_dir, settings.upload_dir):
-                folder = target.rsplit("/", 1)[0] or "/"
-                if folder not in teddycloud.dirs:
-                    teddycloud.create_dir(folder)
-                teddycloud.files[target] = b"taf"
-                teddycloud.taf_headers[target] = {"valid": True}
+        client = make_site()
+        upload_series(client, episodes=2)
+        uploads = [(ident, summary) for ident, summary, _origin
+                   in client.app.state.catalogue.albums() if ident.startswith("u")]
+        (encoded, summary), (missing, _summary) = uploads
+        for target in expected_targets(summary, settings.archive_dir, settings.upload_dir):
+            folder = target.rsplit("/", 1)[0] or "/"
+            if folder not in teddycloud.dirs:
+                teddycloud.create_dir(folder)
+            teddycloud.files[target] = b"taf"
+            teddycloud.taf_headers[target] = {"valid": True}
 
-            eventually(lambda: self._rows(client).get(encoded) == "yes")
-            assert self._rows(client)[missing] == "no"
+        eventually(lambda: self._rows(client).get(encoded) == "yes")
+        assert self._rows(client)[missing] == "no"
 
-    def test_without_a_copy_of_the_library_nothing_is_claimed(self, settings, runner, teddycloud,
-                                                              box, tags):
+    def test_without_a_copy_of_the_library_nothing_is_claimed(self, make_site, teddycloud):
         from tonie_studio.teddycloud import TeddyCloudError
 
         def unreachable(*args, **kwargs):
@@ -861,10 +855,9 @@ class TestNotInTheLibrary:
 
         # Before the app starts, which is when it first asks for the library.
         teddycloud.list_dir = unreachable
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-        with TestClient(app) as client:
-            assert set(self._rows(client).values()) == {"unknown"}
-            assert "notinlibrary" not in client.get("/").text
+        client = make_site()
+        assert set(self._rows(client).values()) == {"unknown"}
+        assert "notinlibrary" not in client.get("/").text
 
     def test_offers_the_filter(self, client):
         upload_series(client, episodes=2)

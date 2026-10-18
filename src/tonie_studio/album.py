@@ -48,6 +48,11 @@ AUDIO_EXTENSIONS = frozenset({
     ".aiff", ".aif", ".wma", ".ac3", ".dts", ".mp4",
 })
 
+
+def is_audio_name(name: Optional[str]) -> bool:
+    """Whether a file of this name is audio an album can hold, by its suffix."""
+    return bool(name) and Path(name).suffix.lower() in AUDIO_EXTENSIONS
+
 # How many albums are read at once for a batch. Enough to hide the share's
 # latency; more would only queue on the same disk.
 ALBUM_READERS = 6

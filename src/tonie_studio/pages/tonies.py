@@ -68,8 +68,8 @@ def register(app: FastAPI, ctx: Context) -> None:
             entry = ctx.namer.official().by_model.get(tag.model)
             if entry:
                 about = ctx.shop.lookup(tag.model, entry.get("language") or "")
-        elif model is not None and model.other.get(SHOP_LINK):
-            about = ctx.shop.lookup(str(model.other[SHOP_LINK]))
+        elif model is not None and model.shop_link:
+            about = ctx.shop.lookup(model.shop_link)
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
             "model": model,
@@ -116,12 +116,10 @@ def register(app: FastAPI, ctx: Context) -> None:
             with refusing(FeedError, requests.RequestException, status=502):
                 picture = ctx.fetch(info.picture, LARGEST_IMAGE)
         tracks = info.tracks if info.tracks and len(info.tracks) == tag.chapters else None
-        updated = update_model(
+        update_model(
             connection, model.id, tracks=tracks,
             category=info.genre_key if info.genre_key in CATEGORIES else None,
-            cover=picture, cover_name=picture_suffix(info.picture))
-        updated.other[SHOP_LINK] = info.sales_id
-        connection.upsert_custom_tonie(updated.to_json())
+            cover=picture, cover_name=picture_suffix(info.picture), shop_link=info.sales_id)
         log.info("model %s takes picture and details of shop product %s", model.id, info.sales_id)
         return RedirectResponse(f"/tonies/{ruid}", 303)
 
@@ -175,21 +173,15 @@ def register(app: FastAPI, ctx: Context) -> None:
         return RedirectResponse("/tonies", 303)
 
 
-# Where a model of this app keeps the article number of the shop product it
-# took its picture and details from. teddyCloud stores a custom model whole,
-# so the field travels with the model, into its backups too.
-SHOP_LINK = "shop_sales_id"
-
-
 # The tonie list's columns, in the order the rows show them.
 TONIE_COLUMNS = (
-    Column("name", "tonies.col_name"),
+    Column("name", "col.name"),
     Column("series", "tonies.col_series"),
     Column("kind", "tonies.col_kind"),
-    Column("chapters", "tonies.col_chapters", "tonies.sort_chapters", number=True, desc=True),
+    Column("chapters", "col.chapters", "tonies.sort_chapters", number=True, desc=True),
     Column("category", "tonies.col_category"),
     Column("age", "tonies.col_age", "tonies.sort_age", number=True),
-    Column("added", "tonies.col_added", "tonies.sort_added", number=True, desc=True),
+    Column("added", "col.added", "tonies.sort_added", number=True, desc=True),
 )
 
 # What kind of tonie a row of the list is; the filters of the page go by it.
@@ -249,8 +241,8 @@ def _listed(connection: TeddyCloudClient, tags: List[TonieTag],
         if row.kind == OFFICIAL:
             if (catalogue.get(row.tag.model) or {}).get("language") == SHOP_LANGUAGE:
                 sold_as[row.tag.ruid] = row.tag.model
-        elif row.kind == OWN and own[row.tag.model].other.get(SHOP_LINK):
-            sold_as[row.tag.ruid] = str(own[row.tag.model].other[SHOP_LINK])
+        elif row.kind == OWN and own[row.tag.model].shop_link:
+            sold_as[row.tag.ruid] = own[row.tag.model].shop_link
     known = shop.lookup_many(sold_as.values())
     for row in rows:
         info = known.get(sold_as.get(row.tag.ruid, ""))

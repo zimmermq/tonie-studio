@@ -1,21 +1,12 @@
 """Tests for putting a taf on a tag and giving it a cover."""
 
 import pytest
-from fake_teddycloud import FakeTeddyCloud
 
 from tonie_studio.encode import EncodeResult
 from tonie_studio.models import (MODEL_PREFIX, find_model, find_model_by_audio, next_model_id,
                                  remove_model, update_model)
 from tonie_studio.tags import TonieError, list_tags
 from tonie_studio.tonie import copy_tag, move_tag, publish, publish_stream
-
-
-@pytest.fixture
-def teddycloud():
-    cloud = FakeTeddyCloud()
-    cloud.add_tag("7ab4ed0e500304e0")
-    cloud.add_tag("deb4ed0e500304e0")
-    return cloud
 
 
 @pytest.fixture
@@ -244,6 +235,21 @@ class TestUpdateModel:
     def test_refuses_a_model_that_is_not_there(self, teddycloud):
         with pytest.raises(TonieError):
             update_model(teddycloud, "TS-9999", series="x")
+
+    def test_keeps_the_shop_product_it_was_linked_to(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        update_model(teddycloud, model_id, shop_link="10000123")
+        update_model(teddycloud, model_id, series="Neu")
+
+        assert find_model(teddycloud, model_id).shop_link == "10000123"
+
+    def test_a_model_never_linked_has_no_shop_product(self, teddycloud, encoded):
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded,
+                           series="L", episode="H", tracks=[])
+
+        assert find_model(teddycloud, model_id).shop_link is None
 
 
 class TestRemoveModel:

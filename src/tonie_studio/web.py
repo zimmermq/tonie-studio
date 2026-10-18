@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from .backup import clear_parked
 from .boxstate import BoxWatcher
 from .cache import BackgroundCache
+from .catalogue import Catalogue
 from .encode import list_tafs, remove_orphaned_staging
 from .importing import Importer
 from .naming import Namer
@@ -37,7 +38,7 @@ from .pages import covers as cover_pages
 from .pages import library as library_page
 from .pages import radio as radio_page
 from .pages import jobs as job_pages
-from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
+from .pages.common import (STATIC, TEMPLATES, Context, describe_progress,
                            page_context)
 from .podcast import Fetch, PodcastUpdater, download
 from .printing import clear_old_pdfs

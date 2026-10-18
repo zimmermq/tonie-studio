@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import time
-from typing import Dict, Tuple
-
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from ..cache import TtlCache
 from ..tags import list_tags
 from ..teddycloud import TeddyCloudError
 from .common import Context
@@ -16,31 +14,25 @@ from .common import Context
 # renamed or given a new sticker shows its new name this much later in the header.
 LABEL_TTL = 10.0
 
+
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     box = ctx.box
     client = ctx.client
 
-    labels: Dict[str, Tuple[float, str]] = {}
+    # Every open page polls the box every few seconds; reading the whole tag
+    # index for each poll would put teddyCloud under constant load for a name
+    # that rarely changes.
+    labels: TtlCache[str, str] = TtlCache(
+        lambda ruid: next((tag.label for tag in list_tags(client()) if tag.ruid == ruid), ""),
+        LABEL_TTL)
 
     def box_label(ruid: str) -> str:
-        """The name of the tonie on the box, read from the tag index at most every LABEL_TTL.
-
-        Every open page polls the box every few seconds; reading the whole tag
-        index for each poll would put teddyCloud under constant load for a
-        name that rarely changes.
-        """
-        now = time.monotonic()
-        cached = labels.get(ruid)
-        if cached and now - cached[0] < LABEL_TTL:
-            return cached[1]
+        """The name of the tonie on the box, or nothing while teddyCloud is away."""
         try:
-            label = next((tag.label for tag in list_tags(client()) if tag.ruid == ruid), "")
+            return labels.get(ruid)
         except TeddyCloudError:
             return ""
-        labels.clear()
-        labels[ruid] = (now, label)
-        return label
 
     @app.get("/api/box")
     def box_state():

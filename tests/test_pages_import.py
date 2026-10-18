@@ -3,12 +3,10 @@
 import random
 
 import pytest
-from fastapi.testclient import TestClient
 
 from tonie_studio.github import RepoError
 from tonie_studio.i18n import Translator
 from tonie_studio.importing import FETCHING, PENDING, STOPPED, Importer
-from tonie_studio.web import create_app
 
 AUTH = "AB" * 32
 say = Translator("de")
@@ -48,12 +46,10 @@ def importer(teddycloud, settings, repo):
 
 
 @pytest.fixture
-def site(settings, teddycloud, runner, box, importer):
+def site(make_site, settings, importer):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box,
-                     importer=importer)
-    with TestClient(app) as client:
-        yield client
+    client = make_site(importer=importer)
+    yield client
 
 
 GITHUB = {"repo": "https://github.com/owner/tonies/tree/main/Sammlung", "branch": "",

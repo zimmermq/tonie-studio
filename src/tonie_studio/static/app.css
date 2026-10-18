@@ -33,7 +33,6 @@ header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; 
    enough that a line of prose stays readable. */
 main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .build { font-size: 12px; white-space: nowrap; }
-.list .item img.shop-picture { width: 120px; height: 90px; }
 .build a { color: inherit; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 28px 0 10px; }
@@ -55,7 +54,6 @@ a { color: var(--accent); }
 .picker-row { display: flex; gap: 10px; align-items: center; padding: 7px 12px;
               border-bottom: 1px solid var(--line); cursor: pointer; }
 .picker-row:last-child { border-bottom: 0; }
-.picker-row[hidden] { display: none; }
 .picker-row:has(input:checked) { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .picker-none { margin: 8px 0 0; }
 /* Nothing to show: the same calm box on every page. Inside a list's own
@@ -76,7 +74,6 @@ select {
   font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px;
   background: #fff; color: var(--ink); max-width: 100%; min-width: 0;
 }
-select.wide { width: 100%; }
 /* Small adjustments the pages make to the shared pieces, named for what
    they do so the markup stays free of style attributes. They win over the
    component rules the way a style attribute would, hence !important. */
@@ -88,7 +85,6 @@ select.wide { width: 100%; }
 .mt-14 { margin-top: 14px !important; }
 .mb-0 { margin-bottom: 0 !important; }
 .mb-8 { margin-bottom: 8px !important; }
-.ml-8 { margin-left: 8px !important; }
 .ml-12 { margin-left: 12px !important; }
 .wrap { flex-wrap: wrap !important; }
 .gap-6 { gap: 6px !important; }
@@ -103,7 +99,6 @@ select.wide { width: 100%; }
 .right { text-align: right !important; }
 .small-text { font-size: 13px !important; }
 .clickable { cursor: pointer !important; }
-.plain-link { color: inherit !important; text-decoration: none !important; }
 /* A line of explanation under a name in a list row, allowed to wrap. */
 .detail { display: block !important; white-space: normal !important; }
 button, .button {
@@ -130,8 +125,10 @@ ol.tracks li {
   padding: 6px 0; border-bottom: 1px solid var(--line);
 }
 ol.tracks li:last-child { border-bottom: 0; }
-/* Orange is kept for what needs doing or went wrong; what a person only
-   ought to know - how the box behaves, what to do next - is .info. */
+/* Three kinds of notice, the same on every page. Orange .warn is kept for
+   what needs doing or went wrong; .info is what a person only ought to know -
+   how the box behaves, what to do next, that something was done; and .empty
+   says there is nothing to show. */
 .warn, .info { border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
 .warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
 .info { background: color-mix(in srgb, var(--accent) 5%, var(--card)); border: 1px solid var(--line);
@@ -163,13 +160,6 @@ table.sizes tfoot td { border-top: 1px solid var(--line); padding-top: 6px; font
 .state-failed { color: var(--bad); }
 img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; }
 
-/* The album picker: one dense row per album, cover first. Sixteen cards with
-   16px of padding each meant scrolling three screens to see the archive. */
-.searchbar { display: flex; gap: 12px; align-items: center; margin: 20px 0 10px; }
-.searchbar input {
-  font: inherit; flex: 1; padding: 9px 12px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--card); color: var(--ink);
-}
 /* Rows in a card: a plain list (.list of .item rows, a picture, text and
    buttons side by side) and a list page in its table view (.listing of
    .listing-row, in columns) look the same; only how a row lays itself out
@@ -182,6 +172,7 @@ img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; 
 .list .item, a.item, .listing[data-view=list] .listing-row {
   border-bottom: 1px solid var(--line);
 }
+.list .item img.shop-picture { width: 120px; height: 90px; }
 .list .item:last-child, a.item:last-child,
 .listing[data-view=list] .listing-row:last-child { border-bottom: 0; }
 .list .item, a.item { display: flex; gap: 12px; align-items: center; padding: 8px 12px; }
@@ -253,7 +244,6 @@ img.pick.chosen { opacity: 1; border-color: var(--accent); }
 input[type=range] { accent-color: var(--accent); }
 
 .boxnow { text-align: right; font-size: 14px; }
-.boxnow[hidden] { display: none; }
 .boxnow b { font-weight: 600; color: var(--ink); }
 .boxnow.off { color: var(--bad); }
 
@@ -334,7 +324,6 @@ label.button > input[type=file] {
   opacity: 0; pointer-events: none;
 }
 label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* On a phone a two column card leaves both columns too narrow to use. */
 /* A tonie's page: what it is first, then what can be done with it. */
 .hero { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
 .cover.large { width: 180px; height: 180px; flex: none; }
@@ -363,9 +352,6 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 .chip[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--card); }
 .chip[aria-pressed=true] span { color: inherit; opacity: .8; }
 .views { display: inline-flex; gap: 6px; }
-.listing-row[hidden] { display: none !important; }
-/* The print page filters its rows the same way. */
-.sticker[hidden] { display: none !important; }
 .listing-row img, .listing-row .noart { border-radius: 6px; object-fit: contain; }
 .listing-row .t-name, .listing-row .t-series, .listing-row .t-category { overflow: hidden; text-overflow: ellipsis; }
 .listing-row .t-name strong { font-weight: 600; }

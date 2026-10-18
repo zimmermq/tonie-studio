@@ -1,6 +1,8 @@
-"""Copies of slow answers, for pages that only decorate with them.
+"""Copies of slow answers.
 
-A teddyCloud that does not answer holds a request for its whole timeout,
+TtlCache reuses an answer for a while and loads a new one while the caller
+waits. BackgroundCache is for pages that only decorate with an answer: a
+teddyCloud that does not answer holds a request for its whole timeout,
 three times with retries. A page that merely marks albums must not wait for
 that, so it is handed the last copy at once, and a stale copy starts one
 refresh in the background; the page after next shows the newer one.
@@ -11,11 +13,46 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Callable, Dict, Generic, Hashable, Optional, Tuple, TypeVar
 
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
+K = TypeVar("K", bound=Hashable)
+
+
+class TtlCache(Generic[K, T]):
+    """The answer of ``load`` for each key, reused for ``ttl`` seconds.
+
+    A missing or stale answer is loaded while the caller waits; a load that
+    raises is passed on and not kept, so the next call tries again. Two
+    callers missing at once may both load, which costs time, never a wrong
+    answer. ``clock`` is for tests.
+    """
+
+    def __init__(self, load: Callable[[K], T], ttl: float,
+                 clock: Callable[[], float] = time.monotonic):
+        self.load = load
+        self.ttl = ttl
+        self.clock = clock
+        self._answers: Dict[K, Tuple[float, T]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: K) -> T:
+        now = self.clock()
+        with self._lock:
+            kept = self._answers.get(key)
+        if kept and now - kept[0] < self.ttl:
+            return kept[1]
+        value = self.load(key)
+        with self._lock:
+            self._answers[key] = (now, value)
+        return value
+
+    def forget(self) -> None:
+        """Drop every answer, for a change that has to show on the next call."""
+        with self._lock:
+            self._answers.clear()
 
 
 class BackgroundCache(Generic[T]):

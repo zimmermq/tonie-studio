@@ -20,7 +20,7 @@ from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags
                           place, put_on_sticker)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
-from .common import Context, Refused, refused, translator
+from .common import Context, Refused, album_or_404, refused, translator
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     def _plan(connection, ids, series=None, episodes=None, models=()):
         """The batch for these album ids, or the reason it cannot be made."""
         unique = list(dict.fromkeys(ids))
-        albums = list(zip(unique, read_albums([catalogue.resolve(identifier)
+        albums = list(zip(unique, read_albums([album_or_404(catalogue, identifier)
                                                for identifier in unique]), strict=True))
         known = albums_with_tonies(settings.data_dir, catalogue.albums(), models)
         try:

@@ -1,8 +1,9 @@
 """Tests for the copies of slow answers that pages decorate with."""
 
+import pytest
 from web_helpers import eventually
 
-from tonie_studio.cache import BackgroundCache
+from tonie_studio.cache import BackgroundCache, TtlCache
 
 
 class TestBackgroundCache:
@@ -28,3 +29,53 @@ class TestBackgroundCache:
         cache.get()
 
         assert cache.get() == "first"
+
+
+class TestTtlCache:
+    @staticmethod
+    def counting(clock):
+        loads = []
+        cache = TtlCache(lambda key: loads.append(key) or key.upper(), ttl=10, clock=clock)
+        return cache, loads
+
+    def test_an_answer_is_reused_until_it_is_too_old(self):
+        now = [0.0]
+        cache, loads = self.counting(lambda: now[0])
+
+        assert cache.get("a") == "A" and cache.get("a") == "A"
+        now[0] = 11
+        cache.get("a")
+
+        assert loads == ["a", "a"]
+
+    def test_each_key_has_its_own_answer(self):
+        cache, loads = self.counting(lambda: 0.0)
+
+        cache.get("a")
+        cache.get("b")
+
+        assert loads == ["a", "b"]
+
+    def test_forgetting_loads_again(self):
+        cache, loads = self.counting(lambda: 0.0)
+
+        cache.get("a")
+        cache.forget()
+        cache.get("a")
+
+        assert loads == ["a", "a"]
+
+    def test_a_failed_load_is_not_kept(self):
+        def load(key):
+            calls.append(key)
+            if len(calls) == 1:
+                raise OSError("share away")
+            return "back"
+
+        calls = []
+        cache = TtlCache(load, ttl=10, clock=lambda: 0.0)
+
+        with pytest.raises(OSError):
+            cache.get("a")
+
+        assert cache.get("a") == "back"

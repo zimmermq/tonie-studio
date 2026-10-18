@@ -54,11 +54,11 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 # The library's columns, in the order the rows show them.
 LIBRARY_COLUMNS = (
-    Column("name", "library.col_name"),
+    Column("name", "col.name"),
     Column("origin", "library.col_origin"),
-    Column("chapters", "library.col_chapters", number=True, desc=True),
+    Column("chapters", "col.chapters", number=True, desc=True),
     Column("size", "library.col_size", number=True, desc=True),
-    Column("added", "library.col_added", number=True, desc=True),
+    Column("added", "col.added", number=True, desc=True),
     Column("played", "library.col_played"),
 )
 

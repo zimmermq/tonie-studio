@@ -58,7 +58,6 @@
   "one": "{count} track",
   "other": "{count} tracks"
  },
- "albums.various": "Various",
  "assign.confirm_replace": "{label} already plays something. Replace it?",
  "assign.duplicate": "This audio exists already:",
  "assign.duplicate_hint": "teddyCloud allows the audio id in one model only. Putting the same content on a second tonie gives it a model of its own without it: its name and cover still apply, only teddyCloud keeps recognising this audio on other stickers by the first model. For a second tonie that shows exactly the same, use \"Copy onto it\" on the first one's tonie page.",
@@ -183,9 +182,16 @@
  "checkup.severity.note": "Notes",
  "checkup.severity.warning": "Warnings",
  "checkup.stale": "That finding was no longer current, so nothing was changed. The list below has been checked again.",
+ "col.added": "Added",
+ "col.chapters": "Chapters",
+ "col.name": "Name",
  "common.all": "All",
  "common.back": "Back",
  "common.cancel": "Cancel",
+ "common.chapters": {
+  "one": "{count} chapter",
+  "other": "{count} chapters"
+ },
  "common.choose_picture": "Choose picture",
  "common.delete": "Delete",
  "common.files": {
@@ -205,7 +211,6 @@
  "encode.target_not_taf": "The target has to be a .taf file, not {target}.",
  "encode.unreadable": "Cannot read: {files}",
  "error.album_gone": "That album is not there any more.",
- "error.back": "Back",
  "error.batch_nothing_new": "Every one of these albums is already encoded; nothing to do.",
  "error.cover_unreadable": "That cover cannot be read.",
  "error.cross_site": "Another site tried to change something here; that is refused.",
@@ -312,13 +317,6 @@
  "job.to_podcasts": "To the podcasts",
  "job.to_tonies": "To the tonies",
  "job.uploaded": "Uploaded track {done} of {count}",
- "library.chapters": {
-  "one": "{count} chapter",
-  "other": "{count} chapters"
- },
- "library.col_added": "Added",
- "library.col_chapters": "Chapters",
- "library.col_name": "Name",
  "library.col_origin": "From",
  "library.col_played": "Played by",
  "library.col_size": "Size",
@@ -344,7 +342,6 @@
  "list.untick": "Untick all",
  "listening.all": "all",
  "listening.col_last": "Last placed",
- "listening.col_name": "Name",
  "listening.col_placed": "Placed",
  "listening.col_played": "Played",
  "listening.days": {
@@ -565,10 +562,6 @@
   "one": "{count} cover",
   "other": "{count} covers"
  },
- "shop.chapters": {
-  "one": "{count} chapter",
-  "other": "{count} chapters"
- },
  "shop.chapters_differ": "{shop} chapters, your audio has {taf}",
  "shop.chapters_match": {
   "one": "{count} chapter, matches",
@@ -627,16 +620,9 @@
  "tonie.technical": "Technical",
  "tonie.unknown_tag": "teddyCloud does not know the sticker {ruid}; put it on the box once first.",
  "tonies.age": "from {age}",
- "tonies.chapters": {
-  "one": "{count} chapter",
-  "other": "{count} chapters"
- },
- "tonies.col_added": "Added",
  "tonies.col_age": "Age",
  "tonies.col_category": "Category",
- "tonies.col_chapters": "Chapters",
  "tonies.col_kind": "Kind",
- "tonies.col_name": "Name",
  "tonies.col_series": "Series",
  "tonies.free_title": "Free stickers",
  "tonies.kind.none": "No model",

@@ -131,7 +131,7 @@ HEARD, QUIET = "heard", "quiet"
 # with what was played most; ordered by when a tonie was last placed, one
 # never placed comes first, as the one forgotten longest.
 LISTENING_COLUMNS = (
-    Column("name", "listening.col_name"),
+    Column("name", "col.name"),
     Column("played", "listening.col_played", number=True, desc=True),
     Column("placed", "listening.col_placed", number=True, desc=True),
     Column("last", "listening.col_last", number=True),

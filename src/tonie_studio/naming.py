@@ -41,6 +41,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from .cache import TtlCache
 from .models import CATEGORIES, MODEL_PREFIX, Model, list_models
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -435,15 +436,16 @@ class Namer:
                  clock: Callable[[], float] = time.monotonic):
         self.client = client
         self.dumps = dumps
-        self.clock = clock
-        self._catalog: Optional[Tuple[float, Catalog, AudioIndex]] = None
+        self._catalog: TtlCache[None, Tuple[Catalog, AudioIndex]] = TtlCache(
+            lambda _key: self._load_catalog(), CATALOG_TTL, clock)
         self._lock = threading.Lock()
 
     def catalog(self) -> Tuple[Catalog, AudioIndex]:
-        if self._catalog is None or self.clock() - self._catalog[0] > CATALOG_TTL:
-            entries = self.client().tonies_json()
-            self._catalog = (self.clock(), Catalog(entries), official_by_audio(entries))
-        return self._catalog[1], self._catalog[2]
+        return self._catalog.get(None)
+
+    def _load_catalog(self) -> Tuple[Catalog, AudioIndex]:
+        entries = self.client().tonies_json()
+        return Catalog(entries), official_by_audio(entries)
 
     def official(self) -> Catalog:
         """The catalogue alone, for looking a tonie up by its model."""

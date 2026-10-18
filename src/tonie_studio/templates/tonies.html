@@ -46,7 +46,7 @@
     <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>
   <span class="t-series muted">{% if tag.episode and tag.series != tag.episode %}{{ tag.series }}{% endif %}</span>
   <span class="t-kind"><span class="pill done">{{ t("tonies.kind." ~ item.kind) }}</span></span>
-  <span class="t-chapters muted">{% if tag.chapters %}{{ t("tonies.chapters", count=tag.chapters) }}{% endif %}</span>
+  <span class="t-chapters muted">{% if tag.chapters %}{{ t("common.chapters", count=tag.chapters) }}{% endif %}</span>
   <span class="t-category muted">{{ item.category }}</span>
   <span class="t-age muted">{% if item.age is not none %}{{ t("tonies.age", age=item.age) }}{% endif %}</span>
   <span class="t-added muted">{% if item.added %}{{ t.day(item.added) }}{% endif %}</span>

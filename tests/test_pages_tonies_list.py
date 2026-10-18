@@ -42,7 +42,7 @@ class TestEachTonie:
     def test_shows_chapters_category_and_when_it_was_added(self, client, official):
         shown = row(client.get("/tonies").text, OFFICIAL)
 
-        assert say("tonies.chapters", count=3) in shown
+        assert say("common.chapters", count=3) in shown
         assert "audio-play" in shown
         assert say.day(datetime.fromtimestamp(ADDED, timezone.utc)) in shown
         assert f'data-added="{ADDED}"' in shown and 'data-chapters="3"' in shown

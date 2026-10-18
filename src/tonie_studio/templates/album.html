@@ -103,7 +103,7 @@
      {% if conflict %}
      <button type="submit" name="replace" value="{{ replace_value }}">{{ t("album.replace") }}</button>
      {% endif %}
-     <a class="ml-12" href="/">{{ t("common.cancel") }}</a></p>
+     <a class="button ml-12" href="/">{{ t("common.cancel") }}</a></p>
 </form>
 
 {{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit")}) }}

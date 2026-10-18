@@ -89,7 +89,26 @@ def box():
 
 
 @pytest.fixture
-def client(settings, teddycloud, runner, tags, box):
-    app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
-    with TestClient(app) as client:
-        yield client
+def make_site(settings, teddycloud, runner, tags, box):
+    """Start the app and hand out a client of it; ``overrides`` go to create_app.
+
+    Called rather than requested, so a test can set things up first that the
+    app reads as it starts. Every app started is shut down after the test.
+    """
+    started = []
+
+    def make(**overrides):
+        options = {"client_factory": lambda: teddycloud, "runner": runner, "watcher": box,
+                   **overrides}
+        site = TestClient(create_app(options.pop("settings", settings), **options))
+        started.append(site)
+        return site.__enter__()
+
+    yield make
+    for site in reversed(started):
+        site.__exit__(None, None, None)
+
+
+@pytest.fixture
+def client(make_site):
+    return make_site()

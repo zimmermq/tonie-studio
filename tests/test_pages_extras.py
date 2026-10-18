@@ -4,10 +4,8 @@ import re
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
 from web_helpers import finish_job, list_tags_of, publish_album, ruid_to_uid
 
-from tonie_studio.web import create_app
 
 
 def row(page, ruid):
@@ -79,11 +77,9 @@ class TestPodcastPages:
         return FakeWeb()
 
     @pytest.fixture
-    def podcasts(self, settings, teddycloud, runner, tags, box, web):
-        app = create_app(settings, client_factory=lambda: teddycloud, runner=runner,
-                         watcher=box, fetch=web)
-        with TestClient(app) as client:
-            yield client
+    def podcasts(self, make_site, web):
+        client = make_site(fetch=web)
+        yield client
 
     def test_subscribing_notes_what_the_sticker_played(self, podcasts, runner, teddycloud,
                                                        settings):

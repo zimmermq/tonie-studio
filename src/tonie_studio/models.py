@@ -139,6 +139,12 @@ def cover_name(picture: Optional[str]) -> Optional[str]:
     return name if name and "/" not in name else None
 
 
+# Where a model of this app keeps the article number of the shop product it
+# took its picture and details from. teddyCloud stores a custom model whole,
+# so the field travels with the model, into its backups too.
+SHOP_LINK = "shop_sales_id"
+
+
 @dataclass
 class Model:
     """One custom model in teddyCloud: what a tonie is called and shows.
@@ -166,6 +172,12 @@ class Model:
 
     _FIELDS = ("model", "series", "episodes", "tracks", "language", "category", "pic", "release",
                "audio_id", "hash")
+
+    @property
+    def shop_link(self) -> Optional[str]:
+        """The article number of the shop product this model was linked to, if any."""
+        value = self.other.get(SHOP_LINK)
+        return str(value) if value else None
 
     @classmethod
     def from_json(cls, data: Dict[str, Any]) -> "Model":
@@ -271,11 +283,13 @@ def update_model(
     tracks: Optional[Sequence[str]] = None,
     cover: Optional[Union[Path, bytes]] = None,
     cover_name: str = "jpg",
+    shop_link: Optional[str] = None,
 ) -> Model:
     """Change a model's description without touching the audio it points at.
 
     `audio_id` and `hash` are carried over untouched: they are what lets
     teddyCloud recognise the taf, and rewriting a title must not cost that.
+    What is not named stays as it is.
     """
     model = find_model(client, model_id)
     if model is None:
@@ -291,6 +305,8 @@ def update_model(
         model.category = _category(category)
     if cover is not None:
         model.picture = upload_cover(client, model.id, cover, cover_name)
+    if shop_link is not None:
+        model.other[SHOP_LINK] = shop_link
 
     client.upsert_custom_tonie(model.to_json())
     log.info("model %s updated", model.id)

@@ -4,15 +4,15 @@
 {% block intro %}{{ t("names.intro") }}{% endblock %}
 {% block body %}
 {% if changed %}
-<p class="state-failed">{{ t("names.changed") }}</p>
+<div class="info">{{ t("names.changed") }}</div>
 {% endif %}
 
 {% if named >= 0 %}
-<p class="state-done">{{ t("names.done", named=named, deleted=deleted) }}</p>
+<div class="info">{{ t("names.done", named=named, deleted=deleted) }}</div>
 {% endif %}
 
 {% if plan.empty %}
-<div class="card">{{ t("names.nothing") }}</div>
+<p class="empty">{{ t("names.nothing") }}</p>
 {% else %}
 <div class="list">
   {% for kind in kinds if counts[kind] %}
