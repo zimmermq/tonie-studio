@@ -10,14 +10,16 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..checkup import BOX_SOUND_PREFIX
-from ..encode import TAF_SUFFIX, EncodeError, Taf, delete_taf, list_tafs
+from ..encode import TAF_SUFFIX, EncodeError, Taf, delete_taf, existing_taf, list_tafs
 from ..jobs import JobState
 from ..library import same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
-from ..tags import TonieTag, list_tags
+from ..models import CATEGORIES, DEFAULT_CATEGORY
+from ..tags import TonieError, TonieTag, list_tags
 from ..tags import label as tag_label
 from ..times import from_seconds
+from ..tonie import publish
 from .common import Context, Refused, refusing
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -68,6 +70,39 @@ def register(app: FastAPI, ctx: Context) -> None:
         with refusing(EncodeError):
             delete_taf(connection, path)
         return RedirectResponse("/library", 303)
+
+    @app.get("/library/assign", response_class=HTMLResponse)
+    def assign_page(request: Request, path: str):
+        """Put audio that is in the library, and played by nothing, on a sticker.
+
+        The encode that made it would have offered this; after a restart that
+        job is gone, and the audio would otherwise only be deletable.
+        """
+        connection = client()
+        encoded = existing_taf(connection, path) if path.endswith(TAF_SUFFIX) else None
+        if encoded is None:
+            raise Refused(404, "library.gone")
+        folder, _slash, name = path.strip("/").rpartition("/")
+        return templates.TemplateResponse(request, "library_assign.html", {
+            "path": path,
+            "encoded": encoded,
+            "series": folder.rsplit("/", 1)[-1],
+            "episode": name[:-len(TAF_SUFFIX)],
+            "tags": list_tags(connection),
+            "categories": CATEGORIES,
+        })
+
+    @app.post("/library/assign")
+    def assign(path: str = Form(...), ruid: str = Form(...), series: str = Form(""),
+               episode: str = Form(...), category: str = Form(DEFAULT_CATEGORY)):
+        connection = client()
+        encoded = existing_taf(connection, path) if path.endswith(TAF_SUFFIX) else None
+        if encoded is None:
+            raise Refused(404, "library.gone")
+        with refusing(TonieError):
+            publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
+                    category=category)
+        return RedirectResponse(f"/tonies/{ruid}", 303)
 
 
 # The library's columns, in the order the rows show them.

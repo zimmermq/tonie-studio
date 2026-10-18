@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from datetime import datetime
-from typing import Dict
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from ..albumnotes import made
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                       park, plan_restore, read_backup, take_parked)
 from ..checkup import BULK_FIXES, apply_fix, examine
-from ..encode import EncodeError
+from ..encode import EncodeError, list_tafs
+from ..library import is_library, played, same
 from ..podcast import SERIES as PODCAST_SERIES
-from ..tags import TonieError
+from ..tags import TonieError, list_tags
+from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from .common import Context, Refused, refusing
 
 log = logging.getLogger(__name__)
+
+# How many restore results stay on show.
+KEEP_RESTORED = 5
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -122,8 +130,17 @@ def register(app: FastAPI, ctx: Context) -> None:
         })
 
 
-    @app.post("/restore/{token}", response_class=HTMLResponse)
-    def restore_apply(request: Request, token: str):
+    # What the last restores did, by token, for their result page. Kept in
+    # memory: the page is looked at once, right after, and a few will do.
+    restored: "OrderedDict[str, Tuple[list, dict]]" = OrderedDict()
+
+    @app.post("/restore/{token}")
+    def restore_apply(token: str):
+        """Restore, then show what was done on a page of its own.
+
+        Its own address, so reloading it shows the result again rather than
+        sending the confirmation a second time.
+        """
         if not token.isalnum():
             raise Refused(400, "error.not_a_restore")
         data = take_parked(settings.data_dir, token)
@@ -132,9 +149,38 @@ def register(app: FastAPI, ctx: Context) -> None:
         with refusing(BackupError):
             backup = read_backup(data)
             steps = apply_restore(client(), backup, settings.data_dir)
+        restored[token] = (steps, backup.manifest)
+        while len(restored) > KEEP_RESTORED:
+            restored.popitem(last=False)
+        return RedirectResponse(f"/restore/{token}/done", 303)
+
+    @app.get("/restore/{token}/done", response_class=HTMLResponse)
+    def restore_done(request: Request, token: str):
+        if token not in restored:
+            raise Refused(404, "error.restore_gone")
+        steps, manifest = restored[token]
         return templates.TemplateResponse(request, "restore.html", {
             "steps": steps,
-            "manifest": backup.manifest,
+            "manifest": manifest,
             "token": token,
             "done": True,
+            "silent_albums": _silent_albums(client(), settings.data_dir),
         })
+
+
+def _silent_albums(client: TeddyCloudClient, data_dir: Path) -> List[str]:
+    """The albums whose tonies point at audio the library does not have.
+
+    A backup holds no audio; after a lost volume the stickers come back
+    pointing at tafs that are gone. Those made from an album here can be
+    encoded again from it, by the batch page.
+    """
+    try:
+        present = played(taf.source for taf in list_tafs(client, strict=True))
+    except TeddyCloudError:
+        return []
+    silent = {tag.model for tag in list_tags(client)
+              if tag.model and is_library(tag.source) and same(tag.source) not in present}
+    return [album for album, models in made(data_dir).items()
+            if any(model in silent for model in models)]
+

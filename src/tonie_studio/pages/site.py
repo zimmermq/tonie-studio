@@ -22,6 +22,19 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 OTHER_SITES = frozenset({"cross-site", "same-site"})
 
 
+# Where to go on from a refusal that has an obvious next step, by its text's
+# key: (address, key of the button's text). Every refusal also offers the way
+# back and the album list.
+NEXT_STEPS = {
+    # Jobs live in memory; after a restart what they made is in the library,
+    # played by nothing.
+    "error.no_job": ("/library?filter=unused", "error.to_unused"),
+    "error.parts_gone": ("/library?filter=unused", "error.to_unused"),
+    "error.no_tag": ("/tonies", "job.to_tonies"),
+    "error.restore_gone": ("/backup", "error.to_backup"),
+}
+
+
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the app-wide routes and error answers to ``app``."""
     templates = ctx.templates
@@ -56,9 +69,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         message = error.say(translator(request))
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": message}, status_code=error.status)
-        return templates.TemplateResponse(
-            request, "refused.html", {"message": message}, status_code=error.status,
-        )
+        onward = NEXT_STEPS.get(error.key)
+        return templates.TemplateResponse(request, "refused.html", {
+            "message": message,
+            "next_href": onward[0] if onward else "",
+            "next_label": onward[1] if onward else "",
+        }, status_code=error.status)
 
     @app.middleware("http")
     async def same_site_only(request: Request, call_next):

@@ -42,6 +42,10 @@
       <code class="preview-text">{{ preview }}</code>
       {% endif %}
     </span>
+    {% if finding.kind == "orphan_taf" %}
+    {#- Audio nobody plays may well be wanted: it can go on a sticker too. #}
+    <a class="button small" href="/library/assign?path={{ finding.target | urlencode }}">{{ t("library.assign") }}</a>
+    {% endif %}
     {% if finding.fix %}
     {#- A repair is shown before it runs; deleting and emptying also ask,
         because neither can be taken back. #}

@@ -212,10 +212,15 @@ class TestSeveralFolders:
         # from what the batch would suggest; the tonie is what gives it away.
         ids = batch_ids(upload_series(client, episodes=2))
         run_batch(client, runner, ids, series="Serie")
-        from tonie_studio.encode import delete_taf, taf_exists
+        from tonie_studio.encode import taf_exists
 
+        # The audio still plays, from where it was put back then.
         for job in runner.all():
-            delete_taf(teddycloud, job.label)
+            moved = job.label.replace(".taf", " (alt).taf")
+            teddycloud.files[moved] = teddycloud.files.pop(job.label)
+            for entry in teddycloud.tag_entries.values():
+                if entry["source"] == "lib:/" + job.label:
+                    entry["source"] = "lib:/" + moved
             assert not taf_exists(teddycloud, job.label)
         teddycloud.add_tag("aaaaaaaaaaaaaaaa")
 
@@ -245,6 +250,20 @@ class TestSeveralFolders:
 
 
 class TestPlacingStickers:
+    def test_a_placement_still_waiting_can_be_found_again(self, client, runner, teddycloud):
+        # Placing works only while its page is open; someone who left it
+        # needs a way back, or the stickers laid down later get nothing.
+        group = start_placing(client, runner)
+        for job in runner.all():
+            assert job.done.wait(5)
+
+        assert f'href="/parts/{group}"' in client.get("/").text
+
+        place_sticker(client, group, "deb4ed0e500304e0")
+        place_sticker(client, group, "7ab4ed0e500304e0")
+
+        assert f'href="/parts/{group}"' not in client.get("/").text
+
     def test_nothing_is_assigned_until_a_sticker_is_placed(self, client, runner, teddycloud):
         group = start_placing(client, runner)
         for job in runner.all():
@@ -604,3 +623,30 @@ class TestPlacingAfterEncodesFailed:
 
         assert placed["status"] == "complete"
         assert placed["then"] == "Alle Folgen haben einen Sticker."
+
+
+class TestSilentTonies:
+    """A tonie whose audio was lost - a teddyCloud volume, a restore - is made again, not skipped."""
+
+    def silent(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        teddycloud.files.pop("/" + entry["source"].split("lib://", 1)[1])
+        return entry["tonie_model"], entry["source"]
+
+    def test_the_batch_says_its_audio_is_made_again(self, client, runner, teddycloud):
+        self.silent(client, runner, teddycloud)
+
+        page = client.get(f"/batch?ids={first_album_id(client)}").text
+
+        assert "Audio fehlt" in page
+
+    def test_it_plays_again_as_the_same_tonie(self, client, runner, teddycloud):
+        model, source = self.silent(client, runner, teddycloud)
+
+        run_batch(client, runner, [first_album_id(client)])
+
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        assert (entry["tonie_model"], entry["source"]) == (model, source)
+        assert "/" + source.split("lib://", 1)[1] in teddycloud.files
+        assert [m["model"] for m in teddycloud.custom_models] == [model]

@@ -104,6 +104,14 @@ class TestCheckupPage:
 
         assert "/Lichterkinder/Alt.taf" not in teddycloud.files
 
+    def test_a_taf_nothing_plays_can_go_on_a_sticker_instead(self, client, runner, teddycloud):
+        # "Maybe encoded ahead on purpose": then deleting is the wrong offer.
+        publish_album(client, runner, teddycloud)
+        teddycloud.files["/Lichterkinder/Alt.taf"] = b"x"
+        teddycloud.taf_headers["/Lichterkinder/Alt.taf"] = {"valid": True}
+
+        assert 'href="/library/assign?path=/Lichterkinder/Alt.taf"' in client.get("/checkup").text
+
     def test_an_unknown_repair_is_refused(self, client):
         response = client.post("/checkup/fix", data={"fix": "format_disk", "target": "/"},
                                follow_redirects=False)
@@ -153,6 +161,48 @@ class TestBackupPages:
         client.post(f"/restore/{token}")
 
         assert client.post(f"/restore/{token}").status_code == 404
+
+    def test_the_result_is_a_page_of_its_own_that_survives_a_reload(self, client, runner,
+                                                                    teddycloud):
+        # A result that was the answer to the confirmation would, reloaded,
+        # send the confirmation again and say the restore had expired.
+        publish_album(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+
+        response = client.post(f"/restore/{token}", follow_redirects=False)
+        done = response.headers["location"]
+
+        assert response.status_code == 303
+        assert client.get(done).status_code == 200
+        assert client.get(done).text == client.get(done).text
+
+    def test_tonies_left_silent_can_be_made_again_from_the_result(self, client, runner,
+                                                                  teddycloud):
+        # A backup holds no audio: after a lost volume the stickers come back
+        # pointing at tafs that are gone.
+        publish_album(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        source = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+        teddycloud.files.pop("/" + source.split("lib://", 1)[1])
+        teddycloud.custom_models.clear()
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+
+        done = client.post(f"/restore/{token}").text
+
+        assert 'href="/batch?ids=' in done
+
+    def test_the_preview_offers_to_save_what_is_here_first(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+
+        assert 'href="/backup/download"' in page
 
     def test_refuses_a_file_that_is_not_a_backup(self, client):
         response = client.post("/restore", files={"file": ("x.zip", b"nope", "application/zip")})

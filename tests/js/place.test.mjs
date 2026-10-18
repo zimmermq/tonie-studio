@@ -1,7 +1,7 @@
 // The parts page while stickers are placed by hand: each sticker the box
 // reports is offered once, and what the server decided is shown.
 import assert from 'node:assert/strict';
-import { runPage, status } from './page.mjs';
+import { element, runPage, status } from './page.mjs';
 
 const WORDS = { 'parts.place_refused': 'Nicht vergeben: {detail}',
                 'parts.place_no_answer': 'Keine Antwort.' };
@@ -61,3 +61,26 @@ assert.equal(places().at(-1).body.fields.ruid, 'cccc');
   assert.equal(away.placemsg.textContent, 'Keine Antwort.');
 }
 console.log('place.test: ok');
+
+// While stickers are still missing, leaving the page is asked about first;
+// once every one is placed, it is not.
+const jobRow = () => element('', '', { children: Object.fromEntries(
+  ['.state', '.assign', '.assigned', '.note'].map(part => [part, element('')])) });
+{
+  const waiting = await runPage(['app.js', 'parts.js'], {
+    ids: ['printnext', 'printlink', 'placemsg'],
+    pageData: { words: WORDS, placing: true, group: 'g1' },
+    answers: { '/api/group/g1': { jobs: [{ id: 'j1', state: 'done', assigned: false }] } },
+    found: { '[data-job="j1"]': jobRow() },
+  });
+  assert.equal(typeof waiting.window.onbeforeunload, 'function');
+}
+{
+  const finished = await runPage(['app.js', 'parts.js'], {
+    ids: ['printnext', 'printlink', 'placemsg'],
+    pageData: { words: WORDS, placing: true, group: 'g1' },
+    answers: { '/api/group/g1': { jobs: [{ id: 'j1', state: 'done', assigned: true }] } },
+    found: { '[data-job="j1"]': jobRow() },
+  });
+  assert.equal(finished.window.onbeforeunload, null);
+}

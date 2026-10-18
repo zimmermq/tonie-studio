@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Form, Request
@@ -24,7 +24,8 @@ from ..listing import Column, filters
 from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
 from ..planning import chosen_tracks, expected_targets, plan_parts
-from ..publishing import Crop, Details, encode_job
+from ..jobs import Groups, JobRunner
+from ..publishing import Crop, Details, encode_job, job_states
 from ..uploads import UploadError, spool
 from .common import Context, Refused, album_or_404, refused, refusing, upload_form
 
@@ -66,6 +67,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "archive": [row for row in albums if row[2] == "archive"],
             "uploads": [row for row in albums if row[2] == "upload"],
             "jobs": jobs.all()[:10],
+            "placing": _waiting_for_stickers(groups, jobs),
             "thumb_size": DEFAULT_SIZE,
             "slow_pick": SLOW_PICK,
             "new": new,
@@ -198,6 +200,22 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
 # --- helpers --------------------------------------------------------------
+
+
+def _waiting_for_stickers(groups: Groups, jobs: JobRunner) -> List[Tuple[str, str]]:
+    """Batches waiting for stickers to be laid on the box, as (group id, next episode).
+
+    Placing works only while the batch's page is open; the album list leads
+    back to it.
+    """
+    failed, played_on = job_states(jobs.get)
+    waiting = []
+    for group_id, group in groups.all():
+        if group.placing and group.placing.by_hand:
+            slot = group.placing.waiting(failed, played_on)
+            if slot is not None:
+                waiting.append((group_id, slot.episode))
+    return waiting
 
 
 def _cover_or_404(catalogue: Catalogue, identifier: str, index: int) -> Path:

@@ -148,16 +148,16 @@ class TestRefusals:
         response = client.get("/job/nope")
 
         assert response.status_code == 404
-        assert "There is no such job." in response.text and "<html" in response.text
+        assert "That job is not known any more" in response.text and "<html" in response.text
 
     def test_german_is_the_default(self, client):
-        assert "Diesen Auftrag gibt es nicht." in client.get("/job/nope").text
+        assert "Diesen Auftrag gibt es nicht mehr" in client.get("/job/nope").text
 
     def test_the_api_answers_json_in_the_readers_language(self, client):
         response = client.get("/api/job/nope", headers={"accept-language": "en-GB,en"})
 
         assert response.status_code == 404
-        assert response.json() == {"detail": "There is no such job."}
+        assert response.json()["detail"].startswith("That job is not known any more")
 
     def test_a_cause_that_is_itself_translated_is_said_in_the_same_language(self):
         from tonie_studio.i18n import Translator
@@ -186,7 +186,7 @@ class TestNavigation:
         page = client.get("/backup").text
         header = page[page.index("<header"):page.index("</header>")]
 
-        assert '<summary aria-current="true">Pflege</summary>' in header
+        assert '<summary aria-current="true">Verwaltung</summary>' in header
         assert 'href="/backup" aria-current="page"' in header
         assert header.count("aria-current") == 2
 
@@ -472,3 +472,16 @@ class TestScreenReaders:
 
     def test_the_language_links_are_a_named_navigation(self, client):
         assert re.search(r'<nav class="languages" aria-label="', client.get("/").text)
+
+
+class TestRefusalsSayWhereToGo:
+    def test_a_job_gone_after_a_restart_points_to_the_unused_audio(self, client):
+        # Jobs live in memory; an old link after a restart finds nothing, but
+        # what the job made is in the library, played by nothing.
+        page = client.get("/job/gone123").text
+
+        assert 'href="/library?filter=unused"' in page
+        assert "neu gestartet" in page
+
+    def test_every_refusal_also_leads_back_to_the_albums(self, client):
+        assert '<a class="button" href="/">' in client.get("/tonies/0000000000000000").text

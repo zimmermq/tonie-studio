@@ -19,7 +19,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, TYPE_CHECKING, Tuple
 
 from .i18n import Problem
 
@@ -242,3 +242,8 @@ class Groups:
     def get(self, group_id: str) -> Optional[Group]:
         with self._lock:
             return self._groups.get(group_id)
+
+    def all(self) -> List[Tuple[str, Group]]:
+        """Every group still shown, as (id, group), newest first."""
+        with self._lock:
+            return list(reversed(self._groups.items()))

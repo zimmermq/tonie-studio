@@ -27,11 +27,13 @@ def register(app: FastAPI, ctx: Context) -> None:
     client = ctx.client
 
     @app.get("/radio", response_class=HTMLResponse)
-    def radio_page(request: Request):
+    def radio_page(request: Request, ruid: str = ""):
+        """``ruid`` chooses that sticker, for a page that sent someone here with one."""
         connection = client()
         tags = list_tags(connection)
         return templates.TemplateResponse(request, "radio.html", {
             "tags": tags,
+            "choose": ruid if any(tag.ruid == ruid for tag in tags) else None,
             # Not "://" in source: a library path is lib:// and would match.
             "streams": [tag for tag in tags
                         if tag.source.lower().startswith(("http://", "https://"))],

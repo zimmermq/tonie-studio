@@ -5,13 +5,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..encode import EncodeError
+from ..albumnotes import made
+from ..encode import EncodeError, taf_exists
+from ..library import is_library, path_of
 from ..listing import Column, filters
 from ..models import (CATEGORIES, DEFAULT_CATEGORY, cover_url,
                       find_model, images_cached, list_models,
@@ -70,9 +73,14 @@ def register(app: FastAPI, ctx: Context) -> None:
                 about = ctx.shop.lookup(tag.model, entry.get("language") or "")
         elif model is not None and model.shop_link:
             about = ctx.shop.lookup(model.shop_link)
+        # Audio the sticker points at but the library no longer has: the tonie
+        # looks like any other and plays nothing.
+        silent = is_library(tag.source) and not taf_exists(connection, path_of(tag.source))
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
             "model": model,
+            "silent": silent,
+            "remake": _album_of(settings.data_dir, tag.model) if silent else None,
             "entry": entry,
             "about": about,
             "year": release_year(entry.get("release")) if entry else None,
@@ -248,6 +256,12 @@ def _listed(connection: TeddyCloudClient, tags: List[TonieTag],
         info = known.get(sold_as.get(row.tag.ruid, ""))
         row.age = info.age_min if info else None
     return rows
+
+
+def _album_of(data_dir: Path, model_id: str) -> Optional[str]:
+    """The album the model was made from, if this app made it from one."""
+    return next((album for album, models in made(data_dir).items()
+                 if model_id and model_id in models), None)
 
 
 def _library_dates(connection: TeddyCloudClient) -> Dict[str, datetime]:

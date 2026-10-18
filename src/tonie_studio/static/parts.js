@@ -49,6 +49,10 @@ every(3000, async () => {
       printnext.hidden = false;
     }
   }
+  // Placing works only while this page is open: leaving it with stickers
+  // still missing is asked about first.
+  const stickersMissing = placingStickers && (running || waitingForSticker);
+  window.onbeforeunload = stickersMissing ? event => { event.preventDefault(); } : null;
   return running || (placingStickers && waitingForSticker);
 });
 

@@ -2,9 +2,15 @@
 {#- A page that only says something went wrong and how to go on. The page
     sets ``message`` (what happened, as it came), may set ``explanation``
     (what it means for the person), and sets ``action_href`` and
-    ``action_label`` for the one button on. #}
+    ``action_label`` for the button on. ``next_href`` and ``next_label`` add
+    a first, primary one where there is an obvious next step; the album list
+    is always offered as a way out. #}
 {% block body %}
 <div class="warn">{{ message }}</div>
 {% if explanation | default("") %}<p>{{ explanation }}</p>{% endif %}
-<p><a class="button" href="{{ action_href }}">{{ action_label }}</a></p>
+<p class="row wrap gap-10">
+  {% if next_href | default("") %}<a class="button primary" href="{{ next_href }}">{{ t(next_label) }}</a>{% endif %}
+  <a class="button" href="{{ action_href }}">{{ action_label }}</a>
+  {% if action_href != "/" %}<a class="button" href="/">{{ t("offline.to_albums") }}</a>{% endif %}
+</p>
 {% endblock %}

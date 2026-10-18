@@ -28,7 +28,7 @@
 <form method="post" action="/radio" enctype="multipart/form-data">
   <div class="card">
     {% call field(t("radio.which_tag"), group=True) %}
-      {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+      {{ sticker_picker(tags, "ruid", "assign.no_tags", choose=choose) }}
     {% endcall %}
 
     {% call field(t("radio.stream")) %}

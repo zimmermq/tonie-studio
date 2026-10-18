@@ -26,10 +26,10 @@
                     ("/sheet", "nav.sheet", ("/sheet",))] %}
   {%- set menus = [("nav.extras", [("/radio", "nav.radio", ("/radio",)),
                                    ("/podcasts", "nav.podcasts", ("/podcasts",)),
+                                   ("/import", "nav.import", ("/import",)),
                                    ("/listening", "nav.listening", ("/listening",))]),
                    ("nav.upkeep", [("/checkup", "nav.checkup", ("/checkup",)),
-                                   ("/backup", "nav.backup", ("/backup", "/restore")),
-                                   ("/import", "nav.import", ("/import",))])] %}
+                                   ("/backup", "nav.backup", ("/backup", "/restore"))])] %}
   <a class="brand" href="/">tonie-studio</a>
   <nav class="mainnav">
     {%- for href, key, prefixes in making %}

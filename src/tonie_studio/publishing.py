@@ -122,12 +122,14 @@ def encode_job(client: Callable[[], TeddyCloudClient], chosen: Sequence[Tuple[Tr
 
 def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome: Outcome,
                     series: Optional[str] = None, episode: Optional[str] = None,
-                    category: str = DEFAULT_CATEGORY, require_free: bool = False) -> str:
+                    category: str = DEFAULT_CATEGORY, require_free: bool = False,
+                    model_id: Optional[str] = None) -> str:
     """Put a finished encode on a tag and return the model id it became.
 
     ``series`` and ``episode`` override the names the encode was planned
     with, for the assignment page where they can still be changed.
     ``require_free`` refuses a tag that plays something, as ``publish`` does.
+    ``model_id`` writes the encode into that model rather than a new one.
     """
     model_id = publish(
         client,
@@ -140,6 +142,7 @@ def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome
         category=category,
         year=outcome.details.year,
         require_free=require_free,
+        model_id=model_id,
     )
     outcome.model, outcome.ruid = model_id, ruid
     remember(data_dir, model_id, outcome.seconds)

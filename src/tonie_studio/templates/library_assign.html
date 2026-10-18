@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_parts.html" import category_select, field, sticker_picker with context %}
+{% set page_title = t("library.assign_title") %}
+
+{% block intro %}{{ path }} - {{ t("albums.tracks", count=encoded.tracks) }}{% endblock %}
+{% block body %}
+<form method="post" action="/library/assign">
+  <input type="hidden" name="path" value="{{ path }}">
+  <div class="card">
+    {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+  </div>
+
+  <h2>{{ t("assign.what") }}</h2>
+  <div class="card">
+    {% call field(t("field.series")) %}
+      <input type="text" name="series" value="{{ series }}">
+    {% endcall %}
+    {% call field(t("field.episode")) %}
+      <input type="text" name="episode" value="{{ episode }}" required>
+    {% endcall %}
+    {% call field(t("field.category"), class="mb-0") %}
+      {{ category_select(categories) }}
+    {% endcall %}
+  </div>
+
+  <p class="row wrap gap-10">
+    <button class="primary" type="submit">{{ t("assign.title") }}</button>
+    <a class="button" href="/library?filter=unused">{{ t("common.cancel") }}</a>
+  </p>
+</form>
+{% endblock %}

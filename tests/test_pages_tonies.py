@@ -167,6 +167,39 @@ class TestEditTonie:
 
         assert "/delete" not in page
 
+    def test_a_tonie_whose_audio_is_gone_says_so_and_how_to_make_it_again(
+            self, client, runner, teddycloud):
+        # It looks like any other tonie and plays nothing; only the checkup
+        # would know, and nobody with a silent tonie thinks to look there.
+        publish_album(client, runner, teddycloud)
+        source = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+        teddycloud.files.pop("/" + source.split("lib://", 1)[1])
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert 'class="warn ' in page
+        assert 'href="/batch?ids=' in page
+
+    def test_a_tonie_with_its_audio_does_not_warn(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        assert 'class="warn' not in client.get("/tonies/7ab4ed0e500304e0").text
+
+    def test_a_free_sticker_offers_what_can_go_on_it(self, client):
+        # Its page is where someone lands from the free-sticker chip; a page
+        # saying "nothing to edit" and no button is a dead end.
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert 'href="/radio?ruid=7ab4ed0e500304e0"' in page
+        assert 'href="/podcasts?ruid=7ab4ed0e500304e0"' in page
+        assert 'href="/"' in page
+
+    @pytest.mark.parametrize("path", ["/radio", "/podcasts"])
+    def test_the_sticker_it_came_from_is_chosen_there(self, client, path):
+        page = client.get(f"{path}?ruid=deb4ed0e500304e0").text
+
+        assert re.search(r'value="deb4ed0e500304e0"[^>]*checked', page)
+
     def test_its_podcast_subscription_goes_too(self, client, runner, teddycloud, settings):
         from tonie_studio.podcast import Subscription, add_subscription, load_subscriptions
 
@@ -306,6 +339,28 @@ class TestLibraryPage:
 
         assert response.status_code == 303
         assert "/Lichterkinder/Halloween.taf" not in teddycloud.files
+
+    def test_unused_audio_can_be_put_on_a_sticker(self, client, runner, teddycloud):
+        # After a restart the encode that made it is gone, and with it the
+        # page that would have put it on a sticker.
+        encode_and_assign_page(client, runner)
+        row = self.row(client.get("/library").text, "/Lichterkinder/Halloween.taf")
+        assert 'href="/library/assign?path=/Lichterkinder/Halloween.taf"' in row
+
+        page = client.get("/library/assign", params={"path": "/Lichterkinder/Halloween.taf"}).text
+        assert 'name="ruid"' in page and 'value="Lichterkinder"' in page
+
+        response = client.post("/library/assign", data={
+            "path": "/Lichterkinder/Halloween.taf", "ruid": "deb4ed0e500304e0",
+            "series": "Lichterkinder", "episode": "Halloween", "category": "music"},
+            follow_redirects=False)
+
+        assert response.status_code == 303
+        entry = teddycloud.tag_entries["deb4ed0e500304e0"]
+        assert entry["source"] == "lib://Lichterkinder/Halloween.taf" and entry["tonie_model"]
+
+    def test_putting_audio_the_library_lacks_on_a_sticker_is_refused(self, client):
+        assert client.get("/library/assign", params={"path": "/Weg/Weg.taf"}).status_code == 404
 
     def test_refuses_a_taf_the_library_does_not_have(self, client, teddycloud):
         response = client.post("/library/delete", data={"path": "/Weg/../Weg.taf"},

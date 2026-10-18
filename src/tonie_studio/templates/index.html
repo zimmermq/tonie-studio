@@ -7,7 +7,7 @@
 {% set filter_label = "albums.filter." %}
 {% set search, search_label, no_match = "albums.search", "albums.search_label", "albums.no_match" %}
 {% set list_id, list_class, headings, first = "albums", "list", false, "name" %}
-{% set page_words = ["upload.picked", "batch.picked", "albums.pick_slow"] %}
+{% set page_words = ["upload.picked", "upload.sending", "upload.failed", "batch.picked", "albums.pick_slow"] %}
 {% set page_data = {"slowPick": slow_pick} %}
 
 {% macro album_row(id, album) -%}
@@ -38,6 +38,12 @@
 {% block intro %}{{ t("albums.intro") }}{% endblock %}
 
 {% block before_list %}
+{% for group_id, episode in placing %}
+<div class="info row wrap gap-10 items-center">
+  <span class="grow">{{ t("albums.placing", episode=episode) }}</span>
+  <a class="button primary" href="/parts/{{ group_id }}">{{ t("albums.placing_go_on") }}</a>
+</div>
+{% endfor %}
 {% if jobs %}
 <h2>{{ t("albums.running") }}</h2>
 {% for job in jobs %}

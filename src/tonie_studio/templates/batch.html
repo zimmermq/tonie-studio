@@ -43,7 +43,9 @@
         </span>
       </span>
       <span class="muted sticker right">
-        {% if row.tonie %}
+        {% if row.rebuild %}
+        <span class="state-done">{{ t("batch.rebuild") }}</span>
+        {% elif row.tonie %}
         <span class="state-failed">{{ t("batch.has_tonie", model=row.tonie) }}</span>
         {% elif row.occupied and not row.reusable %}
         <span class="state-failed">{{ t("batch.exists_used" if row.in_use else "batch.exists_unused") }}</span>

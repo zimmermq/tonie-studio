@@ -14,14 +14,15 @@
     chosen when given and shown as just placed; otherwise the first free one
     is. A sticker that plays something asks before it is replaced, by the
     data-confirm the page's shared submit handler reads. ``empty`` is said
-    when there is no sticker to choose. #}
-{% macro sticker_picker(tags, name, empty, preselect=None) -%}
+    when there is no sticker to choose. ``choose`` chooses a sticker without
+    calling it just placed, for a page someone came to from that sticker. #}
+{% macro sticker_picker(tags, name, empty, preselect=None, choose=None) -%}
 <div class="picker" data-picker>
   {% if tags %}
   <input type="search" class="picker-find" data-no-enter placeholder="{{ t('picker.search') }}"
          autocomplete="off" aria-label="{{ t('picker.search_label') }}">
   <div class="picker-list">
-    {%- set chosen = preselect or (tags | rejectattr("assigned") | map(attribute="ruid") | first) %}
+    {%- set chosen = preselect or choose or (tags | rejectattr("assigned") | map(attribute="ruid") | first) %}
     {% for tag in tags %}
     <label class="picker-row" data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.uid | replace(':', '')) | lower }}">
       <input type="radio" name="{{ name }}" value="{{ tag.ruid }}" required

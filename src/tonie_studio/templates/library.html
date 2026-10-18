@@ -33,6 +33,9 @@
     {%- for tag in item.played_by %}<a href="/tonies/{{ tag.ruid }}">{{ tag.label }}</a>{% if not loop.last %}, {% endif %}{% endfor -%}
   </span>
   <span class="t-delete">
+    {%- if not item.played_by and item.origin != "box" %}
+    <a class="small-text block" href="/library/assign?path={{ taf.path | urlencode }}">{{ t("library.assign") }}</a>
+    {%- endif %}
     {#- The box's own sounds are played by the box itself and stay. Deleting a
         taf a sticker plays leaves that tonie silent; sometimes that is the
         intent - replacing the audio underneath - so it asks rather than refuses.

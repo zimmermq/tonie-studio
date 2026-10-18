@@ -32,11 +32,20 @@
 </div>
 
 {% if not done and changing %}
-<form class="mt-14" method="post" action="/restore/{{ token }}">
+<p class="muted">{{ t("restore.save_first_hint") }}</p>
+<form class="mt-14 row wrap gap-10" method="post" action="/restore/{{ token }}">
+  <a class="button" href="/backup/download">{{ t("restore.save_first") }}</a>
   <button class="primary" type="submit">{{ t("restore.confirm") }}</button>
-  <a class="button ml-12" href="/backup">{{ t("common.cancel") }}</a>
+  <a class="button" href="/backup">{{ t("common.cancel") }}</a>
 </form>
 {% else %}
-<p><a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a></p>
+<p class="row wrap gap-10">
+  {% if silent_albums | default([]) %}
+  {#- The stickers are back, their audio is not: a backup holds none. #}
+  <a class="button primary" href="/batch?{% for album in silent_albums %}ids={{ album | urlencode }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">
+    {{ t("restore.rebuild", count=silent_albums | length) }}</a>
+  {% endif %}
+  <a class="button" href="/tonies">{{ t("restore.to_tonies") }}</a>
+</p>
 {% endif %}
 {% endblock %}

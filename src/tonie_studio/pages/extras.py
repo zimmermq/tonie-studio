@@ -80,13 +80,15 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.get("/podcasts", response_class=HTMLResponse)
-    def podcasts_page(request: Request):
+    def podcasts_page(request: Request, ruid: str = ""):
+        """``ruid`` chooses that sticker, for a page that sent someone here with one."""
         tags = list_tags(client())
         labels = {tag.ruid: tag.label for tag in tags}
         return templates.TemplateResponse(request, "podcasts.html", {
             "subscriptions": load_subscriptions(settings.data_dir),
             "labels": labels,
             "tags": tags,
+            "choose": ruid if ruid in labels else None,
             "keep": DEFAULT_KEEP,
         })
 

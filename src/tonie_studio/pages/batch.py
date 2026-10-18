@@ -17,7 +17,7 @@ from ..models import list_models
 from ..pictures import DEFAULT_SIZE
 from ..planning import plan_batch
 from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, job_states,
-                          place, put_on_sticker)
+                          place, publish_outcome, put_on_sticker)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from .common import Context, Refused, album_or_404, refused, translator
@@ -75,6 +75,21 @@ def register(app: FastAPI, ctx: Context) -> None:
         })
 
 
+    def _rebuild(row) -> str:
+        """Encode a silent tonie's album again and give its model the new audio."""
+        (part,) = row.parts
+        details = Details(
+            series=row.series, episode=part.episode,
+            cover=str(row.album.cover_candidates[0]) if row.album.cover_candidates else None,
+            year=row.album.year, album=row.identifier)
+
+        def republish(outcome: Outcome) -> None:
+            publish_outcome(client(), settings.data_dir, row.rebuild_ruid, outcome,
+                            model_id=row.tonie)
+
+        return jobs.submit("encode", part.target, work=encode_job(
+            client, part.tracks, part.target, details, after=republish))
+
     @app.post("/batch")
     def start_batch(
         ids: List[str] = Form(default=[]),
@@ -104,6 +119,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         placing = Placing([], by_hand=placing_wanted)
         for row in rows:
             if row.skipped:
+                continue
+            if row.rebuild:
+                job_ids.append(_rebuild(row))
                 continue
             tags = [None] * len(row.parts) if placing_wanted or not row.tags else row.tags
             for part, ruid in zip(row.parts, tags, strict=True):

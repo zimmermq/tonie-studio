@@ -8,7 +8,7 @@ and the batch page only shows the plan.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -17,7 +17,7 @@ from .albumnotes import match_by_tracks
 from .batch import allocate, episode_order
 from .encode import existing_taf, library_path, taf_exists
 from .i18n import Problem
-from .library import played, same, source_of
+from .library import is_library, path_of, played, same, source_of
 from .models import Model
 from .parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from .publishing import free_tags
@@ -109,6 +109,13 @@ class BatchRow:
     # The model already made from this album, if any.
     tonie: str = ""
     tags: List[str] = field(default_factory=list)
+    # A sticker that plays this album's tonie from a taf that is gone: the
+    # album is encoded again to that very path and the tonie keeps its model.
+    rebuild_ruid: str = ""
+
+    @property
+    def rebuild(self) -> bool:
+        return bool(self.rebuild_ruid)
 
     @property
     def targets(self) -> List[str]:
@@ -116,7 +123,9 @@ class BatchRow:
 
     @property
     def skipped(self) -> bool:
-        """Left out: its tonie exists, or its taf is there and cannot be reused."""
+        """Left out: its tonie exists and plays, or its taf is there and cannot be reused."""
+        if self.rebuild:
+            return False
         return bool(self.tonie) or (self.occupied and not self.reusable)
 
 
@@ -143,7 +152,8 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
     empty, since that is a choice the album page allows too.
     """
     series, episodes = series or {}, episodes or {}
-    playing = played(tag.source for tag in list_tags(client))
+    tags = list_tags(client)
+    playing = played(tag.source for tag in tags)
     rows = []
     for identifier, album in albums:
         row_series = (series[identifier] if identifier in series
@@ -160,15 +170,35 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
             tonie=((tonies or {}).get(identifier)
                    or match_by_tracks([track.title for track in album.tracks], models) or ""),
         ))
+        _plan_rebuild(client, rows[-1], tags)
     # Grouped by series and in episode order within one, which is also the
     # order the stickers are handed out in.
     rows.sort(key=lambda row: (row.series.casefold(), episode_order(row.episode)))
 
-    waiting = [row for row in rows if not row.skipped]
+    waiting = [row for row in rows if not row.skipped and not row.rebuild]
     for row, tags in zip(waiting, allocate([len(row.parts) for row in waiting],
                                            free_tags(client)), strict=True):
         row.tags = tags
     return rows
+
+
+def _plan_rebuild(client: TeddyCloudClient, row: BatchRow, tags: Sequence) -> None:
+    """Make ``row`` encode its album again where its tonie's sticker expects the audio.
+
+    Only for an album of one part: a tonie of several parts is several
+    models, and which part belongs where is no longer known. The path is the
+    sticker's own, not the one the batch would choose, so the sticker plays
+    again without being touched and every other sticker sharing it too.
+    """
+    if not row.tonie or len(row.parts) != 1:
+        return
+    for tag in tags:
+        if (tag.model and tag.model.lower() == row.tonie.lower() and is_library(tag.source)
+                and not taf_exists(client, path_of(tag.source))):
+            row.parts[0] = replace(row.parts[0], target=path_of(tag.source))
+            row.occupied = row.reusable = False
+            row.rebuild_ruid = tag.ruid
+            return
 
 
 def expected_targets(album: AlbumSummary, archive_dir: Path, upload_dir: Path) -> List[str]:

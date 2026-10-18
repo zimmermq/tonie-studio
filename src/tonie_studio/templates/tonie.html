@@ -14,7 +14,7 @@
 
 {% block badges %}
 {%- if model %}
-<span class="pill done">{{ t("tonie.badge_own", model=model.id) }}</span>
+<span class="pill done" title="{{ model.id }}">{{ t("tonie.badge_own") }}</span>
 {%- elif tag.model %}
 {#- Why there is nothing to edit, for whoever wonders; the badge says enough. #}
 <span class="pill done" title="{{ t('tonie.official', model=tag.model) }}">{{ t("tonie.badge_official") }}</span>
@@ -33,9 +33,22 @@
 {% if model %}
 <a class="button{% if not about %} primary{% endif %}" href="/tonies/{{ tag.ruid }}/shop">{{ t("tonie.shop_search") }}</a>
 {% endif %}
+{% if not tag.model %}
+{#- What can go on a sticker without a model: the page is otherwise a dead end. #}
+<a class="button primary" href="/">{{ t("tonie.put_album") }}</a>
+<a class="button" href="/radio?ruid={{ tag.ruid }}">{{ t("tonie.put_radio") }}</a>
+<a class="button" href="/podcasts?ruid={{ tag.ruid }}">{{ t("tonie.put_podcast") }}</a>
+{% endif %}
 {% endblock %}
 
 {% block body %}
+{% if silent %}
+<div class="warn row wrap gap-10 items-center">
+  <span class="grow">{{ t("tonie.silent") }}</span>
+  {% if remake %}<a class="button primary" href="/batch?ids={{ remake | urlencode }}">{{ t("tonie.remake") }}</a>
+  {% else %}<a class="button" href="/">{{ t("tonie.put_album") }}</a>{% endif %}
+</div>
+{% endif %}
 {%- set description = about.description if about else "" %}
 {% if description or tracks or model or not tag.model %}
 <div class="card columns">

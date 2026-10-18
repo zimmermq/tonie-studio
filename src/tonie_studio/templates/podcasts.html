@@ -36,7 +36,7 @@
     <input type="url" name="feed" required placeholder="https://...">
   {% endcall %}
   {% call field(t("podcasts.which_sticker"), group=True) %}
-    {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+    {{ sticker_picker(tags, "ruid", "assign.no_tags", choose=choose) }}
   {% endcall %}
   <div class="row stackable wrap gap-12 items-end">
     {% call field(t("podcasts.episodes"), class="m-0") %}
