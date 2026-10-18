@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 {% set page_title = t("nav.checkup") %}
 
+{% block head %}
+{#- A run for all stickers is watched by asking again; this works without
+    scripts and costs one small page every few seconds. #}
+{% if running %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
 {% block intro %}{{ t("checkup.intro") }}{% endblock %}
 {% block body %}
+{% if running %}
+<div class="info" role="status">
+  {%- if running.total %}{{ t("checkup.bulk_running", done=running.done_count, count=running.total) }}
+  {%- else %}{{ t("checkup.bulk_preparing") }}{% endif -%}
+</div>
+{% else %}
+{% if failed %}
+<div class="info state-failed" role="alert">{{ t("checkup.bulk_failed", detail=failed) }}</div>
+{% endif %}
 {% if done %}
 <div class="info">{{ t("checkup.done") }}</div>
 {% endif %}
@@ -76,4 +90,5 @@
 {% endif %}
 {% endfor %}
 
+{% endif %}
 {% endblock %}

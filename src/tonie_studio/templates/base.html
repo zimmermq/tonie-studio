@@ -12,6 +12,7 @@
 <title>{% if page_title is defined %}{{ page_title }} - {% endif %}tonie-studio</title>
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 <script src="{{ asset('app.js') }}"></script>
+{% block head %}{% endblock %}
 </head>
 <body>
 <header>

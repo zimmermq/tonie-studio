@@ -1,6 +1,6 @@
 """Tests for the pages of the checkup, the backup and the restore."""
 
-
+import threading
 
 from web_helpers import encode_and_assign_page, first_album_id, publish_album
 
@@ -47,11 +47,68 @@ class TestCheckupPage:
         page = client.get("/checkup").text
         response = client.post("/checkup/fix_all", data={"fix": "nocloud"},
                                follow_redirects=False)
+        _finish_bulk(client, response)
 
         assert 'action="/checkup/fix_all"' in page
         assert response.status_code == 303
         assert all(entry["nocloud"] for entry in teddycloud.tag_entries.values()
                    if entry["source"])
+
+    def test_answers_at_once_and_works_on_behind_it(self, client, runner, teddycloud):
+        # Hundreds of stickers take longer than a gateway in front of the app
+        # waits for an answer; the browser then saw an error for work that
+        # went on and succeeded.
+        publish_album(client, runner, teddycloud)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = False
+        writing = threading.Event()
+        original = teddycloud.set_tag
+        teddycloud.set_tag = lambda *a, **k: writing.wait(5) and original(*a, **k)
+
+        response = client.post("/checkup/fix_all", data={"fix": "nocloud"},
+                               follow_redirects=False)
+        watching = client.get(response.headers["location"])
+
+        assert response.headers["location"].startswith("/checkup?running=")
+        assert 'http-equiv="refresh"' in watching.text
+        writing.set()
+        _finish_bulk(client, response)
+
+    def test_a_finished_run_says_so(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = False
+
+        response = client.post("/checkup/fix_all", data={"fix": "nocloud"},
+                               follow_redirects=False)
+        _finish_bulk(client, response)
+        after = client.get(response.headers["location"], follow_redirects=False)
+
+        assert after.status_code == 303 and after.headers["location"] == "/checkup?done=nocloud"
+
+    def test_a_run_that_fails_says_why_on_the_checkup(self, client, runner, teddycloud):
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        publish_album(client, runner, teddycloud)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = False
+
+        def refuse(*args, **kwargs):
+            raise TeddyCloudError("teddyCloud said no")
+
+        teddycloud.set_tag = refuse
+        response = client.post("/checkup/fix_all", data={"fix": "nocloud"},
+                               follow_redirects=False)
+        _finish_bulk(client, response)
+        page = client.get(response.headers["location"])
+
+        assert page.status_code == 200 and "teddyCloud said no" in page.text
+        assert 'http-equiv="refresh"' not in page.text
+
+    def test_a_run_the_app_no_longer_knows_is_just_the_checkup(self, client):
+        response = client.get("/checkup?running=gone", follow_redirects=False)
+
+        assert response.headers["location"] == "/checkup"
 
     def test_only_a_harmless_repair_is_made_all_at_once(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
@@ -313,3 +370,9 @@ class TestBackupPageSizes:
 
     def test_no_fixed_size_promise_is_left(self, client):
         assert "Megabyte" not in client.get("/backup").text
+
+
+def _finish_bulk(client, response):
+    """Wait for the run a fix_all answer points at."""
+    job_id = response.headers["location"].split("running=")[1]
+    assert client.app.state.prints.get(job_id).done.wait(10)

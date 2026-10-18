@@ -17,16 +17,21 @@ from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup,
                       drop_parked, park, plan_restore, read_backup, read_parked)
 from ..checkup import BULK_FIXES, TAG_KINDS, apply_fix, examine
 from ..encode import EncodeError, list_tafs
+from ..jobs import JobState
 from ..library import is_library, played, same
 from ..podcast import SERIES as PODCAST_SERIES
 from ..tags import TonieError, list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from .common import Context, Refused, refusing
+from .common import Context, Refused, refusing, translator
 
 log = logging.getLogger(__name__)
 
 # How many restore results stay on show.
 KEEP_RESTORED = 5
+
+
+# The job kind of a repair run for all stickers at once.
+BULK_KIND = "checkup"
 
 
 def register(app: FastAPI, ctx: Context) -> None:
@@ -47,7 +52,22 @@ def register(app: FastAPI, ctx: Context) -> None:
         return {"busy": busy, "busy_folders": folders}
 
     @app.get("/checkup", response_class=HTMLResponse)
-    def checkup_page(request: Request, done: str = "", stale: str = ""):
+    def checkup_page(request: Request, done: str = "", stale: str = "", running: str = ""):
+        failed = None
+        if running:
+            # A run for all stickers, watched until it ends. While it runs
+            # the page shows only how far it got: checking everything again
+            # every few seconds would compete with the run for teddyCloud.
+            job = ctx.prints.get(running)
+            if job is None or job.kind != BULK_KIND:
+                return RedirectResponse("/checkup", 303)
+            if job.state is JobState.DONE:
+                return RedirectResponse(f"/checkup?done={job.label}", 303)
+            if job.state is not JobState.FAILED:
+                return templates.TemplateResponse(request, "checkup.html", {
+                    "running": job, "findings": [], "album_of": {}, "tag_kinds": TAG_KINDS,
+                })
+            failed = job.problem.say(translator(request)) if job.problem else job.error
         findings = examine(client(), **work_in_progress())
         # A silent tonie made from an album here can be encoded again from it.
         album_of = {model: album for album, models in made(settings.data_dir).items()
@@ -58,6 +78,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "tag_kinds": TAG_KINDS,
             "done": done,
             "stale": stale,
+            "failed": failed,
         })
 
 
@@ -91,14 +112,27 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         if fix not in BULK_FIXES:
             raise Refused(400, "checkup.not_for_all")
+        # Hundreds of stickers take longer than a proxy in front of the app
+        # waits for an answer, so the run goes on behind the page, which
+        # watches it. One run at a time: a second click joins the first.
+        under_way = next((job for job in ctx.prints.all() if job.kind == BULK_KIND
+                          and job.state in (JobState.QUEUED, JobState.RUNNING)), None)
+        if under_way is None:
+            job_id = ctx.prints.submit(BULK_KIND, fix, lambda progress: fix_everywhere(fix, progress))
+        else:
+            job_id = under_way.id
+        return RedirectResponse(f"/checkup?running={job_id}", 303)
+
+    def fix_everywhere(fix: str, progress) -> int:
+        """Apply ``fix`` wherever the checks find it due; returns how many."""
         connection = client()
         targets = [finding.target for finding in examine(connection, **work_in_progress())
                    if finding.fix == fix]
-        with refusing(TonieError, EncodeError):
-            for target in targets:
-                apply_fix(connection, settings.data_dir, fix, target)
+        for number, target in enumerate(targets):
+            progress(fix, number, len(targets))
+            apply_fix(connection, settings.data_dir, fix, target)
         log.info("checkup: %s applied to %d sticker(s)", fix, len(targets))
-        return RedirectResponse(f"/checkup?done={fix}", 303)
+        return len(targets)
 
 
     @app.get("/backup", response_class=HTMLResponse)
