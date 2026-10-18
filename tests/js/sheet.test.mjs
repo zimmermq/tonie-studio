@@ -13,17 +13,18 @@ function sticker(model, search, count = 0) {
   });
 }
 
-async function page(rows) {
+async function page(rows, layouts = []) {
   const find = element('find');
   find.value = '';
   const elements = await runPage(['app.js', 'sheet.js'], {
     ids: ['total', 'onlyticked', 'shown', 'nohits', 'tickshown', 'untick'],
     prepared: { find },
-    pageData: { perPage: 20, mostCopies: 99,
+    queries: { '.sticker': rows, 'input[name=layout]': layouts },
+    pageData: { layouts: { sheet: { perPage: 20, diameterMm: 46 },
+                           punch: { perPage: 15, diameterMm: 44.5 } }, mostCopies: 99,
                 words: { 'sheet.total': '{count} covers', 'sheet.sheets': '{count} sheets',
                          'sheet.nothing_chosen': 'none', 'sheet.pictures': '',
                          'sheet.shown_of': '{shown} of {count}' } },
-    queries: { '.sticker': rows },
   });
   const search = text => { find.value = text; find.fire('input'); };
   const shown = () => rows.filter(row => !row.hidden).map(row => row.dataset.search.split(' ')[0]);
@@ -97,4 +98,17 @@ const ROWS = () => [
   elements.untick.fire('click');
   assert.equal(pick(rows[0]).value, '0:fill:TS-1');
   assert.equal(elements.nohits.hidden, false);
+}
+
+// The count of sheets follows how the covers are cut.
+{
+  const choice = value => Object.assign(element('', '', {}), { value, checked: value === 'sheet' });
+  const layouts = [choice('sheet'), choice('punch')];
+  const rows = Array.from({ length: 16 }, (_, n) => sticker(`TS-${n}`, `t${n}`, 1));
+  const { elements } = await page(rows, layouts);
+  assert.equal(elements.total.textContent, '16 covers, 1 sheets');
+  layouts[0].checked = false;
+  layouts[1].checked = true;
+  layouts[1].fire('change');
+  assert.equal(elements.total.textContent, '16 covers, 2 sheets');
 }

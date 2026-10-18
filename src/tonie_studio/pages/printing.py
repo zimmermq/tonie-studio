@@ -23,7 +23,7 @@ from ..jobs import Job, JobRunner, JobState, new_id
 from ..naming import Catalog
 from ..overview import Entry, build_overview
 from ..runtimes import minutes, playing_times
-from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
+from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Back, Layout, Sticker, back_lines,
                      build_sheet)
 from ..tags import list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
@@ -64,19 +64,21 @@ def register(app: FastAPI, ctx: Context) -> None:
             if row.model.id in preset:
                 row.ticked = True
                 preset.discard(row.model.id)
-        models = list({row.model.id: row.model for row in rows}.values())
         return templates.TemplateResponse(request, "sheet.html", {
             "rows": rows,
             "images_cached": cached,
             "query": q.strip(),
-            "per_page": PER_PAGE,
+            "layouts": list(LAYOUTS.values()),
+            # What the page's script needs of each: the count of sheets and
+            # the size the text side is previewed at.
+            "layout_sizes": {layout.key: {"perPage": layout.per_page,
+                                          "diameterMm": layout.diameter_mm}
+                             for layout in LAYOUTS.values()},
             "most_copies": MOST_COPIES,
             "fill": FILL,
             "fit": FIT,
             "preset": bool(model),
-            "backs": _back_preview(models, playing_times(settings.data_dir), translator(request)),
             "back_fade": BACK_FADE,
-            "diameter_mm": DIAMETER_MM,
             "shift": read_shift(settings.data_dir),
             "expected": expected_first_centre(),
             "calibrated": bool(calibrated),
@@ -132,6 +134,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         upload_mode: str = Form(FILL),
         back: str = Form(""),
         back_tracks: str = Form(""),
+        layout: str = Form(SHEET.key),
     ):
         """Start making the sheet and send the browser to watch it.
 
@@ -157,7 +160,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         target = settings.data_dir / f"sheet-{job_id}.pdf"
         prints.submit("sheet", f"sheet of {len(stickers)} motif(s)",
                       lambda progress: _make_sheet(stickers, target, read_shift(settings.data_dir),
-                                                   progress),
+                                                   progress, LAYOUTS.get(layout, SHEET)),
                       job_id=job_id)
         return RedirectResponse(f"/sheet/print/{job_id}", 303)
 
@@ -196,6 +199,25 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(404, "error.sheet_gone")
         return FileResponse(job.result.path, media_type="application/pdf",
                             filename="traveltonies.pdf")
+
+    @app.get("/api/sheet/back")
+    def back_preview(request: Request, model: str, layout: str = SHEET.key):
+        """The laid-out text side of one model, for the page to draw.
+
+        Asked for when the page shows it rather than sent along with the page:
+        the lines depend on the layout, and a page of every tonie would carry
+        them all twice over.
+        """
+        known = _known_models(client(), namer.catalog()[0])
+        if model not in known:
+            raise Refused(404, "tonie.model_missing", model=model)
+        back = _back_of(known[model], playing_times(settings.data_dir).get(model),
+                        translator(request))
+        return {
+            variant: [{"text": line.text, "size": line.size, "bold": line.bold}
+                      for line in back_lines(back, with_tracks, LAYOUTS.get(layout, SHEET))]
+            for variant, with_tracks in (("tracks", True), ("plain", False))
+        }
 
 
 # --- helpers --------------------------------------------------------------
@@ -352,12 +374,13 @@ class MadeSheet:
 
 
 def _make_sheet(stickers: Sequence[Sticker], target: Path, shift: Tuple[float, float],
-                progress: Callable[[str, int, int], None]) -> MadeSheet:
+                progress: Callable[[str, int, int], None], layout: Layout = SHEET) -> MadeSheet:
     """Build the sheet at ``target``, leaving nothing behind when that fails."""
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         skipped = build_sheet(stickers, target, shift,
-                              progress=lambda done, total: progress("pictures", done, total))
+                              progress=lambda done, total: progress("pictures", done, total),
+                              layout=layout)
     except ValueError as error:
         # Every picture asked for was unreadable, so there is nothing to print.
         target.unlink(missing_ok=True)
@@ -433,24 +456,6 @@ def _back_of(model: Model, seconds: Optional[int] = None,
         tracks=list(model.tracks),
         language=translate.lang,
     )
-
-
-def _back_preview(models: Sequence[Model], times: Dict[str, int],
-                  translate: Optional[Translator] = None) -> Dict[str, Dict[str, List[Dict]]]:
-    """The laid-out text side of every model, for the page to draw.
-
-    The lines come from the same call the sheet makes, so what the preview
-    shows is what gets printed; only the font differs.
-    """
-    preview = {}
-    for model in models:
-        back = _back_of(model, times.get(model.id), translate)
-        preview[model.id] = {
-            variant: [{"text": line.text, "size": line.size, "bold": line.bold}
-                      for line in back_lines(back, with_tracks=with_tracks)]
-            for variant, with_tracks in (("tracks", True), ("plain", False))
-        }
-    return preview
 
 
 def _cover_bytes(client: TeddyCloudClient, model: Optional[Model]) -> Optional[bytes]:

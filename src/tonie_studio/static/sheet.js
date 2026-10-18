@@ -1,10 +1,34 @@
 // The script of the sheet page; see templates/sheet.html.
 const data = JSON.parse(document.getElementById('page-data').textContent);
 
-const perPage = data.perPage;
 const words = data.words;
 const rows = [...document.querySelectorAll('.sticker')];
 const total = document.getElementById('total');
+
+// How the covers are cut: it decides how many fit on a sheet and how big the
+// text side is. Remembered in this browser, since a person owns one punch or
+// none; storage may be off, and the page then starts with the first choice.
+const LAYOUT_KEY = 'sheet.layout';
+const layoutChoices = [...document.querySelectorAll('input[name=layout]')];
+const layoutOf = () => (layoutChoices.find(choice => choice.checked) || {}).value || 'sheet';
+const layout = () => data.layouts[layoutOf()] || Object.values(data.layouts)[0];
+try {
+  const remembered = layoutChoices.find(choice => choice.value === localStorage.getItem(LAYOUT_KEY));
+  if (remembered) for (const choice of layoutChoices) choice.checked = choice === remembered;
+} catch { /* not remembered */ }
+const layoutChanged = [];
+function showLayout() {
+  for (const intro of document.querySelectorAll('[data-layout]')) {
+    intro.hidden = intro.dataset.layout !== layoutOf();
+  }
+  for (const step of layoutChanged) step();
+}
+for (const choice of layoutChoices) {
+  choice.addEventListener('change', () => {
+    try { localStorage.setItem(LAYOUT_KEY, layoutOf()); } catch { /* not remembered */ }
+    showLayout();
+  });
+}
 
 // Both circles show the same cover, each rendered in its own mode, so the
 // choice is made by looking rather than by reading a description of it. The
@@ -59,7 +83,7 @@ function setCount(row, value) {
 
 function refresh() {
   const sum = rows.reduce((n, row) => n + countOf(row), 0);
-  const sheets = Math.ceil(sum / perPage);
+  const sheets = Math.ceil(sum / layout().perPage);
   total.textContent = sum
     ? say(words['sheet.total'], {count: sum}) + ', ' + say(words['sheet.sheets'], {count: sheets})
     : words['sheet.nothing_chosen'];
@@ -127,6 +151,7 @@ if (fillsheet) fillsheet.addEventListener('click', () => {
   // Spread a whole sheet over what is ticked, the remainder onto the first.
   const chosen = rows.filter(row => countOf(row) > 0);
   const spread = chosen.length ? chosen : rows;
+  const perPage = layout().perPage;
   const each = Math.floor(perPage / spread.length);
   spread.forEach((row, index) => {
     setCount(row, each + (index === 0 ? perPage % spread.length : 0));
@@ -139,26 +164,35 @@ if (extra) {
              files => say(words['sheet.pictures'], {count: files.length}));
 }
 
-// The text side. The server already decided which lines fit, so this only
-// has to draw them: a preview that re-decided would promise what the sheet
-// does not deliver.
-const backdata = document.getElementById('backdata');
-if (backdata) {
-  const backs = JSON.parse(backdata.textContent);
-  const disc = document.getElementById('backdisc');
+// The text side. The server decides which lines fit, so this only has to
+// draw them: a preview that re-decided would promise what the sheet does not
+// deliver. The lines are asked for when shown, per model and layout.
+const disc = document.getElementById('backdisc');
+if (disc) {
+  const backs = {};
+  async function backOf(model) {
+    const key = `${model} ${layoutOf()}`;
+    if (!(key in backs)) {
+      const params = new URLSearchParams({model, layout: layoutOf()});
+      const answer = await fetch(`/api/sheet/back?${params}`);
+      backs[key] = answer.ok ? await answer.json() : null;
+    }
+    return backs[key];
+  }
   const who = document.getElementById('backwho');
   const wantback = document.getElementById('wantback');
   const wanttracks = document.getElementById('wanttracks');
   // The circle is drawn at this many pixels for a sticker of this many
   // millimetres, so a point on screen covers what it covers on paper.
   const DISC_PX = 240;
-  const PX_PER_PT = DISC_PX / (data.diameterMm / 25.4 * 72);
+  const pxPerPt = () => DISC_PX / (layout().diameterMm / 25.4 * 72);
 
-  function drawBack() {
+  async function drawBack() {
     const row = rows.find(row => countOf(row) > 0) || rows[0];
     const model = row && modelOf(row);
-    const back = model && backs[model];
+    const back = model && await backOf(model);
     if (!back) { disc.style.display = 'none'; return; }
+    const PX_PER_PT = pxPerPt();
 
     disc.style.display = '';
     // The same white the server mixes into the cover before printing, laid
@@ -195,10 +229,13 @@ if (backdata) {
       if (wantback.checked) drawBack();
     });
   }
+  layoutChanged.push(() => { if (wantback.checked) drawBack(); });
   drawBack();
   showBack();
 }
 
+layoutChanged.push(refresh);
+showLayout();
 for (const row of rows) setCount(row, countOf(row));
 refresh();
 filter();

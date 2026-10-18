@@ -11,8 +11,10 @@ import re
 import pytest
 from PIL import Image
 
-from tonie_studio.sheet import (BLEED_MM, COLUMNS, DIAMETER_MM, FIT, FIT_FACTOR, GAP_MM, PER_PAGE,
-                                ROWS, Sticker, build_sheet, sticker_positions)
+from tonie_studio.sheet import (FIT, FIT_FACTOR, LAYOUTS, PUNCH, SHEET, Sticker, build_sheet,
+                                sticker_positions)
+
+PER_PAGE = SHEET.per_page
 
 
 def _image(width=800, height=800, colour=(200, 60, 40)) -> bytes:
@@ -31,32 +33,69 @@ def _pages(pdf: bytes) -> int:
     return len(re.findall(rb"/Type\s*/Page[^s]", pdf))
 
 
+def used_mm(layout):
+    """Width and height of the grid on paper, from outer cut edge to outer cut edge."""
+    edge = layout.diameter_mm if layout.cut == "circle" else layout.pitch_mm
+    return ((layout.columns - 1) * layout.pitch_mm + edge,
+            (layout.rows - 1) * layout.pitch_mm + edge)
+
+
 class TestGeometry:
     def test_the_sticker_is_the_size_the_tags_take(self):
-        assert DIAMETER_MM == 46
+        assert SHEET.diameter_mm == 46
 
     def test_twenty_fit_on_a_sheet(self):
-        assert (COLUMNS, ROWS, PER_PAGE) == (4, 5, 20)
+        assert (SHEET.columns, SHEET.rows, SHEET.per_page) == (4, 5, 20)
 
-    def test_the_grid_stays_inside_an_a4_page(self):
-        width_used = COLUMNS * DIAMETER_MM + (COLUMNS - 1) * GAP_MM
-        height_used = ROWS * DIAMETER_MM + (ROWS - 1) * GAP_MM
-
-        assert width_used <= 210
-        assert height_used <= 297
-
-    def test_leaves_a_margin_wide_enough_for_a_printer(self):
+    @pytest.mark.parametrize("layout", LAYOUTS.values(), ids=LAYOUTS.keys())
+    def test_leaves_a_margin_wide_enough_for_a_printer(self, layout):
         # Consumer printers refuse to print into roughly the outer 5 mm.
-        width_used = COLUMNS * DIAMETER_MM + (COLUMNS - 1) * GAP_MM
-        height_used = ROWS * DIAMETER_MM + (ROWS - 1) * GAP_MM
+        width, height = used_mm(layout)
 
-        assert (210 - width_used) / 2 >= 5
-        assert (297 - height_used) / 2 >= 5
+        assert (210 - width) / 2 >= 5
+        assert (297 - height) / 2 >= 5
 
-    def test_the_bleed_fits_in_the_gap_between_two_stickers(self):
+    @pytest.mark.parametrize("layout", LAYOUTS.values(), ids=LAYOUTS.keys())
+    def test_the_bleed_fits_in_the_gap_between_two_stickers(self, layout):
         # Each sticker is printed larger than it is cut, so a cut that wanders
         # still lands on the picture. Two neighbours must not overlap.
-        assert 2 * BLEED_MM < GAP_MM
+        assert layout.picture_mm < layout.pitch_mm
+
+    def test_the_printed_size_follows_the_bleed(self):
+        assert (SHEET.picture_mm, PUNCH.picture_mm) == (48, 46.5)
+
+
+class TestPunchLayout:
+    """Covers for a 44.5 mm circle punch, cut apart as squares before punching."""
+
+    def test_is_the_size_the_punch_cuts(self):
+        assert PUNCH.diameter_mm == 44.5
+
+    def test_leaves_a_frame_the_punch_can_hold(self):
+        # A frame of a millimetre or two tears or bends under the blade.
+        assert (PUNCH.pitch_mm - PUNCH.diameter_mm) / 2 >= 5
+
+    def test_fifteen_fit_on_a_sheet(self):
+        assert PUNCH.per_page == 15
+
+    def test_a_sheet_of_squares_is_built(self, tmp_path):
+        from unittest.mock import patch
+
+        from reportlab.pdfgen.canvas import Canvas
+
+        target = tmp_path / "punch.pdf"
+
+        with patch.object(Canvas, "rect", autospec=True) as squares, \
+                patch.object(Canvas, "circle", autospec=True) as circles:
+            build_sheet([Sticker(image=_image(), count=PUNCH.per_page + 1)], target, layout=PUNCH)
+
+        assert _pages(target.read_bytes()) == 2
+        # The squares to cut along are drawn; the punch makes the round edge.
+        assert squares.call_count == PUNCH.per_page + 1 and circles.call_count == 0
+
+    def test_whole_cover_stays_inside_the_cut_not_the_bleed(self):
+        for layout in LAYOUTS.values():
+            assert layout.fit_factor * layout.picture_mm <= FIT_FACTOR * layout.diameter_mm + 1e-9
 
 
 class TestStickerPositions:
@@ -85,7 +124,12 @@ class TestStickerPositions:
     def test_spaces_them_by_the_diameter_plus_the_gap(self):
         first, second = sticker_positions(2)
 
-        assert second.x - first.x == pytest.approx((DIAMETER_MM + GAP_MM) * 72 / 25.4)
+        assert second.x - first.x == pytest.approx(SHEET.pitch_mm * 72 / 25.4)
+
+    def test_another_layout_has_its_own_spacing(self):
+        first, second = sticker_positions(2, layout=PUNCH)
+
+        assert second.x - first.x == pytest.approx(PUNCH.pitch_mm * 72 / 25.4)
 
     def test_asks_for_nothing_when_there_is_nothing(self):
         assert sticker_positions(0) == []
@@ -282,13 +326,13 @@ class TestRenderSquare:
 
         from PIL import Image
 
-        from tonie_studio.sheet import FIT_FACTOR, render_square
+        from tonie_studio.sheet import render_square
 
         for size in (128, 512):
             picture = Image.open(io.BytesIO(render_square(_image(), FIT, size=size)))
             assert picture.size == (size, size)
             # The corner is blurred background, the centre is the cover itself.
-            edge = round(size * (1 - FIT_FACTOR) / 2)
+            edge = round(size * (1 - SHEET.fit_factor) / 2)
             assert edge > 1
 
 

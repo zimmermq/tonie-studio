@@ -1,23 +1,24 @@
 """Builds the printable sheet of round cover stickers.
 
-A traveltonie is an NFC tag with the album cover stuck on it, and 46 mm is the
-diameter that covers one. The sheet carries nothing but the pictures: no titles,
-no crop marks beyond the cut line itself, because everything printed inside the
-circle ends up on the tag.
+A traveltonie is an NFC tag with the album cover stuck on it. The sheet carries
+nothing but the pictures and what to cut along, because everything printed
+inside the circle ends up on the tag. How big the covers are and how they sit
+on the page is a Layout: one for cutting with scissors, one for a circle punch.
 
 Three decisions are worth knowing before changing anything here:
 
-- The picture is printed larger than the circle is cut. Scissors wander, and a
-  cut that lands outside the line must still land on the cover rather than on
-  white paper. The bleed has to stay smaller than half the gap, or neighbouring
-  stickers print into each other.
+- The picture is printed larger than the circle is cut. Scissors wander and a
+  punch sits a little off, and a cut that misses must still land on the cover
+  rather than on white paper. The bleed has to stay smaller than half the gap,
+  or neighbouring covers print into each other.
 - A cover is never scaled non-uniformly. A stretched face is unmissable on a
   46 mm circle, so a picture that is not square is cropped to a centred square
   first and loses its edges instead.
 - A square cover does not fit inside a circle: filling the circle cuts whatever
   runs along the edges of the artwork, which on an album cover is usually the
   lettering. ``FILL`` accepts that and prints edge to edge; ``FIT`` shrinks the
-  cover until all of it is inside and hides the ring under a blurred copy. Both
+  cover until all of it is inside the cut and hides the ring under a blurred
+  copy. Both
   are honest answers to the same geometry and the choice is a matter of taste.
 """
 
@@ -40,22 +41,6 @@ from .i18n import DEFAULT, Translator
 from .pictures import centre_square, inset, on_white
 
 log = logging.getLogger(__name__)
-
-# What fits on a tag.
-DIAMETER_MM = 46
-
-# Space between two stickers, which is also what the scissors need.
-GAP_MM = 3
-
-# How far the picture is printed beyond the cut line, per side.
-BLEED_MM = 1
-
-COLUMNS = 4
-ROWS = 5
-PER_PAGE = COLUMNS * ROWS
-
-# Printing a 46 mm circle at 300 dpi needs 543 px; more only inflates the file.
-PIXELS = round((DIAMETER_MM + 2 * BLEED_MM) / 25.4 * 300)
 
 # How the cover meets the circle. "fill" lets the circle cut into the artwork;
 # "fit" keeps the whole cover visible and fills the ring around it with a
@@ -85,6 +70,74 @@ BACK_FADE = 0.78
 # Barely visible, but enough to cut along.
 CUT_LINE_GREY = 0.75
 CUT_LINE_WIDTH = 0.25
+
+# What a layout prints to cut along: the circle itself, for scissors, or the
+# squares around each cover, cut apart first and then put into a punch.
+CUT_CIRCLE = "circle"
+CUT_SQUARES = "squares"
+
+# What a printer resolves; more pixels only inflate the file.
+DPI = 300
+
+
+@dataclass(frozen=True)
+class Layout:
+    """How covers are cut and arranged on an A4 page.
+
+    Every step that draws, previews or lays out a cover reads its sizes from
+    the layout it is given, so a second way of cutting is a second Layout and
+    not a second copy of the code.
+    """
+
+    key: str
+    # The finished cover: what scissors or a punch cut out.
+    diameter_mm: float
+    # How far the picture runs past the cut, per side. Smaller than half the
+    # space between two covers, or neighbours print into each other.
+    bleed_mm: float
+    columns: int
+    rows: int
+    # From the centre of one cover to the centre of the next.
+    pitch_mm: float
+    cut: str
+
+    @property
+    def per_page(self) -> int:
+        return self.columns * self.rows
+
+    @property
+    def picture_mm(self) -> float:
+        """The printed circle: the cover and its bleed."""
+        return self.diameter_mm + 2 * self.bleed_mm
+
+    @property
+    def pixels(self) -> int:
+        return round(self.picture_mm / 25.4 * DPI)
+
+    @property
+    def fit_factor(self) -> float:
+        """How far FIT shrinks the picture so all of it lands inside the cut, not the bleed."""
+        return FIT_FACTOR * self.diameter_mm / self.picture_mm
+
+
+# Cut out with scissors along the printed circle; 46 mm covers a tag. The
+# 3 mm between two covers is what the scissors need.
+SHEET = Layout("sheet", diameter_mm=46, bleed_mm=1, columns=4, rows=5, pitch_mm=49,
+               cut=CUT_CIRCLE)
+
+# For a 44.5 mm circle punch, which reaches only a little way in from the
+# edge of the paper: each cover is cut out as a square first. The frame of
+# 5.75 mm around the circle is what the punch holds while it cuts, and what a
+# hand holds while centring the square by eye; a narrower one tears or bends.
+# Squares share their edges, so one cut parts two of them. 3 by 5 is what
+# fits on A4 with that frame.
+PUNCH = Layout("punch", diameter_mm=44.5, bleed_mm=1, columns=3, rows=5, pitch_mm=56,
+               cut=CUT_SQUARES)
+
+LAYOUTS = {layout.key: layout for layout in (SHEET, PUNCH)}
+
+# What a cover is kept and rendered at: enough for the largest printed circle.
+PIXELS = max(layout.pixels for layout in LAYOUTS.values())
 
 
 @dataclass
@@ -141,7 +194,8 @@ class Position:
     y: float
 
 
-def sticker_positions(count: int, shift_mm: Tuple[float, float] = (0.0, 0.0)) -> List[Position]:
+def sticker_positions(count: int, shift_mm: Tuple[float, float] = (0.0, 0.0),
+                      layout: Layout = SHEET) -> List[Position]:
     """Centres for ``count`` stickers, left to right and top to bottom.
 
     The grid is centred on the page, so the margins come out the same on every
@@ -151,29 +205,31 @@ def sticker_positions(count: int, shift_mm: Tuple[float, float] = (0.0, 0.0)) ->
     """
     shift_x, shift_down = shift_mm
     page_width, page_height = A4
-    pitch = (DIAMETER_MM + GAP_MM) * mm
-    used_width = COLUMNS * DIAMETER_MM * mm + (COLUMNS - 1) * GAP_MM * mm
-    used_height = ROWS * DIAMETER_MM * mm + (ROWS - 1) * GAP_MM * mm
+    pitch = layout.pitch_mm * mm
+    # From the first centre to the last, in each direction.
+    span_x = (layout.columns - 1) * pitch
+    span_y = (layout.rows - 1) * pitch
 
-    left = (page_width - used_width) / 2 + DIAMETER_MM * mm / 2
+    left = (page_width - span_x) / 2
     # PDF coordinates grow upwards, so the first row is the highest one.
-    top = (page_height + used_height) / 2 - DIAMETER_MM * mm / 2
+    top = (page_height + span_y) / 2
 
     positions = []
     for index in range(count):
-        slot = index % PER_PAGE
+        slot = index % layout.per_page
         positions.append(Position(
-            page=index // PER_PAGE,
-            x=left + (slot % COLUMNS) * pitch + shift_x * mm,
+            page=index // layout.per_page,
+            x=left + (slot % layout.columns) * pitch + shift_x * mm,
             # PDF coordinates grow upwards, so down on paper is a smaller y.
-            y=top - (slot // COLUMNS) * pitch - shift_down * mm,
+            y=top - (slot // layout.columns) * pitch - shift_down * mm,
         ))
     return positions
 
 
 def build_sheet(stickers: Sequence[Sticker], target: Path,
                 shift_mm: Tuple[float, float] = (0.0, 0.0),
-                progress: Optional[Callable[[int, int], None]] = None) -> List[str]:
+                progress: Optional[Callable[[int, int], None]] = None,
+                layout: Layout = SHEET) -> List[str]:
     """Write the sheet to ``target`` and return the motifs that had to be skipped.
 
     A cover that cannot be decoded is left out rather than failing the sheet:
@@ -196,7 +252,8 @@ def build_sheet(stickers: Sequence[Sticker], target: Path,
                     raise ValueError("no picture")
                 square = Path(staging) / f"{done}.jpg"
                 square.write_bytes(render_square(source, sticker.mode,
-                                                 fade=BACK_FADE if sticker.back else 0.0))
+                                                 fade=BACK_FADE if sticker.back else 0.0,
+                                                 layout=layout))
             except (OSError, UnidentifiedImageError, ValueError) as error:
                 log.warning("skipping cover %r: %s", sticker.label, error)
                 skipped.append(sticker.label or "unnamed")
@@ -204,17 +261,17 @@ def build_sheet(stickers: Sequence[Sticker], target: Path,
             finally:
                 if progress:
                     progress(done, len(wanted))
-            lines = back_lines(sticker.back) if sticker.back else []
+            lines = back_lines(sticker.back, layout=layout) if sticker.back else []
             prepared.extend([(str(square), lines)] * sticker.count)
 
         if not prepared:
             raise ValueError("there is no cover to print")
 
-        _draw(prepared, target, shift_mm)
+        _draw(prepared, target, shift_mm, layout)
     return skipped
 
 
-def text_width_mm() -> float:
+def text_width_mm(layout: Layout = SHEET) -> float:
     """How wide a line on the text side may be.
 
     The largest square that fits in a circle has a side of 1/sqrt(2) of its
@@ -222,10 +279,10 @@ def text_width_mm() -> float:
     rectangle wastes a little of the circle and never needs the line length to
     depend on how far up the page the line happens to land.
     """
-    return 2 * (DIAMETER_MM / 2 - TEXT_SAFE_MM) * FIT_FACTOR
+    return 2 * (layout.diameter_mm / 2 - TEXT_SAFE_MM) * FIT_FACTOR
 
 
-def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
+def back_lines(back: Back, with_tracks: bool = True, layout: Layout = SHEET) -> List[TextLine]:
     """Lay the text side out, deciding here what fits and what is dropped.
 
     The sheet and the page on screen both call this, so the words a preview
@@ -233,7 +290,7 @@ def back_lines(back: Back, with_tracks: bool = True) -> List[TextLine]:
     ends in a count of what was left off rather than being cut mid-word, which
     would read as a rendering fault instead of a deliberate omission.
     """
-    width = text_width_mm() * mm
+    width = text_width_mm(layout) * mm
     height = width
 
     head: List[TextLine] = []
@@ -307,8 +364,8 @@ def _stack_height(lines: Sequence[TextLine]) -> float:
     return sum(line.size * LEADING for line in lines)
 
 
-def render_square(source: Union[bytes, Path], mode: str = FILL,
-                  size: int = PIXELS, fade: float = 0.0) -> bytes:
+def render_square(source: Union[bytes, Path], mode: str = FILL, size: Optional[int] = None,
+                  fade: float = 0.0, layout: Layout = SHEET) -> bytes:
     """One sticker's picture as JPEG, exactly as the sheet prints it.
 
     The screen shows this too, so that choosing between the modes is a matter
@@ -324,9 +381,9 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
         image.load()
         picture = on_white(image)
 
-    picture = centre_square(picture, size)
+    picture = centre_square(picture, size or layout.pixels)
     if mode == FIT:
-        picture = inset(picture, FIT_FACTOR)
+        picture = inset(picture, layout.fit_factor)
 
     if fade:
         picture = Image.blend(picture, Image.new("RGB", picture.size, (255, 255, 255)),
@@ -338,13 +395,13 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
 
 
 def _draw(images: Sequence[Tuple[str, Sequence[TextLine]]], target: Path,
-          shift_mm: Tuple[float, float] = (0.0, 0.0)) -> None:
+          shift_mm: Tuple[float, float] = (0.0, 0.0), layout: Layout = SHEET) -> None:
     sheet = canvas.Canvas(str(target), pagesize=A4)
     sheet.setTitle("Traveltonies")
 
-    radius = DIAMETER_MM * mm / 2
-    bleed_radius = radius + BLEED_MM * mm
-    positions = sticker_positions(len(images), shift_mm)
+    radius = layout.diameter_mm * mm / 2
+    bleed_radius = radius + layout.bleed_mm * mm
+    positions = sticker_positions(len(images), shift_mm, layout)
     page = 0
 
     for (image, lines), position in zip(images, positions):
@@ -372,7 +429,13 @@ def _draw(images: Sequence[Tuple[str, Sequence[TextLine]]], target: Path,
 
         sheet.setStrokeGray(CUT_LINE_GREY)
         sheet.setLineWidth(CUT_LINE_WIDTH)
-        sheet.circle(position.x, position.y, radius, stroke=1, fill=0)
+        if layout.cut == CUT_SQUARES:
+            # The punch makes the edge of the cover; a printed circle would
+            # only show as a ring wherever the punch sits a little off.
+            half = layout.pitch_mm * mm / 2
+            sheet.rect(position.x - half, position.y - half, 2 * half, 2 * half, stroke=1, fill=0)
+        else:
+            sheet.circle(position.x, position.y, radius, stroke=1, fill=0)
 
     sheet.save()
 

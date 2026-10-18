@@ -85,7 +85,7 @@ def captured_sheet():
     """
     asked = []
 
-    def instead(stickers, target, shift=(0.0, 0.0), progress=None):
+    def instead(stickers, target, shift=(0.0, 0.0), progress=None, layout=None):
         asked.append(list(stickers))
         target.write_bytes(b"%PDF-1.4\n")
         return []

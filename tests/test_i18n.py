@@ -17,7 +17,8 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
-           "import.phase.", "import.state.", "names.kind.", "tonies.kind.")
+           "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
+           "sheet.layout.", "sheet.intro.")
 
 
 def placeholders(text):
@@ -95,6 +96,14 @@ class TestCatalogs:
         from tonie_studio.checkup import SEVERITIES
 
         assert {f"checkup.severity.{severity}" for severity in SEVERITIES} <= keys
+
+        from tonie_studio.pages.tonies import NO_MODEL, NO_PICTURE, OFFICIAL, OWN
+
+        assert {f"tonies.kind.{kind}" for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE)} <= keys
+
+        from tonie_studio.sheet import LAYOUTS
+
+        assert {f"sheet.{part}.{key}" for key in LAYOUTS for part in ("layout", "intro")} <= keys
 
         from tonie_studio.backup import ACTIONS, KINDS, PARTS
 

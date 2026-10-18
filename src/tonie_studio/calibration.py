@@ -22,7 +22,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
-from .sheet import CUT_LINE_GREY, DIAMETER_MM, PER_PAGE, font_name, sticker_positions
+from .sheet import CUT_LINE_GREY, SHEET, font_name, sticker_positions
 from .store import LOCK, read_json, write_json
 
 FILE_NAME = "print-shift.json"
@@ -72,9 +72,9 @@ def build_calibration(target: Path, shift_mm: Tuple[float, float] = (0.0, 0.0),
     page_width, page_height = A4
     sheet = canvas.Canvas(str(target), pagesize=A4)
     sheet.setTitle(translate("pdf.calibration_title"))
-    radius = DIAMETER_MM * mm / 2
+    radius = SHEET.diameter_mm * mm / 2
 
-    for number, position in enumerate(sticker_positions(PER_PAGE, shift_mm), 1):
+    for number, position in enumerate(sticker_positions(SHEET.per_page, shift_mm), 1):
         sheet.setStrokeGray(CUT_LINE_GREY)
         sheet.setLineWidth(0.25)
         sheet.circle(position.x, position.y, radius, stroke=1, fill=0)

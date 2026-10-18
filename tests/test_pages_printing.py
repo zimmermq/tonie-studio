@@ -157,7 +157,7 @@ class TestSheet:
         import tonie_studio.pages.printing as web
         original = web.build_sheet
         try:
-            web.build_sheet = lambda stickers, target, shift=(0.0, 0.0), progress=None: (
+            web.build_sheet = lambda stickers, target, shift=(0.0, 0.0), progress=None, layout=None: (
                 seen.extend(s.mode for s in stickers) or original(stickers, target))
             print_sheet(client, [("TS-0001", 2, "fit")])
         finally:
@@ -253,7 +253,7 @@ class TestCalibrationPages:
 
         shifts = []
 
-        def instead(stickers, target, shift=(0.0, 0.0), progress=None):
+        def instead(stickers, target, shift=(0.0, 0.0), progress=None, layout=None):
             shifts.append(shift)
             target.write_bytes(b"%PDF")
             return []
@@ -306,7 +306,7 @@ class TestSheetRefusesWhatItCannotPrint:
         model = teddycloud.custom_tonies()[0]["model"]
         asked = []
 
-        def instead(stickers, target, shift=(0.0, 0.0), progress=None):
+        def instead(stickers, target, shift=(0.0, 0.0), progress=None, layout=None):
             asked.extend(sticker.count for sticker in stickers)
             target.write_bytes(b"%PDF")
             return []
@@ -337,7 +337,7 @@ class TestNoPdfIsLeftBehind:
         publish_album(client, runner, teddycloud)
         model = teddycloud.custom_tonies()[0]["model"]
 
-        def half_written(stickers, target, shift, progress=None):
+        def half_written(stickers, target, shift, progress=None, layout=None):
             target.write_bytes(b"%PDF-1.4 half")
             raise RuntimeError("reportlab ran out of something")
 
@@ -459,3 +459,45 @@ class TestTheSheetIsMadeInTheBackground:
         state = client.get(f"/api/sheet/print/{job_id}").json()
 
         assert state["state"] == "failed" and state["problem"]
+
+
+class TestLayouts:
+    """Covers cut with scissors or with a circle punch come from the same page."""
+
+    def test_the_page_offers_both_ways_of_cutting(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert 'name="layout" form="sheetform" value="sheet" checked' in page
+        assert 'value="punch"' in page and "44,5 mm" in page
+
+    def test_the_chosen_layout_reaches_the_sheet(self, client, runner, teddycloud):
+        from tonie_studio.sheet import PUNCH, SHEET
+
+        publish_album(client, runner, teddycloud)
+        layouts = []
+
+        def instead(stickers, target, shift=(0.0, 0.0), progress=None, layout=None):
+            layouts.append(layout)
+            target.write_bytes(b"%PDF")
+            return []
+
+        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+            print_sheet(client, [("TS-0001", 1)], layout="punch")
+            print_sheet(client, [("TS-0001", 1)])
+            print_sheet(client, [("TS-0001", 1)], layout="nonsense")
+
+        assert layouts == [PUNCH, SHEET, SHEET]
+
+    def test_the_back_side_is_laid_out_for_the_layout_asked_for(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        sheet = client.get("/api/sheet/back", params={"model": "TS-0001"}).json()
+        punch = client.get("/api/sheet/back",
+                           params={"model": "TS-0001", "layout": "punch"}).json()
+
+        assert sheet["plain"][0]["bold"] and sheet["tracks"] and punch["tracks"]
+
+    def test_the_back_side_of_an_unknown_model_is_refused(self, client):
+        assert client.get("/api/sheet/back", params={"model": "TS-9999"}).status_code == 404

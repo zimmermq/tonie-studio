@@ -5,9 +5,22 @@
 {% block body %}
 {% if preset %}{{ steps("5") }}{% endif %}
 <h1>{{ t("sheet.heading") }}</h1>
-<p class="sub">
-  {{ t("sheet.intro", count=per_page) }}
+{%- macro mm(value) %}{{ t.number(value, 1 if value % 1 else 0) }}{% endmacro %}
+{#- How the covers are cut decides their size and how many fit; the choice
+    goes with the form and the page remembers it. #}
+<div class="chips" role="radiogroup" aria-label="{{ t('sheet.layout_label') }}">
+  {% for layout in layouts %}
+  <label class="chip clickable">
+    <input type="radio" name="layout" form="sheetform" value="{{ layout.key }}" {% if loop.first %}checked{% endif %}>
+    {{ t("sheet.layout." ~ layout.key, diameter=mm(layout.diameter_mm), count=layout.per_page) }}
+  </label>
+  {% endfor %}
+</div>
+{% for layout in layouts %}
+<p class="sub" data-layout="{{ layout.key }}" {% if not loop.first %}hidden{% endif %}>
+  {{ t("sheet.intro." ~ layout.key, diameter=mm(layout.diameter_mm), count=layout.per_page) }}
 </p>
+{% endfor %}
 
 {% if images_cached == false %}
 <div class="warn">{{ t("covers.cache_off") }}</div>
@@ -168,10 +181,7 @@
 </div>
 
 
-{% if rows %}
-<script type="application/json" id="backdata">{{ backs | tojson }}</script>
-{% endif %}
 
-<script type="application/json" id="page-data">{{ {"perPage": per_page, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures", "sheet.shown_of"), "diameterMm": diameter_mm, "backFade": back_fade} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures", "sheet.shown_of"), "backFade": back_fade} | tojson }}</script>
 <script src="{{ asset('sheet.js') }}"></script>
 {% endblock %}
