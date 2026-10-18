@@ -68,6 +68,9 @@ UPLOAD_ATTEMPTS = 2
 # the body has arrived before teddyCloud gets to read, which under load is
 # often. Sent alone first, the header is read on its own. Costs this long per
 # track; harmless against a teddyCloud without the bug.
+# The bug is fixed on teddyCloud's develop branch but in no release yet
+# (teddycloud#543). Once every supported teddyCloud has the fix, HEAD_START
+# and _AfterHeadStart can go; until then, removing them loses uploads.
 HEAD_START = 0.05
 
 # A tag is addressed by its reversed UID: 16 hex digits, lower case as
