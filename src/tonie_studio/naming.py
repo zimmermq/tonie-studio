@@ -272,26 +272,61 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
     tags = list(tags)
     by_ruid = {tag.ruid: tag for tag in tags}
     promoted = promotions(models, by_audio, catalog.unsuitable) if relink else {}
-    numbered = [model.id for model in models]
-
-    def next_id() -> str:
-        used = [int(model_id[len(MODEL_PREFIX):]) for model_id in numbered
-                if model_id.startswith(MODEL_PREFIX) and model_id[len(MODEL_PREFIX):].isdigit()]
-        model_id = f"{MODEL_PREFIX}{max(used, default=0) + 1:04d}"
-        numbered.append(model_id)
-        return model_id
+    ids = _Ids(model.id for model in models)
 
     renamed: Dict[str, Model] = {}
     if migrate:
         for model in models:
             if model.id.upper().startswith(OLD_PREFIX) and model.id not in promoted:
-                renamed[model.id] = replace(model, id=next_id())
+                renamed[model.id] = replace(model, id=ids.next())
     available = [model for model in models
                  if model.id not in promoted and model.id not in renamed] + list(renamed.values())
 
     result = Plan(retired=sorted(set(promoted) | set(renamed)))
-    handled = set()
-    written = set()
+    handled = _moves(tags, dumps, promoted, renamed, result)
+
+    for ruid, path in dumps.items():
+        tag = by_ruid.get(ruid)
+        if ruid in handled or tag is None or not tag.source:
+            continue
+        if tag.model and not catalog.unsuitable(tag.model):
+            continue
+        audio = _audio_of(tag, headers)
+        if audio is None:
+            result.skipped.append((path, tag.source))
+            continue
+        step = _naming_step(tag, path, audio, catalog, by_audio, available, ids)
+        result.steps.append(step)
+        if step.kind == NEW:
+            available.append(step.new_model)
+            handled.add(ruid)
+
+    if retitle:
+        result.steps.extend(_retitles(by_ruid, dumps, handled, catalog, by_audio, models, headers))
+    return result
+
+
+class _Ids:
+    """Model ids for a plan: each the next number after every id taken so far."""
+
+    def __init__(self, taken: Iterable[str]):
+        self.taken = list(taken)
+
+    def next(self) -> str:
+        used = [int(model_id[len(MODEL_PREFIX):]) for model_id in self.taken
+                if model_id.startswith(MODEL_PREFIX) and model_id[len(MODEL_PREFIX):].isdigit()]
+        model_id = f"{MODEL_PREFIX}{max(used, default=0) + 1:04d}"
+        self.taken.append(model_id)
+        return model_id
+
+
+def _moves(tags: List[TonieTag], dumps: Mapping[str, str], promoted: Mapping[str, str],
+           renamed: Mapping[str, Model], result: Plan) -> set:
+    """Steps moving tags off promoted and renamed models; returns the ruids moved.
+
+    A renamed model is written once, with the first tag that moves onto it.
+    """
+    handled, written = set(), set()
     for tag in tags:
         if tag.model in promoted:
             result.steps.append(Step(PROMOTE, tag.ruid, promoted[tag.model], replaces=tag.model,
@@ -304,52 +339,43 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
                                      path=dumps.get(tag.ruid, ""), label=tag.label))
             written.add(new.id)
             handled.add(tag.ruid)
+    return handled
 
-    for ruid, path in dumps.items():
-        tag = by_ruid.get(ruid)
-        if ruid in handled or tag is None or not tag.source:
-            continue
-        current = tag.model
-        if current and not catalog.unsuitable(current):
-            continue
-        header = headers.get(tag.source[len(LIBRARY_PREFIX):]) \
-            if tag.source.startswith(LIBRARY_PREFIX) else None
-        if not header:
-            result.skipped.append((path, tag.source))
-            continue
-        audio = (str(header["audioId"]), str(header["sha1Hash"]).upper())
 
-        official = current or by_audio.get(audio)
-        if official and catalog.is_stub(official):
-            official = None
-        if official and catalog.is_set(official):
-            name = catalog.figure(path, official)
-        elif official:
-            result.steps.append(Step(OFFICIAL, ruid, official, path=path))
-            continue
-        else:
-            name = catalog.describe(path)
-            if name.model:
-                result.steps.append(Step(OFFICIAL, ruid, name.model, name=name, path=path))
-                continue
+def _audio_of(tag: TonieTag, headers: Mapping[str, Mapping[str, Any]]
+              ) -> Optional[Tuple[str, str]]:
+    """The tag's audio as (audio id, upper-case hash), from the library's taf headers."""
+    header = (headers.get(tag.source[len(LIBRARY_PREFIX):])
+              if tag.source.startswith(LIBRARY_PREFIX) else None)
+    if not header:
+        return None
+    return str(header["audioId"]), str(header["sha1Hash"]).upper()
 
-        existing = next((model for model in available if audio[0] in map(str, model.audio_ids)
-                         and audio[1] in [sha1.upper() for sha1 in model.hashes]), None)
-        if existing:
-            result.steps.append(Step(REUSE, ruid, existing.id, name=name, path=path,
-                                     replaces=current))
-            continue
-        model = Model(id=next_id(), series=name.series, episode=name.episode, language=LANGUAGE,
-                      category=name.category if name.category in CATEGORIES else "",
-                      picture=name.pic, audio_ids=[audio[0]], hashes=[audio[1]])
-        available.append(model)
-        result.steps.append(Step(NEW, ruid, model.id, name=name, path=path, new_model=model,
-                                 replaces=current))
-        handled.add(ruid)
 
-    if retitle:
-        result.steps.extend(_retitles(by_ruid, dumps, handled, catalog, by_audio, models, headers))
-    return result
+def _naming_step(tag: TonieTag, path: str, audio: Tuple[str, str], catalog: Catalog,
+                 by_audio: AudioIndex, available: List[Model], ids: _Ids) -> Step:
+    """What names one imported tonie: the official model, ours with its audio, or a new one."""
+    current = tag.model
+    official = current or by_audio.get(audio)
+    if official and catalog.is_stub(official):
+        official = None
+    if official and catalog.is_set(official):
+        name = catalog.figure(path, official)
+    elif official:
+        return Step(OFFICIAL, tag.ruid, official, path=path)
+    else:
+        name = catalog.describe(path)
+        if name.model:
+            return Step(OFFICIAL, tag.ruid, name.model, name=name, path=path)
+
+    existing = next((model for model in available if audio[0] in map(str, model.audio_ids)
+                     and audio[1] in [sha1.upper() for sha1 in model.hashes]), None)
+    if existing:
+        return Step(REUSE, tag.ruid, existing.id, name=name, path=path, replaces=current)
+    model = Model(id=ids.next(), series=name.series, episode=name.episode, language=LANGUAGE,
+                  category=name.category if name.category in CATEGORIES else "",
+                  picture=name.pic, audio_ids=[audio[0]], hashes=[audio[1]])
+    return Step(NEW, tag.ruid, model.id, name=name, path=path, new_model=model, replaces=current)
 
 
 def _retitles(by_ruid: Mapping[str, TonieTag], dumps: Mapping[str, str], handled: set,

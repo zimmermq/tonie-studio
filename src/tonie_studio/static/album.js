@@ -177,3 +177,15 @@ document.getElementById('form').addEventListener('submit', () => {
   document.getElementById('order').value =
     [...list.children].map(item => item.dataset.number).join(',');
 });
+
+// Leaving by "Cancel" after changing titles, order or the crop throws all of
+// it away; asked first, as every other page asks before losing work.
+let changed = false;
+const form = document.getElementById('form');
+form.addEventListener('input', () => { changed = true; });
+form.addEventListener('change', () => { changed = true; });
+list.addEventListener('click', event => { if (event.target.closest('[data-move]')) changed = true; });
+document.getElementById('cancel').addEventListener('click', event => {
+  if (changed && !window.confirm(words['album.discard'])) event.preventDefault();
+});
+

@@ -2,6 +2,7 @@
 box.
 """
 
+import re
 from unittest.mock import patch
 
 from web_helpers import (batch_ids, checked_ruid, current_step, encode_and_assign_page,
@@ -650,3 +651,29 @@ class TestSilentTonies:
         assert (entry["tonie_model"], entry["source"]) == (model, source)
         assert "/" + source.split("lib://", 1)[1] in teddycloud.files
         assert [m["model"] for m in teddycloud.custom_models] == [model]
+
+
+class TestTheDetailedPath:
+    """One album edited in detail, from the batch, still walks the five steps."""
+
+    def test_editing_in_detail_keeps_the_batch_open(self, client):
+        # A link in the same tab drops whatever was typed in the other rows.
+        page = client.get(f"/batch?ids={first_album_id(client)}").text
+
+        assert re.search(r'<a href="/album/[^"]+" target="_blank"', page)
+
+    def test_the_album_job_and_sticker_pages_show_where_one_is(self, client, runner):
+        job, assign = encode_and_assign_page(client, runner)
+
+        assert current_step(client.get(f"/album/{first_album_id(client)}").text) == "2"
+        assert current_step(client.get(f"/job/{job.id}").text) == "3"
+        assert current_step(assign.text) == "4"
+
+    def test_putting_it_on_a_sticker_leads_to_that_tonie_and_its_cover(self, client, runner):
+        job, _page = encode_and_assign_page(client, runner)
+
+        response = client.post(f"/job/{job.id}/assign", data={
+            "ruid": "7ab4ed0e500304e0", "series": "Lichterkinder", "episode": "Halloween",
+            "category": "music"}, follow_redirects=False)
+
+        assert response.headers["location"] == "/tonies/7ab4ed0e500304e0"

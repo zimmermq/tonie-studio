@@ -10,6 +10,7 @@
  "album.cover_choice": "Use {name} as the cover",
  "album.crop_hint": "Drag to move, slider or two fingers to zoom.",
  "album.crop_reset": "Reset the crop",
+ "album.discard": "Leave the album? The names, order and crop you changed are lost.",
  "album.encode": "Create the audio",
  "album.episode": "Episode (the tonie's name, on the cover too)",
  "album.minutes": {

@@ -1,9 +1,11 @@
 {% extends "_progress_page.html" %}
+{% from "_steps.html" import steps with context %}
 {% set page_title = job.label %}
 {% set percent, detail = job.percent or 0, describe_progress(job, t) %}
 {% set finished, failed = job.state.value in ('done', 'failed'), job.state.value == 'failed' %}
 {% set page_data = {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies"), "doneKey": done_key, "assigned": assigned_ending, "running": not finished} %}
 
+{% block above %}{{ steps("3") }}{% endblock %}
 {% block intro %}<span id="state">{{ t("job.state." ~ job.state.value) }}</span>{% endblock %}
 
 {% block message %}{% if error %}{{ error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif %}{% endblock %}

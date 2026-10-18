@@ -100,7 +100,8 @@ class TestCatalogs:
 
         assert {f"checkup.severity.{severity}" for severity in SEVERITIES} <= keys
 
-        from tonie_studio.pages.tonies import NO_MODEL, NO_PICTURE, OFFICIAL, OWN, TONIE_COLUMNS
+        from tonie_studio.pages.tonies import TONIE_COLUMNS
+        from tonie_studio.tonielist import NO_MODEL, NO_PICTURE, OFFICIAL, OWN
 
         assert {f"tonies.kind.{kind}" for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE)} <= keys
         assert {column.heading for column in TONIE_COLUMNS} <= keys
@@ -110,7 +111,8 @@ class TestCatalogs:
         assert {f"library.origin.{origin}" for origin in (RECORDED, IMPORTED, BOX, UNUSED)} <= keys
         assert {column.heading for column in LIBRARY_COLUMNS} <= keys
 
-        from tonie_studio.pages.extras import HEARD, LISTENING_COLUMNS, QUIET
+        from tonie_studio.listening import HEARD, QUIET
+        from tonie_studio.pages.extras import LISTENING_COLUMNS
 
         assert {f"listening.filter.{kind}" for kind in (HEARD, QUIET)} <= keys
         assert {column.heading for column in LISTENING_COLUMNS} <= keys

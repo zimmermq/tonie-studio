@@ -28,6 +28,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Dict, Iterable, List, Optional
 
+from .tags import TonieTag
+
 log = logging.getLogger(__name__)
 
 FILE_NAME = "listening.jsonl"
@@ -203,4 +205,52 @@ def _parse(line: str) -> Optional[Event]:
         return None
     ruid = raw.get("ruid")
     return Event(at=at, kind=kind, ruid=ruid if isinstance(ruid, str) else None)
+
+
+# Heard in the period asked for, or quiet in it; the page filters by it.
+HEARD, QUIET = "heard", "quiet"
+
+
+@dataclass
+class Heard:
+    """A tonie as the listening list shows it: its sticker and what the box told of it."""
+
+    tag: TonieTag
+    entry: Optional[TonieListening]
+    kind: str
+
+    @property
+    def placed(self) -> int:
+        return self.entry.placed if self.entry else 0
+
+    @property
+    def played(self) -> int:
+        """Seconds it played in the period."""
+        return int(self.entry.played.total_seconds()) if self.entry else 0
+
+    @property
+    def last(self) -> Optional[datetime]:
+        return self.entry.last_placed if self.entry else None
+
+
+def heard(events: List[Event], tags: Iterable[TonieTag], times: Dict[str, int],
+          now: datetime, since: Optional[datetime]) -> List[Heard]:
+    """Every sticker that plays something, with what was heard of it, by name.
+
+    A sticker that was emptied has nothing to recommend or to miss and is
+    left out. ``times`` are the playing times by model, which cap what one
+    run of a tonie can be credited (see summarise).
+    """
+    tags = list(tags)
+    content = {tag.ruid: timedelta(seconds=times[tag.model]) for tag in tags if tag.model in times}
+    summary = summarise(events, now=now, since=since, content=content)
+    rows = []
+    for tag in tags:
+        if not tag.assigned:
+            continue
+        entry = summary.get(tag.ruid)
+        played = entry is not None and bool(entry.placed or entry.on_box)
+        rows.append(Heard(tag, entry, HEARD if played else QUIET))
+    rows.sort(key=lambda row: row.tag.label.casefold())
+    return rows
 

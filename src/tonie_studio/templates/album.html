@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% from "_parts.html" import field, page_script with context %}
+{% from "_steps.html" import steps with context %}
 {% set page_title = album.title %}
 
+{% block above %}{{ steps("2") }}{% endblock %}
 {% block intro %}
   {{ album.artist or t("album.various_artists") }}{% if album.year %} - {{ album.year }}{% endif %}
   - {{ t("albums.tracks", count=album.tracks | length) }}
@@ -105,8 +107,8 @@
      {% if conflict %}
      <button type="submit" name="replace" value="{{ replace_value }}">{{ t("album.replace") }}</button>
      {% endif %}
-     <a class="button ml-12" href="/">{{ t("common.cancel") }}</a></p>
+     <a class="button ml-12" href="/" id="cancel">{{ t("common.cancel") }}</a></p>
 </form>
 
-{{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit", "album.track_use", "album.track_title", "album.move_up", "album.move_down")}) }}
+{{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit", "album.track_use", "album.track_title", "album.move_up", "album.move_down", "album.discard")}) }}
 {% endblock %}

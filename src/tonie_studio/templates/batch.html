@@ -39,7 +39,7 @@
           {{- t("albums.tracks", count=row.chosen | length) }}
           {%- if row.targets | length > 1 %} &middot; {{ t("batch.parts", count=row.targets | length) }}{% endif %}
           {%- if row.reusable %} &middot; {{ t("batch.reuse") }}{% endif %}
-          &middot; <a href="/album/{{ row.identifier }}">{{ t("batch.details") }}</a>
+          &middot; <a href="/album/{{ row.identifier }}" target="_blank" rel="noopener">{{ t("batch.details") }}</a>
         </span>
       </span>
       <span class="muted sticker right">

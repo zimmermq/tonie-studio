@@ -193,7 +193,8 @@ def register(app: FastAPI, ctx: Context) -> None:
     def crop_preview(identifier: str, index: int = 0, zoom: float = 1.0,
                      x: float = 0.0, y: float = 0.0, size: int = 256):
         """The cover as the round sticker will cut it."""
-        rendered = crop(_cover_or_404(catalogue, identifier, index), max(32, min(size, 800)), zoom, x, y)
+        rendered = crop(_cover_or_404(catalogue, identifier, index), max(32, min(size, 800)),
+                        zoom, x, y)
         if rendered is None:
             raise Refused(404, "error.cover_unreadable")
         return Response(rendered, media_type="image/jpeg")

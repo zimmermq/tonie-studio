@@ -117,7 +117,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         outcome = _finished_outcome(jobs, job_id)
         with refusing(TonieError):
             publish_outcome(client(), settings.data_dir, ruid, outcome, series, episode, category)
-        return RedirectResponse("/tonies", 303)
+        # Its page offers the last step, printing its cover.
+        return RedirectResponse(f"/tonies/{ruid}", 303)
 
     @app.get("/api/job/{job_id}")
     def job_status(request: Request, job_id: str):

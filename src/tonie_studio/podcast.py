@@ -43,7 +43,8 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from .album import AUDIO_EXTENSIONS
-from .encode import EncodeError, cut_to_bytes, delete_taf, encode_files, library_path
+from .encode import (EncodeError, EncodeResult, cut_to_bytes, delete_taf, encode_files,
+                     library_path)
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
@@ -312,45 +313,10 @@ def refresh(
         subscription.error, subscription.error_key, subscription.error_params = "", "", {}
         return False
 
-    folder = data_dir / WORK_FOLDER / subscription.id
-    folder.mkdir(parents=True, exist_ok=True)
-    try:
-        paths = []
-        for number, episode in enumerate(chosen, 1):
-            path = folder / f"{number:03d}{_episode_suffix(episode)}"
-            if fetch is download:
-                # Straight to the file; a fetch handed in, as tests do, gives bytes.
-                download(episode.url, into=path)
-            else:
-                path.write_bytes(fetch(episode.url))
-            paths.append(path)
-        seconds = sum(episode.seconds or 0 for episode in chosen) or None
-        # A new name every time, so the old taf keeps playing until the new
-        # one is complete and the tag has been switched over.
-        title = cut_to_bytes(feed.title[:TITLE_IN_NAME], TITLE_IN_NAME_BYTES).strip()
-        target = library_path(SERIES, f"{title} {now:%Y-%m-%d %H%M%S}")
-        encoded = encode_files(client, paths, target, total_seconds=seconds)
-    finally:
-        shutil.rmtree(folder, ignore_errors=True)
-
-    try:
-        cover = _cover(client, subscription, feed, fetch)
-        # Checked again right before writing, under the lock writes share: the
-        # download and the encode took minutes, and the sticker may have been
-        # given something else since, or be given it between check and write.
-        with WRITING:
-            _check_sticker(client, subscription)
-            model_id = publish(
-                client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
-                tracks=[episode.title for episode in chosen], cover=cover,
-                cover_name=picture_suffix(feed.image or ""),
-                model_id=subscription.model or None,
-            )
-    except Exception:
-        # The sticker still plays the old episodes; the new taf would only be
-        # a file nothing points at.
-        _delete_quietly(client, encoded.target, subscription.id)
-        raise
+    seconds = sum(episode.seconds or 0 for episode in chosen) or None
+    encoded = _encode_episodes(client, data_dir / WORK_FOLDER / subscription.id, feed, chosen,
+                               now, fetch, seconds)
+    model_id = _put_on_sticker(client, subscription, feed, chosen, encoded, fetch)
     remember(data_dir, model_id, seconds)
 
     old = subscription.source
@@ -363,6 +329,56 @@ def refresh(
         _delete_quietly(client, path_of(old), subscription.id)
     log.info("podcast %s now plays %d episodes from %s", subscription.id, len(chosen), feed.title)
     return True
+
+
+def _encode_episodes(client: TeddyCloudClient, folder: Path, feed: Feed, chosen: List[Episode],
+                     now: datetime, fetch: Fetch, seconds: Optional[float]) -> EncodeResult:
+    """Download the chosen episodes into ``folder`` and encode them into a new taf.
+
+    A new name every time, so the old taf keeps playing until the new one is
+    complete and the tag has been switched over. The folder goes either way.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        paths = []
+        for number, episode in enumerate(chosen, 1):
+            path = folder / f"{number:03d}{_episode_suffix(episode)}"
+            if fetch is download:
+                # Straight to the file; a fetch handed in, as tests do, gives bytes.
+                download(episode.url, into=path)
+            else:
+                path.write_bytes(fetch(episode.url))
+            paths.append(path)
+        title = cut_to_bytes(feed.title[:TITLE_IN_NAME], TITLE_IN_NAME_BYTES).strip()
+        target = library_path(SERIES, f"{title} {now:%Y-%m-%d %H%M%S}")
+        return encode_files(client, paths, target, total_seconds=seconds)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _put_on_sticker(client: TeddyCloudClient, subscription: Subscription, feed: Feed,
+                    chosen: List[Episode], encoded: EncodeResult, fetch: Fetch) -> str:
+    """Point the sticker and its model at the new taf; returns the model id.
+
+    Should that fail, the new taf is deleted: the sticker still plays the old
+    episodes, and the new file would only be one nothing points at.
+    """
+    try:
+        cover = _cover(client, subscription, feed, fetch)
+        # Checked again right before writing, under the lock writes share: the
+        # download and the encode took minutes, and the sticker may have been
+        # given something else since, or be given it between check and write.
+        with WRITING:
+            _check_sticker(client, subscription)
+            return publish(
+                client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
+                tracks=[episode.title for episode in chosen], cover=cover,
+                cover_name=picture_suffix(feed.image or ""),
+                model_id=subscription.model or None,
+            )
+    except Exception:
+        _delete_quietly(client, encoded.target, subscription.id)
+        raise
 
 
 def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None:

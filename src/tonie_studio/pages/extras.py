@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import requests
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..listening import TonieListening, summarise
+from ..listening import HEARD, QUIET, heard
 from ..listing import Column, filters
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions, parse_feed,
                        remove_subscription)
 from ..podcast import subscribe as add_podcast
 from ..runtimes import playing_times
-from ..tags import TonieTag, find_tag, list_tags
+from ..tags import find_tag, list_tags
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -53,20 +51,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         # take it now, so what was just heard is on the page.
         box.flush()
         events = listening.events()
-        tags = list_tags(client())
-        # How long each tonie plays caps what one run of it can be credited.
-        times = playing_times(settings.data_dir)
-        content = {tag.ruid: timedelta(seconds=times[tag.model])
-                   for tag in tags if tag.model in times}
-        summary = summarise(events, now=now, since=since, content=content)
-        rows = []
-        for tag in tags:
-            if not tag.assigned:
-                continue
-            entry = summary.get(tag.ruid)
-            heard = entry is not None and bool(entry.placed or entry.on_box)
-            rows.append(Heard(tag, entry, HEARD if heard else QUIET))
-        rows.sort(key=lambda row: row.tag.label.casefold())
+        rows = heard(events, list_tags(client()), playing_times(settings.data_dir), now, since)
         counts, offered = filters(([row.kind] for row in rows), (HEARD, QUIET))
         return templates.TemplateResponse(request, "listening.html", {
             "rows": rows,
@@ -126,9 +111,6 @@ def register(app: FastAPI, ctx: Context) -> None:
         return RedirectResponse("/podcasts", 303)
 
 
-# Heard in the period asked for, or quiet in it; the page filters by it.
-HEARD, QUIET = "heard", "quiet"
-
 # The listening list's columns, in the order the rows show them. It starts
 # with what was played most; ordered by when a tonie was last placed, one
 # never placed comes first, as the one forgotten longest.
@@ -138,25 +120,3 @@ LISTENING_COLUMNS = (
     Column("placed", "listening.col_placed", number=True, desc=True),
     Column("last", "listening.col_last", number=True),
 )
-
-
-@dataclass
-class Heard:
-    """A tonie as the listening list shows it: its sticker and what the box told of it."""
-
-    tag: TonieTag
-    entry: Optional[TonieListening]
-    kind: str
-
-    @property
-    def placed(self) -> int:
-        return self.entry.placed if self.entry else 0
-
-    @property
-    def played(self) -> int:
-        """Seconds it played in the period."""
-        return int(self.entry.played.total_seconds()) if self.entry else 0
-
-    @property
-    def last(self) -> Optional[datetime]:
-        return self.entry.last_placed if self.entry else None

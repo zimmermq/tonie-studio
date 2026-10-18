@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% from "_parts.html" import category_select, field, page_script, sticker_picker with context %}
+{% from "_steps.html" import steps with context %}
 {% set page_title = t("assign.title") %}
 {% set page_heading = t("assign.heading") %}
 
+{% block above %}{{ steps("4") }}{% endblock %}
 {% block intro %}{{ result.encoded.target }} - {{ t("albums.tracks", count=result.encoded.tracks) }}{% endblock %}
 {% block body %}
 <div class="info" id="hint" role="status">

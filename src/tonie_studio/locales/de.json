@@ -10,6 +10,7 @@
  "album.cover_choice": "{name} als Cover nehmen",
  "album.crop_hint": "Ziehen zum Verschieben, Regler oder zwei Finger zum Zoomen.",
  "album.crop_reset": "Ausschnitt zurücksetzen",
+ "album.discard": "Album verlassen? Die geänderten Namen, die Reihenfolge und der Ausschnitt gehen verloren.",
  "album.encode": "Audio erstellen",
  "album.episode": "Folge (so heißt der Tonie, auch auf dem Cover)",
  "album.minutes": {
