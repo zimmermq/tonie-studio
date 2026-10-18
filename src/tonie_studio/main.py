@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -42,6 +43,24 @@ def app() -> FastAPI:
     # The image points TMPDIR into the data volume, which is mounted over
     # whatever the image had there; without the folder Python would quietly
     # fall back to /tmp.
-    if os.environ.get("TMPDIR"):
-        Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
+    _ensure_tmpdir()
     return create_app(Settings.from_env())
+
+
+def _ensure_tmpdir() -> None:
+    """Create TMPDIR, or do without it.
+
+    A volume this app cannot write - mounted read-only, owned by root - must
+    not keep the app from starting: the pages that only read still work.
+    Uploads are then buffered in the system's own temporary folder.
+    """
+    folder = os.environ.get("TMPDIR")
+    if not folder:
+        return
+    try:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        logging.getLogger(__name__).warning(
+            "cannot create TMPDIR %s, using the system's temporary folder: %s", folder, error)
+        del os.environ["TMPDIR"]
+        tempfile.tempdir = None

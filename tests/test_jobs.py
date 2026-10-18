@@ -200,8 +200,12 @@ class TestShutdown:
         # Jobs live in memory; a rollout drops the queued ones, and the log is
         # the only place that can say so.
         runner = JobRunner()
-        release = threading.Event()
-        runner.submit("encode", "running", lambda progress: release.wait(5))
+        started, release = threading.Event(), threading.Event()
+        runner.submit("encode", "running",
+                      lambda progress: started.set() or release.wait(5))
+        # The worker has taken the first job before the others are queued:
+        # otherwise which of them counts as "not started" is up to the scheduler.
+        assert started.wait(5)
         queued = [runner.submit("encode", f"waiting {n}", lambda progress: None) for n in range(2)]
 
         dropped = runner.shutdown()
@@ -209,3 +213,20 @@ class TestShutdown:
 
         assert dropped == 2
         assert all(runner.get(job_id).state is JobState.FAILED for job_id in queued)
+
+    def test_a_job_submitted_while_shutting_down_is_never_left_waiting(self):
+        # Its place in the pool is known before anyone can ask the runner
+        # which jobs never ran, or it would stay "queued" for good.
+        runner = JobRunner()
+        started, release = threading.Event(), threading.Event()
+        runner.submit("encode", "running", lambda progress: started.set() or release.wait(5))
+        assert started.wait(5)
+        late = []
+        stop = threading.Thread(target=lambda: late.append(runner.shutdown()))
+        job_id = runner.submit("encode", "late", lambda progress: None)
+        stop.start()
+        stop.join(5)
+        release.set()
+
+        assert runner.get(job_id).state in (JobState.FAILED, JobState.DONE)
+

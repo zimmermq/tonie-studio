@@ -17,7 +17,7 @@ class TestToniesPage:
 
         page = client.get("/tonies").text
 
-        assert "1 von 2 Sticker bespielt" in page
+        assert "1 von 2 Stickern bespielt" in page
         assert "Lichterkinder - Halloween" in page
 
     def test_lists_free_tags_too(self, client):
@@ -358,6 +358,26 @@ class TestLibraryPage:
         assert response.status_code == 303
         entry = teddycloud.tag_entries["deb4ed0e500304e0"]
         assert entry["source"] == "lib://Lichterkinder/Halloween.taf" and entry["tonie_model"]
+
+    def test_imported_audio_goes_on_a_sticker_as_the_official_tonie(self, client, teddycloud):
+        # A model of our own would carry the official audio, and the nightly
+        # naming replaces such a model by the official one, deleting the name
+        # typed here. teddyCloud names official audio by itself.
+        teddycloud.dirs.update({"/by", "/by/audioID"})
+        teddycloud.files["/by/audioID/1786524025.taf"] = b"taf"
+        teddycloud.taf_headers["/by/audioID/1786524025.taf"] = {
+            "valid": True, "audioId": 1786524025, "sha1Hash": "AB", "trackSeconds": [0, 60]}
+
+        page = client.get("/library/assign", params={"path": "/by/audioID/1786524025.taf"}).text
+        response = client.post("/library/assign", data={
+            "path": "/by/audioID/1786524025.taf", "ruid": "deb4ed0e500304e0"},
+            follow_redirects=False)
+
+        assert 'name="episode"' not in page
+        assert response.status_code == 303
+        entry = teddycloud.tag_entries["deb4ed0e500304e0"]
+        assert entry["source"] == "lib://by/audioID/1786524025.taf"
+        assert not entry.get("tonie_model") and teddycloud.custom_models == []
 
     def test_putting_audio_the_library_lacks_on_a_sticker_is_refused(self, client):
         assert client.get("/library/assign", params={"path": "/Weg/Weg.taf"}).status_code == 404

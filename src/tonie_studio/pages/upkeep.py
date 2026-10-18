@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from .. import backup as backup_module
 from ..albumnotes import made
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
-                      park, plan_restore, read_backup, take_parked)
+                      drop_parked, park, plan_restore, read_backup, read_parked)
 from ..checkup import BULK_FIXES, apply_fix, examine
 from ..encode import EncodeError, list_tafs
 from ..library import is_library, played, same
@@ -148,12 +148,13 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         if not token.isalnum():
             raise Refused(400, "error.not_a_restore")
-        data = take_parked(settings.data_dir, token)
+        data = read_parked(settings.data_dir, token)
         if data is None:
             raise Refused(404, "error.restore_gone")
         with refusing(BackupError):
             backup = read_backup(data)
             steps = apply_restore(client(), backup, settings.data_dir)
+        drop_parked(settings.data_dir, token)
         restored[token] = (steps, backup.manifest)
         while len(restored) > KEEP_RESTORED:
             restored.popitem(last=False)

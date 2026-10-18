@@ -54,6 +54,19 @@ class TestCaching:
 
         assert client.get(f"/cover/cache/{NAME}", headers={"If-None-Match": etag}).status_code == 200
 
+    def test_a_cover_of_our_own_is_asked_about_every_time(self, client, teddycloud):
+        # It keeps its address when a new picture is chosen; kept for an hour,
+        # the old one would show for an hour. The ETag makes asking cheap.
+        teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
+
+        first = client.get("/cover/custom/TS-0001.jpg")
+        teddycloud.images["TS-0001.jpg"] = jpeg_bytes((300, 300))
+        again = client.get("/cover/custom/TS-0001.jpg",
+                           headers={"If-None-Match": first.headers["etag"]})
+
+        assert "no-cache" in first.headers["cache-control"]
+        assert again.status_code == 200
+
     def test_a_small_size_comes_small(self, client, teddycloud):
         # A 44 pixel thumbnail decoded from a full cover holds megabytes in
         # the phone's memory, hundreds of times over.

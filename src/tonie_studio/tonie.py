@@ -48,12 +48,19 @@ def publish(
     category: str = DEFAULT_CATEGORY,
     year: Optional[Union[int, str]] = None,
     require_free: bool = False,
+    keep_tracks: bool = False,
 ) -> str:
     """Give the tag its audio and its identity, and return the model id used.
 
     With ``require_free`` a tag that plays something is refused rather than
     replaced. That is checked under the same lock as the write, so two
     writers that both saw it free cannot both have it.
+
+    A ``model_id`` that names an existing model gets the new audio and
+    ``tracks`` and keeps everything else a person may have set: names,
+    category, language, year, picture and fields this app does not know, such
+    as the shop link. ``keep_tracks`` keeps its track names too, as long as
+    there are as many as the new audio has chapters.
     """
     if not encoded.source:
         raise TonieError("tonie.no_source")
@@ -67,9 +74,15 @@ def publish(
     with WRITING:
         if require_free and require_tag(client, ruid).assigned:
             raise TonieError("tonie.sticker_taken", ruid=ruid)
+        existing = find_model(client, model_id) if model_id else None
         model_id = model_id or next_model_id(client)
-        model = new_model(model_id, series, episode, tracks, language, category)
-        model.release = release_from_year(year) or ""
+        if existing is not None:
+            model = existing
+            if not (keep_tracks and len(existing.tracks) == encoded.tracks):
+                model.tracks = list(tracks)
+        else:
+            model = new_model(model_id, series, episode, tracks, language, category)
+            model.release = release_from_year(year) or ""
         if encoded.audio_id is not None and encoded.sha1:
             # teddyCloud refuses a second custom model with the same audio_id
             # and hash. A sticker given audio another model already carries gets
@@ -81,13 +94,6 @@ def publish(
 
         if cover is not None:
             model.picture = upload_cover(client, model_id, cover, cover_name)
-        else:
-            # The model is replaced whole on every write, so a picture not carried
-            # over is a picture lost: publishing new audio under the same model
-            # must not strip its cover.
-            existing = find_model(client, model_id)
-            if existing:
-                model.picture = existing.picture
 
         client.upsert_custom_tonie(model.to_json())
         client.set_tag(ruid, source=encoded.source, tonie_model=model_id, nocloud=True)

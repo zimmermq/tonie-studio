@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -81,7 +81,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.post("/upload")
-    def upload(form: FormData = Depends(upload_form)):
+    def upload(request: Request, form: FormData = Depends(upload_form)):
         """Spool a browser upload, then hand its albums to the batch page together."""
         files = [part for part in form.getlist("files") if isinstance(part, StarletteUploadFile)]
         with refusing(UploadError, status=507):
@@ -92,8 +92,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         # The new folder has to show up at once, not in ten seconds.
         catalogue.forget()
         ids = [f"{UPLOAD}{album_id(settings.upload_dir, folder)}" for folder in albums]
-        return RedirectResponse(f"/batch?{urlencode([('ids', identifier) for identifier in ids])}",
-                                303)
+        target = f"/batch?{urlencode([('ids', identifier) for identifier in ids])}"
+        # The page sends by hand to show progress, and opens the batch itself:
+        # a redirect would have its request plan the batch once for nothing.
+        if request.headers.get("x-upload"):
+            return JSONResponse({"next": target})
+        return RedirectResponse(target, 303)
 
 
     def _album_page(request: Request, identifier: str, album: Album, form: AlbumForm,
@@ -303,7 +307,7 @@ class AlbumForm:
 ALBUM_COLUMNS = (
     Column("name", "albums.col_title"),
     Column("artist", "albums.col_artist"),
-    Column("year", "albums.col_year", number=True, desc=True),
+    Column("year", "albums.col_year", "albums.sort_year", number=True, desc=True),
 )
 
 # What the album list's filters match. Each is what is still to do: an album

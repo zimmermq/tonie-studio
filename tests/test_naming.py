@@ -436,6 +436,22 @@ class TestNamer:
         assert waits_for_writing(lambda: namer.name_one(ruid("00000001"), "Comics/Fledermaus.nfc"))
         assert waits_for_writing(lambda: namer.upkeep(migrate=True))
 
+    def test_the_catalogue_is_loaded_before_other_writes_are_held_up(self):
+        # tonies.json is several megabytes; while it loads, a person saving a
+        # title must not wait for it.
+        from tonie_studio.models import WRITING
+        from tonie_studio.naming import Namer
+
+        fake = self.teddycloud_with(1, "11", ruid("00000001"))
+        held = []
+        original = fake.tonies_json
+        fake.tonies_json = lambda: held.append(WRITING._is_owned()) or original()
+        namer = Namer(lambda: fake, dict)
+
+        namer.name_one(ruid("00000001"), "Comics/Fledermaus.nfc")
+
+        assert held == [False]
+
     def test_leaves_a_tonie_teddycloud_names_by_itself(self):
         from tonie_studio.naming import Namer
 

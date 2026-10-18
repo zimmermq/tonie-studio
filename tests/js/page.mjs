@@ -56,6 +56,11 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
   const listeners = {};
   const fetched = [];
   const document = {
+    // A page replaced whole, by document.write, as the text written.
+    written: null,
+    open() { this.written = ''; },
+    write(text) { this.written += text; },
+    close() {},
     getElementById: id => elements[id] || null,
     querySelector: selector => found[selector] || null,
     querySelectorAll: selector => queries[selector] || [],
@@ -103,5 +108,5 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
   }
   return Object.assign(elements, { timers, fetched, dispatch, location: context.location,
-                                   window: context });
+                                   window: context, document });
 }

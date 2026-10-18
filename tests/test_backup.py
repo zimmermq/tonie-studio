@@ -169,6 +169,29 @@ class TestReading:
             read_backup(buffer.getvalue())
 
 
+class TestRestoringHoldsTheLockBriefly:
+    def test_covers_are_moved_without_holding_up_every_other_write(self, cloud, data_dir,
+                                                                    tmp_path):
+        # A restore of hundreds of covers takes minutes; saving a title meanwhile
+        # must not wait for all of them, nor time out at the gateway.
+        from tonie_studio.models import WRITING
+
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+        held = []
+        original = fresh.upload
+
+        def upload(*args, **kwargs):
+            held.append(WRITING._is_owned())
+            return original(*args, **kwargs)
+
+        fresh.upload = upload
+
+        apply_restore(fresh, backup, tmp_path / "fresh-data")
+
+        assert held and not any(held)
+
+
 class TestRestoring:
     def test_waits_for_other_writes(self, cloud, data_dir, tmp_path):
         from web_helpers import waits_for_writing
@@ -501,20 +524,23 @@ class TestWhichAlbumBecameWhichTonie:
 
 
 class TestParkedBackups:
-    def test_a_parked_backup_is_handed_out_once(self, tmp_path):
-        from tonie_studio.backup import park, take_parked
+    def test_a_parked_backup_stays_until_it_is_dropped(self, tmp_path):
+        from tonie_studio.backup import drop_parked, park, read_parked
 
         token = park(tmp_path, b"zip")
 
-        assert take_parked(tmp_path, token) == b"zip"
-        assert take_parked(tmp_path, token) is None
+        assert read_parked(tmp_path, token) == b"zip"
+        assert read_parked(tmp_path, token) == b"zip"
+        drop_parked(tmp_path, token)
+        assert read_parked(tmp_path, token) is None
 
     def test_a_token_that_is_not_one_reaches_no_file(self, tmp_path):
-        from tonie_studio.backup import take_parked
+        from tonie_studio.backup import drop_parked, read_parked
 
         (tmp_path / "secret.zip").write_bytes(b"x")
 
-        assert take_parked(tmp_path, "../secret") is None
+        assert read_parked(tmp_path, "../secret") is None
+        drop_parked(tmp_path, "../secret")
         assert (tmp_path / "secret.zip").exists()
 
     def test_only_old_parked_backups_are_cleared(self, tmp_path):

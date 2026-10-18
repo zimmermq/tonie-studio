@@ -23,13 +23,13 @@ log = logging.getLogger(__name__)
 # that guessed from the content could run a file as a page.
 NO_SNIFFING = {"X-Content-Type-Options": "nosniff"}
 
-# How long a browser may keep a cover without asking, in seconds. A picture
-# in teddyCloud's cache is named after the address it came from, which a shop
-# does not reuse for another picture; a cover of this app's own changes when
-# someone picks a new one. After that the browser asks with the ETag and gets
-# a bodiless 304 for a cover that is unchanged.
-KEEP_CACHED = 7 * 86400
-KEEP_CUSTOM = 3600
+# How a browser may keep a cover. A picture in teddyCloud's cache is named
+# after the address it came from, which a shop does not reuse for another
+# picture: a week without asking. A cover of this app's own keeps its name
+# when someone picks a new one, so the browser asks every time; the ETag
+# makes the answer a bodiless 304 while it is unchanged.
+KEEP_CACHED = "private, max-age=604800"
+KEEP_CUSTOM = "private, no-cache"
 
 # Rendered sizes and sticker previews, by the cover's ETag and what was asked:
 # hovering over a row asks for the same rendering again and again. A few
@@ -75,7 +75,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
 def _picture_response(request: Request, data: bytes, name: str, mode: Optional[str],
-                      size: int, keep: int) -> Response:
+                      size: int, keep: str) -> Response:
     """The picture as it is, made smaller with a ``size``, or rendered as the sheet prints it.
 
     The ETag names the picture's bytes and what was asked of them, so a
@@ -84,7 +84,7 @@ def _picture_response(request: Request, data: bytes, name: str, mode: Optional[s
     mode = mode if mode in (FILL, FIT) else ""
     size = max(64, min(size or PIXELS, PIXELS)) if mode else max(0, min(size, MAX_SIZE))
     etag = f'"{hashlib.sha256(data).hexdigest()[:20]}-{mode}-{size}"'
-    headers = {**NO_SNIFFING, "ETag": etag, "Cache-Control": f"private, max-age={keep}"}
+    headers = {**NO_SNIFFING, "ETag": etag, "Cache-Control": keep}
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
     body, media_type = _render(data, name, mode, size, etag)

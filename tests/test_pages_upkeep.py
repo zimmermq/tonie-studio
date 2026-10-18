@@ -211,6 +211,25 @@ class TestBackupPages:
 
         assert 'href="/backup/download"' in page
 
+    def test_teddycloud_away_while_restoring_lets_one_try_again(self, client, runner, teddycloud):
+        # The uploaded file is kept until the restore went through; otherwise
+        # an outage means uploading the backup again.
+        from unittest.mock import patch
+
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        publish_album(client, runner, teddycloud)
+        data = client.get("/backup/download").content
+        teddycloud.custom_models.clear()
+        page = client.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+
+        with patch("tonie_studio.pages.upkeep.apply_restore",
+                   side_effect=TeddyCloudError("unreachable")):
+            assert client.post(f"/restore/{token}").status_code == 503
+
+        assert client.post(f"/restore/{token}", follow_redirects=False).status_code == 303
+
     def test_refuses_a_file_that_is_not_a_backup(self, client):
         response = client.post("/restore", files={"file": ("x.zip", b"nope", "application/zip")})
 

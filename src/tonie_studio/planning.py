@@ -124,6 +124,9 @@ class BatchRow:
     # A sticker that plays this album's tonie from a taf that is gone: the
     # album is encoded again to that very path and the tonie keeps its model.
     rebuild_ruid: str = ""
+    # Encoded on its own right now, from the album page: left out, or the
+    # batch would encode the same album a second time beside it.
+    busy: bool = False
 
     @property
     def rebuild(self) -> bool:
@@ -135,7 +138,9 @@ class BatchRow:
 
     @property
     def skipped(self) -> bool:
-        """Left out: its tonie exists and plays, or its taf is there and cannot be reused."""
+        """Left out: busy, its tonie exists and plays, or its taf is there and cannot be reused."""
+        if self.busy:
+            return True
         if self.rebuild:
             return False
         return bool(self.tonie) or (self.occupied and not self.reusable)
@@ -144,7 +149,7 @@ class BatchRow:
 def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
                archive_dir: Path, upload_dir: Path, series: Optional[Dict[str, str]] = None,
                episodes: Optional[Dict[str, str]] = None, tonies: Optional[Dict[str, str]] = None,
-               models: Sequence[Model] = ()) -> List[BatchRow]:
+               models: Sequence[Model] = (), busy: Sequence[str] = ()) -> List[BatchRow]:
     """Each album with its default tracks, its taf paths and its stickers.
 
     Every album takes what its own page would offer untouched: the tracks
@@ -158,6 +163,9 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
     album whose tafs exist but play on no tag is not encoded again, only
     given its stickers - if every part is there with as many chapters as the
     part has tracks; anything else there is left alone.
+
+    ``busy`` names the targets encodes are writing right now; an album
+    with one of them is left out.
 
     ``series`` and ``episodes`` hold what the page sent, by album id; an
     album missing from them gets the suggestion. A series sent empty stays
@@ -183,6 +191,8 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
                    or match_by_tracks([track.title for track in album.tracks], models) or ""),
         ))
         _plan_rebuild(client, rows[-1], tags)
+        rows[-1].busy = any(same(target) in {same(path) for path in busy}
+                            for target in rows[-1].targets)
     # Grouped by series and in episode order within one, which is also the
     # order the stickers are handed out in.
     rows.sort(key=lambda row: (row.series.casefold(), episode_order(row.episode)))

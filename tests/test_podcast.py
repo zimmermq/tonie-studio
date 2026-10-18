@@ -602,3 +602,34 @@ class TestTheUpdaterKeepsGoing:
         self._updater(tmp_path, queued).run(stop)
 
         assert queued == ["alt"]
+
+
+class TestSubscriptionIdsAreNames:
+    """An id names a folder that a refresh empties when it is done."""
+
+    @pytest.mark.parametrize("bad", ["..", "../..", "/data", "a/b", "", "x" * 200])
+    def test_a_record_with_an_id_that_is_a_path_is_not_loaded(self, tmp_path, bad):
+        import json
+
+        (tmp_path / "podcasts.json").write_text(json.dumps([
+            {"id": bad, "feed": "https://example.org/feed.xml", "ruid": RUID},
+            {"id": "kakadu", "feed": "https://example.org/feed.xml", "ruid": RUID}]))
+
+        assert [entry.id for entry in load_subscriptions(tmp_path)] == ["kakadu"]
+
+    def test_a_backup_cannot_bring_one_in(self, cloud, tmp_path):
+        import io
+        import json
+        import zipfile
+
+        from tonie_studio.backup import apply_restore, create_backup, read_backup
+
+        data = io.BytesIO(create_backup(cloud, tmp_path / "here"))
+        with zipfile.ZipFile(data, "a") as archive:
+            archive.writestr("podcasts.json", json.dumps([
+                {"id": "..", "feed": "https://example.org/feed.xml", "ruid": RUID}]))
+        target = tmp_path / "restored"
+
+        apply_restore(cloud, read_backup(data.getvalue()), target)
+
+        assert load_subscriptions(target) == []

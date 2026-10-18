@@ -12,12 +12,13 @@ from ..album import read_albums
 from ..albumnotes import albums_with_tonies, remember_made
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
-from ..jobs import new_id
+from ..jobs import JobState, new_id
+from ..library import source_of
 from ..models import list_models
 from ..pictures import DEFAULT_SIZE
 from ..planning import plan_batch
 from ..publishing import (PLACE_RESULTS, Details, Outcome, encode_job, free_tags, job_states,
-                          place, publish_outcome, put_on_sticker)
+                          place, put_on_sticker, refill)
 from ..settings import Settings
 from ..teddycloud import TeddyCloudClient
 from .common import Context, Refused, album_or_404, refused, translator
@@ -44,8 +45,10 @@ def register(app: FastAPI, ctx: Context) -> None:
                                                for identifier in unique]), strict=True))
         known = albums_with_tonies(settings.data_dir, catalogue.albums(), models)
         try:
+            busy = [job.label for job in jobs.all() if job.kind == "encode"
+                    and job.state in (JobState.QUEUED, JobState.RUNNING)]
             rows = plan_batch(connection, albums, settings.archive_dir, settings.upload_dir,
-                              series, episodes, models=models, tonies=known)
+                              series, episodes, models=models, tonies=known, busy=busy)
         except Problem as problem:
             raise refused(problem) from problem
         # A tonie found by its track list, which the album list's name guess
@@ -84,8 +87,8 @@ def register(app: FastAPI, ctx: Context) -> None:
             year=row.album.year, album=row.identifier)
 
         def republish(outcome: Outcome) -> None:
-            publish_outcome(client(), settings.data_dir, row.rebuild_ruid, outcome,
-                            model_id=row.tonie)
+            refill(client(), settings.data_dir, row.rebuild_ruid, outcome, row.tonie,
+                   source_of(part.target))
 
         return jobs.submit("encode", part.target, work=encode_job(
             client, part.tracks, part.target, details, after=republish))

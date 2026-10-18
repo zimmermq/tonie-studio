@@ -87,27 +87,37 @@ for (const input of pickers) {
 
 // Sent by hand rather than by the form, so the page can say how far it is: a
 // folder of FLACs takes minutes, and a page that shows nothing meanwhile gets
-// the button pressed again. The server's answer is the batch page, which
-// the browser then opens.
+// the button pressed again. The server answers with where to go next, the
+// batch page; a refusal comes as its page, which is shown as it is.
 form.addEventListener('submit', event => {
   event.preventDefault();
   const request = new XMLHttpRequest();
+  const settled = () => { window.onbeforeunload = null; };
   const failed = () => {
+    settled();
     picked.textContent = words['upload.failed'];
     send.disabled = false;
   };
   request.open('POST', form.action || '/upload');
+  request.setRequestHeader('X-Upload', '1');
   request.upload.onprogress = progress => {
     if (!progress.lengthComputable) return;
     const percent = Math.floor(progress.loaded / progress.total * 100);
     picked.textContent = say(words['upload.sending'], {percent});
   };
   request.onload = () => {
-    if (request.status >= 200 && request.status < 300) location.href = request.responseURL;
-    else failed();
+    settled();
+    if (request.status >= 200 && request.status < 300) {
+      location.href = JSON.parse(request.responseText).next;
+      return;
+    }
+    document.open();
+    document.write(request.responseText);
+    document.close();
   };
   request.onerror = failed;
   send.disabled = true;
+  // Leaving now would cancel the upload half way.
+  window.onbeforeunload = leaving => { leaving.preventDefault(); };
   request.send(new FormData(form));
 });
-

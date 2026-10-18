@@ -652,6 +652,65 @@ class TestSilentTonies:
         assert "/" + source.split("lib://", 1)[1] in teddycloud.files
         assert [m["model"] for m in teddycloud.custom_models] == [model]
 
+    def test_what_a_person_set_on_it_stays(self, client, runner, teddycloud):
+        # The rebuild is offered right after a restore, which brought exactly
+        # these back; the album's suggestions must not replace them.
+        from tonie_studio.models import find_model, update_model
+
+        model, _source = self.silent(client, runner, teddycloud)
+        update_model(teddycloud, model, series="Mein Name", category="audio-play",
+                     shop_link="10000123", tracks=["Eigene Eins", "Eigene Zwei", "Eigene Drei"])
+        picture = find_model(teddycloud, model).picture
+
+        run_batch(client, runner, [first_album_id(client)])
+
+        rebuilt = find_model(teddycloud, model)
+        assert (rebuilt.series, rebuilt.category, rebuilt.shop_link, rebuilt.picture) == (
+            "Mein Name", "audio-play", "10000123", picture)
+        # The batch encodes the album's three tracks; three names still fit.
+        assert rebuilt.tracks == ["Eigene Eins", "Eigene Zwei", "Eigene Drei"]
+
+    def test_a_sticker_given_something_else_meanwhile_is_left_alone(self, client, runner,
+                                                                     teddycloud):
+        from unittest.mock import patch as hold
+
+        model, source = self.silent(client, runner, teddycloud)
+        album = first_album_id(client)
+
+        def given_away(*args, **kwargs):
+            teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Anderes/Neu.taf"
+            return original(*args, **kwargs)
+
+        import tonie_studio.publishing as publishing
+        original = publishing.encode_files
+        with hold.object(publishing, "encode_files", given_away):
+            run_batch(client, runner, [album])
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == "lib://Anderes/Neu.taf"
+
+
+class TestAnAlbumEncodedOnItsOwnMeanwhile:
+    def test_is_left_out_of_the_batch_while_it_runs(self, client, runner):
+        # Edited in detail in another tab and started there: the batch must not
+        # encode the same album a second time beside it.
+        import threading
+
+        ids = batch_ids(upload_series(client, episodes=2))
+        planned = client.get("/batch", params={"ids": ids}).text
+        targets = re.findall(r'data-target="([^"]+)"', planned)
+        hold = threading.Event()
+        runner.submit("encode", targets[0], lambda progress: hold.wait(5))
+
+        page = client.get("/batch", params={"ids": ids}).text
+        response = client.post("/batch", data={"ids": ids, "series": ["Serie"] * 2},
+                               follow_redirects=False)
+        hold.set()
+
+        assert "wird gerade einzeln encodiert" in page
+        # Only the encode that was already running writes that target.
+        assert [job.label for job in runner.all()].count(targets[0]) == 1
+        assert response.status_code == 303
+
 
 class TestTheDetailedPath:
     """One album edited in detail, from the batch, still walks the five steps."""

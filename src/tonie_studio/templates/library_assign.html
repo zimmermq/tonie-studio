@@ -10,6 +10,10 @@
     {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
   </div>
 
+  {% if imported %}
+  {#- Official audio: teddyCloud names it by itself; see pages/library.assign. #}
+  <p class="info">{{ t("library.assign_official") }}</p>
+  {% else %}
   <h2>{{ t("assign.what") }}</h2>
   <div class="card">
     {% call field(t("field.series")) %}
@@ -22,6 +26,7 @@
       {{ category_select(categories) }}
     {% endcall %}
   </div>
+  {% endif %}
 
   <p class="row wrap gap-10">
     <button class="primary" type="submit">{{ t("assign.title") }}</button>

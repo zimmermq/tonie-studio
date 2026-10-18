@@ -9,6 +9,7 @@ id, and the wrong one would be encoded.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 from contextlib import contextmanager
@@ -122,7 +123,14 @@ async def upload_form(request: Request) -> FormData:
     try:
         return await request.form(max_files=MOST_UPLOAD_PARTS, max_fields=MOST_UPLOAD_PARTS)
     except StarletteHTTPException as error:
-        raise Refused(400, "error.upload_too_many", most=MOST_UPLOAD_PARTS) from error
+        if str(error.detail).startswith("Too many"):
+            raise Refused(400, "error.upload_too_many", most=MOST_UPLOAD_PARTS) from error
+        raise Refused(400, "error.upload_unreadable") from error
+    except OSError as error:
+        # The parts are buffered on the data volume (TMPDIR) as they arrive.
+        if error.errno == errno.ENOSPC:
+            raise Refused(507, "upload.no_space") from error
+        raise
 
 
 def album_or_404(catalogue: Catalogue, identifier: str) -> Path:

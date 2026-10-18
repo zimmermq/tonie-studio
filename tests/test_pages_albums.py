@@ -341,6 +341,38 @@ class TestUpload:
 
         assert response.status_code == 303
 
+    def test_the_page_sending_by_hand_gets_where_to_go_rather_than_a_redirect(self, client):
+        # Followed by the request itself, the redirect would plan the batch
+        # once for nothing before the page opens it.
+        response = client.post("/upload", headers={"X-Upload": "1"}, follow_redirects=False,
+                               files=[("files", ("01-eins.mp3", b"\x01" * 8, "audio/mpeg"))])
+
+        assert response.status_code == 200
+        assert response.json()["next"].startswith("/batch?ids=")
+
+    def test_a_full_disk_while_the_form_is_read_says_so(self, client, monkeypatch):
+        import errno
+
+        from starlette.requests import Request
+
+        async def full(self, *args, **kwargs):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(Request, "form", full)
+
+        response = client.post("/upload", files=[("files", ("01.mp3", b"x", "audio/mpeg"))])
+
+        assert response.status_code == 507
+
+    def test_a_broken_form_is_not_called_too_many_files(self, client):
+        from tonie_studio.i18n import Translator
+
+        response = client.post("/upload", content=b"--x\r\nbroken",
+                               headers={"Content-Type": "multipart/form-data; boundary=x"})
+
+        assert response.status_code == 400
+        assert Translator("de")("error.upload_too_many", most=20000) not in response.text
+
     def test_too_many_files_are_refused_in_words(self, client, monkeypatch):
         from tonie_studio.i18n import Translator
 

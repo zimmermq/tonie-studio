@@ -119,9 +119,10 @@ class JobRunner:
             self._order.append(job.id)
             self._forget_old()
 
-        future = self._pool.submit(self._run, job, work)
+        # Submitted and recorded in one step: a shutdown in between would not
+        # know this job's place in the pool, and leave it "queued" for good.
         with self._lock:
-            self._futures[job.id] = future
+            self._futures[job.id] = self._pool.submit(self._run, job, work)
         return job.id
 
     def get(self, job_id: str) -> Optional[Job]:

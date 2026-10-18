@@ -15,8 +15,8 @@ from ..jobs import JobState
 from ..library import same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
-from ..models import CATEGORIES, DEFAULT_CATEGORY
-from ..tags import TonieError, TonieTag, list_tags
+from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING
+from ..tags import TonieError, TonieTag, list_tags, require_tag
 from ..tags import label as tag_label
 from ..times import from_seconds
 from ..tonie import publish
@@ -86,6 +86,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         return templates.TemplateResponse(request, "library_assign.html", {
             "path": path,
             "encoded": encoded,
+            "imported": _imported(path),
             "series": folder.rsplit("/", 1)[-1],
             "episode": name[:-len(TAF_SUFFIX)],
             "tags": list_tags(connection),
@@ -94,14 +95,25 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/library/assign")
     def assign(path: str = Form(...), ruid: str = Form(...), series: str = Form(""),
-               episode: str = Form(...), category: str = Form(DEFAULT_CATEGORY)):
+               episode: str = Form(""), category: str = Form(DEFAULT_CATEGORY)):
         connection = client()
         encoded = existing_taf(connection, path) if path.endswith(TAF_SUFFIX) else None
         if encoded is None:
             raise Refused(404, "library.gone")
         with refusing(TonieError):
-            publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
-                    category=category)
+            if _imported(path):
+                # Official audio: teddyCloud names it by itself. A model of our
+                # own would carry that audio, and the naming replaces such a
+                # model by the official one, deleting the name typed here.
+                with WRITING:
+                    require_tag(connection, ruid)
+                    connection.set_tag(ruid, source=encoded.source, tonie_model="",
+                                       nocloud=True)
+            else:
+                if not episode.strip():
+                    raise Refused(400, "encode.no_name")
+                publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
+                        category=category)
         return RedirectResponse(f"/tonies/{ruid}", 303)
 
 
@@ -119,6 +131,11 @@ LIBRARY_COLUMNS = (
 RECORDED, IMPORTED, BOX = "recorded", "imported", "box"
 # Not where it comes from but filtered the same way: no sticker plays it.
 UNUSED = "unused"
+
+
+def _imported(path: str) -> bool:
+    """Whether a taf is one teddyCloud fetched from the Tonies cloud: official audio."""
+    return same(path).startswith(same(LIBRARY_FOLDER) + "/")
 
 
 def _shelve(tafs: List[Taf], tags: List[TonieTag]) -> List["Shelved"]:

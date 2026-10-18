@@ -27,7 +27,7 @@
   </div>
   <div class="list">
   {% for row in rows %}
-    <div class="item">
+    <div class="item" data-target="{{ row.targets[0] if row.targets else '' }}">
       <input type="hidden" name="ids" value="{{ row.identifier }}">
       {{ thumb("/album/" ~ row.identifier ~ "/cover?size=" ~ thumb_size if row.album.cover_candidates) }}
       <span class="grow batchnames">
@@ -43,7 +43,9 @@
         </span>
       </span>
       <span class="muted sticker right">
-        {% if row.rebuild %}
+        {% if row.busy %}
+        <span class="muted">{{ t("batch.busy") }}</span>
+        {% elif row.rebuild %}
         <span class="state-done">{{ t("batch.rebuild") }}</span>
         {% elif row.tonie %}
         <span class="state-failed">{{ t("batch.has_tonie", model=row.tonie) }}</span>

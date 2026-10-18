@@ -22,7 +22,8 @@ from .albumnotes import remember_made
 from .batch import Placing, PlayedOn, Slot
 from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .jobs import Job, JobState
-from .models import DEFAULT_CATEGORY
+from .library import same
+from .models import DEFAULT_CATEGORY, WRITING
 from .pictures import crop
 from .runtimes import remember
 from .sheet import PIXELS
@@ -168,6 +169,34 @@ def put_on_sticker(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome:
     except TeddyCloudError as error:
         _note_publish_failed(outcome, ruid, error)
         return False
+    return True
+
+
+def refill(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome: Outcome,
+           model_id: str, expected_source: str) -> bool:
+    """Give a silent tonie its audio back, as the model it already is.
+
+    Only while the sticker still plays ``expected_source`` - the taf that was
+    gone - with ``model_id``: one given something else since the batch was
+    planned is left alone. Names, cover, category and track names that still
+    fit stay as they are; they may have just come back from a backup. Says so
+    in the outcome rather than raising, like put_on_sticker.
+    """
+    try:
+        with WRITING:
+            tag = find_tag(client, ruid)
+            if (tag is None or same(tag.source) != same(expected_source)
+                    or (tag.model or "").lower() != model_id.lower()):
+                outcome.assign_error = "batch.tag_taken"
+                return False
+            publish(client, ruid, outcome.encoded, series=outcome.series,
+                    episode=outcome.episode, tracks=outcome.tracks, model_id=model_id,
+                    keep_tracks=True)
+    except (TonieError, TeddyCloudError) as error:
+        _note_publish_failed(outcome, ruid, error)
+        return False
+    outcome.model, outcome.ruid = model_id, ruid
+    remember(data_dir, model_id, outcome.seconds)
     return True
 
 

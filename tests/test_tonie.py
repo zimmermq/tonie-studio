@@ -162,7 +162,9 @@ class TestPublish:
                 episode="H neu", tracks=["B"], cover=cover, model_id=first)
 
         assert len(teddycloud.custom_tonies()) == 1
-        assert teddycloud.custom_tonies()[0]["episodes"] == "H neu"
+        # New audio and tracks; the name a person may have given it stays.
+        assert teddycloud.custom_tonies()[0]["tracks"] == ["B"]
+        assert teddycloud.custom_tonies()[0]["episodes"] == "H"
 
     def test_records_language_and_category(self, teddycloud, encoded):
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="L", episode="H",
@@ -496,7 +498,43 @@ class TestSameAudioOnTwoStickers:
                 tracks=["a"], cover=cover, model_id=model_id)
 
         (model,) = teddycloud.custom_tonies()
-        assert model["audio_id"] == [encoded.audio_id] and model["episodes"] == "Eins neu"
+        assert model["audio_id"] == [encoded.audio_id] and model["episodes"] == "Eins"
+
+
+class TestPublishingIntoAnExistingModel:
+    """New audio for a tonie that has a model: only the audio changes, never what a person set."""
+
+    @pytest.fixture
+    def model_id(self, teddycloud, encoded):
+        from tonie_studio.models import update_model
+
+        model_id = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Alt", episode="Alt",
+                           tracks=["Eins (bearbeitet)", "Zwei"])
+        update_model(teddycloud, model_id, series="Mein Name", episode="Meine Folge",
+                     category="audio-play", shop_link="10000123")
+        return model_id
+
+    def test_names_category_and_shop_link_stay(self, teddycloud, encoded, model_id):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Vorschlag", episode="Vorschlag",
+                tracks=["a", "b"], model_id=model_id)
+
+        model = find_model(teddycloud, model_id)
+        assert (model.series, model.episode, model.category, model.shop_link) == (
+            "Mein Name", "Meine Folge", "audio-play", "10000123")
+
+    def test_edited_track_names_stay_when_asked_and_they_still_fit(self, teddycloud, encoded,
+                                                                     model_id):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                tracks=["a", "b"], model_id=model_id, keep_tracks=True)
+
+        assert find_model(teddycloud, model_id).tracks == ["Eins (bearbeitet)", "Zwei"]
+
+    def test_new_tracks_replace_the_old_ones_otherwise(self, teddycloud, encoded, model_id):
+        # A podcast's episodes are new every time.
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
+                tracks=["Folge 9", "Folge 8"], model_id=model_id)
+
+        assert find_model(teddycloud, model_id).tracks == ["Folge 9", "Folge 8"]
 
 
 class TestPublishingAtOnce:

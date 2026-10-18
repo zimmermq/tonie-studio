@@ -25,6 +25,7 @@ import os
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +39,7 @@ from .library import is_library, played, same
 from .listening import FILE_NAME as LISTENING_FILE
 from .models import WRITING, Model, fetch_cover, is_cover_name
 from .podcast import FILE_NAME as PODCASTS_FILE
-from .podcast import Subscription, add_subscription, load_subscriptions
+from .podcast import Subscription, add_subscription, is_subscription_id, load_subscriptions
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
 from .store import from_record, sweep
@@ -301,23 +302,26 @@ def plan_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> Li
 def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> List[Step]:
     """Restore, and return what was done.
 
-    Under the lock every model write shares: a model is written whole, and
-    one changed meanwhile would be overwritten with what was read before.
+    The models are compared and written under the lock every model write
+    shares - a model is written whole, and one changed meanwhile would be
+    overwritten with what was read before - and so is each sticker. Covers
+    and the app's own records are moved without it: hundreds of covers take
+    minutes, and holding every other write up that long times them out.
     """
-    with WRITING:
-        return _restore(client, backup, data_dir, write=True)
+    return _restore(client, backup, data_dir, write=True)
 
 
 def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     steps: List[Step] = []
 
-    current_models = {str(model.get("model", "")).lower(): model
-                      for model in client.custom_tonies()}
-    for model in backup.models:
-        existing = current_models.get(str(model["model"]).lower())
-        action = NEW if existing is None else (SAME if existing == model else CHANGES)
-        steps.append(_attempt(write and action != SAME, MODEL, _model_label(model), action,
-                              lambda model=model: client.upsert_custom_tonie(model)))
+    with WRITING if write else nullcontext():
+        current_models = {str(model.get("model", "")).lower(): model
+                          for model in client.custom_tonies()}
+        for model in backup.models:
+            existing = current_models.get(str(model["model"]).lower())
+            action = NEW if existing is None else (SAME if existing == model else CHANGES)
+            steps.append(_attempt(write and action != SAME, MODEL, _model_label(model), action,
+                                  lambda model=model: client.upsert_custom_tonie(model)))
 
     for name, data in sorted(backup.covers.items()):
         try:
@@ -346,7 +350,7 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
         note = _missing_note(record.get("source") or "", present)
         steps.append(_attempt(write and bool(changed), TAG, label,
                               CHANGES if changed else SAME,
-                              lambda ruid=ruid, changed=changed: client.set_tag(ruid, **changed),
+                              lambda ruid=ruid, changed=changed: _set_tag(client, ruid, changed),
                               note))
 
     steps += _restore_times(backup, data_dir, write)
@@ -358,6 +362,12 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     if write:
         log.info("restored a backup from %s", backup.manifest.get("created"))
     return steps
+
+
+def _set_tag(client: TeddyCloudClient, ruid: str, changed: Dict) -> None:
+    """One sticker of a restore, written under the lock tag writes share."""
+    with WRITING:
+        client.set_tag(ruid, **changed)
 
 
 def _attempt(write: bool, what: str, name: str, action: str, apply, note: str = "") -> Step:
@@ -433,7 +443,8 @@ def _restore_podcasts(backup: Backup, data_dir: Path, write: bool) -> List[Step]
     try:
         saved = [from_record(Subscription, entry)
                  for entry in json.loads(backup.podcasts.decode("utf-8"))
-                 if isinstance(entry, dict) and entry.get("id") and entry.get("feed")]
+                 if isinstance(entry, dict) and is_subscription_id(entry.get("id"))
+                 and entry.get("feed")]
     except (ValueError, UnicodeDecodeError, TypeError):
         return [Step(PODCASTS, PODCASTS_FILE, SKIPPED, "restore.note.unreadable")]
     here = {subscription.id for subscription in load_subscriptions(data_dir)}
@@ -529,20 +540,24 @@ def park(data_dir: Path, data: bytes) -> str:
     return token
 
 
-def take_parked(data_dir: Path, token: str) -> Optional[bytes]:
-    """The backup parked under ``token``, removed as it is handed out; None if gone.
-
-    Taken rather than read, so a restore can only be applied once.
-    """
+def read_parked(data_dir: Path, token: str) -> Optional[bytes]:
+    """The backup parked under ``token``; None if it is gone or the token is no name."""
     if not token.isalnum():
         return None
-    parked = data_dir / PARKED_FOLDER / f"{token}.zip"
     try:
-        return parked.read_bytes()
+        return (data_dir / PARKED_FOLDER / f"{token}.zip").read_bytes()
     except FileNotFoundError:
         return None
-    finally:
-        parked.unlink(missing_ok=True)
+
+
+def drop_parked(data_dir: Path, token: str) -> None:
+    """Remove a parked backup once its restore went through, so it is applied once.
+
+    Not before: a restore that fails, teddyCloud being away say, can be
+    confirmed again without uploading the backup again.
+    """
+    if token.isalnum():
+        (data_dir / PARKED_FOLDER / f"{token}.zip").unlink(missing_ok=True)
 
 
 def clear_parked(data_dir: Path, older_than: float = PARKED_FOR) -> None:

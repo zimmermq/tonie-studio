@@ -286,26 +286,31 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     """Put new audio where a taf is, never leaving a moment with neither.
 
     teddyCloud cannot rename a file, so the new audio is first encoded beside
-    the old taf. Only once that worked is the old one deleted and the same
-    staged files encoded again under its name - the price is a second encode,
-    paid only when replacing. Should that one fail, every tag that played the
-    old taf is pointed at the one beside it, so nothing that played before
-    plays nothing now, and the error says where the audio is.
+    the old taf, and every tag that plays the old one is pointed at it before
+    the old one is deleted - the price is a second encode, paid only when
+    replacing. Only then is it encoded again under the old name and the tags
+    pointed back. Whenever the process is stopped, every tag plays audio that
+    exists; should the second encode fail, they keep the copy beside it and
+    the error says where it is.
     """
     # A name of its own each time: a copy an earlier failed replace left
     # behind may be what the stickers play now, and is not this one's to delete.
     aside = f"{target[:-len(TAF_SUFFIX)]}{ASIDE_MARK}{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
     _encode(client, staged, aside, progress, total_seconds)
 
+    playing = [tag.ruid for tag in list_tags(client)
+               if same(tag.source) == same(source_of(target))]
+    for ruid in playing:
+        client.set_tag(ruid, source=source_of(aside))
+
     log.info("replacing the taf at %s", target)
     client.delete(target, special="library")
     try:
         client.encode(target, staged, special="library")
     except TeddyCloudError as error:
-        for tag in list_tags(client):
-            if same(tag.source) == same(source_of(target)):
-                client.set_tag(tag.ruid, source=source_of(aside))
         raise EncodeError("encode.replace_kept", target=target, kept=aside) from error
+    for ruid in playing:
+        client.set_tag(ruid, source=source_of(target))
     _delete(client, aside)
 
 
@@ -448,21 +453,20 @@ def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:
 
 def _entry(client: TeddyCloudClient, parent: str, name: str,
            directory: bool = False) -> Optional[dict]:
-    """The entry ``name`` in the listing of ``parent``; None if absent or unlistable.
+    """The entry ``name`` in the listing of ``parent``; None if it is not there.
 
     ``parent`` is only listed once its own parent shows it, up to the root:
     teddyCloud answers a listing of a folder that is not there by closing the
     connection, which costs retries and leaves an error in its log for every
-    taf looked for in a series folder not made yet.
+    taf looked for in a series folder not made yet. A listing that fails for
+    a folder that is there raises TeddyCloudError: read as "not there", a
+    moment of teddyCloud being away would say audio is missing that is not.
     """
     if parent != "/":
         grandparent, folder = _split(parent)
         if _entry(client, grandparent, folder, directory=True) is None:
             return None
-    try:
-        entries = client.list_dir(parent, special="library")
-    except TeddyCloudError:
-        return None
+    entries = client.list_dir(parent, special="library")
     return next((entry for entry in entries
                  if bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)),
                 None)

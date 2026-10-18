@@ -494,6 +494,9 @@ class Namer:
         With ``expect``, the fingerprint of the plan a person was shown, nothing
         is written unless the plan is still that one; :class:`PlanChanged` says so.
         """
+        # The catalogue first: tonies.json is large, and loading it while
+        # holding the lock would hold up every other write for that long.
+        self.catalog()
         with WRITING:
             todo = self.preview(migrate)
             if expect is not None and fingerprint(todo) != expect:
@@ -504,9 +507,9 @@ class Namer:
 
     def name_one(self, ruid: str, path: str) -> None:
         """Name one tonie just imported, if teddyCloud cannot name it by itself."""
+        catalog, by_audio = self.catalog()
         with WRITING:
             client = self.client()
-            catalog, by_audio = self.catalog()
             todo = plan(list_tags(client), {ruid: path}, catalog, by_audio, list_models(client),
                         library_headers(client), relink=False)
             if not todo.empty:

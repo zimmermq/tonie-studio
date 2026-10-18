@@ -420,6 +420,28 @@ class TestLibraryListing:
         assert "/wichtig.json" in teddycloud.files
 
 
+class TestAFailedListingIsNotAMissingFile:
+    def test_teddycloud_failing_to_list_is_passed_on(self, teddycloud):
+        # Read as "no taf", a hiccup would plan a rebuild of a tonie that plays
+        # fine, or refuse a publish saying the audio is gone.
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files["/Lichterkinder/Halloween.taf"] = b"taf"
+        original = teddycloud.list_dir
+
+        def hiccup(path, special=None):
+            if path == "/Lichterkinder":
+                raise TeddyCloudError("teddyCloud at x is unreachable")
+            return original(path, special=special)
+
+        teddycloud.list_dir = hiccup
+
+        with pytest.raises(TeddyCloudError):
+            taf_exists(teddycloud, "/Lichterkinder/Halloween.taf")
+
+    def test_a_folder_that_is_not_there_is_still_a_plain_no(self, teddycloud):
+        assert not taf_exists(teddycloud, "/Gibtsnicht/Halloween.taf")
+
+
 class TestReplacingKeepsTheOldUntilTheNewIsThere:
     def test_a_failed_encode_leaves_the_old_taf(self, teddycloud, sources):
         teddycloud.files["/a.taf"] = b"older"
@@ -456,6 +478,38 @@ class TestReplacingKeepsTheOldUntilTheNewIsThere:
 
         kept = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
         assert kept != "lib://a.taf" and taf_exists(teddycloud, "/" + kept[len("lib://"):])
+
+
+    @pytest.mark.parametrize("dies_at", ["delete", "final_encode"])
+    def test_a_process_killed_half_way_leaves_every_sticker_playing(self, teddycloud, sources,
+                                                                     dies_at):
+        # A rollout kills a running replace. Whatever moment it hits, every
+        # sticker has to point at audio that exists, or the checkup offers to
+        # empty it and to delete the only copy as a leftover.
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag("7ab4ed0e500304e0", source="lib://a.taf")
+        original_delete, original_encode = teddycloud.delete, teddycloud.encode
+
+        class Killed(BaseException):
+            pass
+
+        def delete(path, special=None):
+            original_delete(path, special=special)
+            if dies_at == "delete" and path == "/a.taf":
+                raise Killed()
+
+        def encode(target, sources, special="library"):
+            if dies_at == "final_encode" and target == "/a.taf":
+                raise Killed()
+            return original_encode(target, sources, special)
+
+        teddycloud.delete, teddycloud.encode = delete, encode
+
+        with pytest.raises(Killed):
+            encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        playing = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+        assert taf_exists(teddycloud, "/" + playing[len("lib://"):])
 
 
 class TestThreadsKeepTheirOwnClient:

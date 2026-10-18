@@ -338,6 +338,8 @@ def _encode_episodes(client: TeddyCloudClient, folder: Path, feed: Feed, chosen:
     A new name every time, so the old taf keeps playing until the new one is
     complete and the tag has been switched over. The folder goes either way.
     """
+    if not is_subscription_id(folder.name):
+        raise ValueError(f"not a work folder: {folder}")
     folder.mkdir(parents=True, exist_ok=True)
     try:
         paths = []
@@ -474,7 +476,19 @@ def update_subscription(data_dir: Path, subscription: Subscription) -> None:
 def _read(data_dir: Path) -> List[Subscription]:
     """Under LOCK, which the caller holds for the whole read-change-write."""
     return [from_record(Subscription, entry) for entry in read_json(data_dir / FILE_NAME, [])
-            if isinstance(entry, dict) and entry.get("id") and entry.get("feed")]
+            if isinstance(entry, dict) and is_subscription_id(entry.get("id"))
+            and entry.get("feed")]
+
+
+# What an id may be: it names a work folder that a refresh removes when it is
+# done, so ".." or a path would remove something else entirely. New ids are
+# ten hex digits; older records and tests use plain words.
+_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def is_subscription_id(value) -> bool:
+    """Whether ``value`` can be a subscription's id: a plain name, never a path."""
+    return isinstance(value, str) and _ID.fullmatch(value) is not None
 
 
 def _write(data_dir: Path, subscriptions: List[Subscription]) -> None:
