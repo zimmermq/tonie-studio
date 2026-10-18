@@ -1,7 +1,7 @@
 """Tests for showing and printing pictures teddyCloud keeps in its image cache."""
 
 from markupsafe import escape
-from web_helpers import jpeg_bytes
+from web_helpers import jpeg_bytes, print_sheet
 
 from tonie_studio.i18n import Translator
 from tonie_studio.models import cache_name
@@ -57,7 +57,7 @@ class TestPrinting:
         teddycloud.files[f"/cache/{NAME}"] = jpeg_bytes()
 
         page = client.get("/sheet").text
-        response = client.post("/sheet", data={"models": ["TS-0039"], "counts": ["2"]})
+        response = print_sheet(client, [("TS-0039", 2)])
 
         assert "TS-0039" in page and f"/cover/cache/{NAME}" in page
         assert response.status_code == 200 and response.content.startswith(b"%PDF")
@@ -85,11 +85,11 @@ class TestPrintingOfficialTonies:
 
         assert "10000581" in page and f"/cover/cache/{NAME}" in page
 
-    def test_not_asked_for_it_stays_off_the_page(self, client, teddycloud):
-        # Hundreds of them would make a page of hundreds of pictures.
+    def test_on_a_sticker_it_is_on_the_page_without_being_asked_for(self, client, teddycloud):
+        # The page loads a cover only once its row is in view, so hundreds are fine.
         self.on_a_sticker(teddycloud)
 
-        assert "10000581" not in client.get("/sheet").text
+        assert 'data-model="10000581"' in client.get("/sheet").text
 
     def test_a_search_finds_it_by_name(self, client, teddycloud):
         self.on_a_sticker(teddycloud)
@@ -106,7 +106,6 @@ class TestPrintingOfficialTonies:
     def test_its_cover_and_back_are_printed(self, client, teddycloud):
         self.on_a_sticker(teddycloud)
 
-        response = client.post("/sheet", data={"models": ["10000581"], "counts": ["2"],
-                                               "back": "1"})
+        response = print_sheet(client, [("10000581", 2)], back="1")
 
         assert response.status_code == 200 and response.content.startswith(b"%PDF")

@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from web_helpers import captured_sheet, jpeg_bytes, publish_album
+from web_helpers import captured_sheet, jpeg_bytes, print_sheet, publish_album
 
 
 class TestSheetPage:
@@ -57,7 +57,7 @@ class TestSheet:
         # cover is replaced with a real one for this test.
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
 
-        response = client.post("/sheet", data={"models": ["TS-0001"], "counts": ["4"]})
+        response = print_sheet(client, [("TS-0001", 4)])
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
@@ -70,7 +70,7 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
 
         with captured_sheet() as asked:
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["2"], "back": "on"})
+            print_sheet(client, [("TS-0001", 2)], back="on")
 
         stickers = asked[-1]
         assert [sticker.count for sticker in stickers] == [2, 2]
@@ -81,7 +81,7 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
 
         with captured_sheet() as asked:
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"]})
+            print_sheet(client, [("TS-0001", 1)])
 
         assert all(sticker.back is None for sticker in asked[-1])
 
@@ -90,9 +90,8 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
 
         with captured_sheet() as asked:
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"],
-                                        "back": "on", "back_tracks": "on"})
+            print_sheet(client, [("TS-0001", 1)], back="on")
+            print_sheet(client, [("TS-0001", 1)], back="on", back_tracks="on")
 
         assert not asked[0][1].back.tracks  # the box is only ticked the second time
         assert asked[1][1].back.tracks
@@ -112,7 +111,7 @@ class TestSheet:
         remember(settings.data_dir, "TS-0001", 3960)
 
         with captured_sheet() as asked:
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
+            print_sheet(client, [("TS-0001", 1)], back="on")
 
         notes = " ".join(asked[-1][1].back.notes)
         assert "2021" in notes
@@ -124,7 +123,7 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
 
         with captured_sheet() as asked:
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"], "back": "on"})
+            print_sheet(client, [("TS-0001", 1)], back="on")
 
         notes = " ".join(asked[-1][1].back.notes)
         assert "Minuten" not in notes
@@ -138,11 +137,7 @@ class TestSheet:
         assert 'name="back"' in page and "Rückseite" in page
 
     def test_takes_an_uploaded_image_as_well(self, client):
-        response = client.post(
-            "/sheet",
-            data={"models": [], "counts": []},
-            files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))],
-        )
+        response = print_sheet(client, files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))])
 
         assert response.content.startswith(b"%PDF")
 
@@ -151,7 +146,7 @@ class TestSheet:
 
         page = client.get("/sheet").text
 
-        assert 'name="modes"' in page
+        assert 'name="picks"' in page and 'value="fit"' in page
         assert "randlos" in page and "ganzes Cover" in page
 
     def test_passes_the_chosen_mode_through_per_sticker(self, client, runner, teddycloud):
@@ -162,11 +157,9 @@ class TestSheet:
         import tonie_studio.pages.printing as web
         original = web.build_sheet
         try:
-            web.build_sheet = lambda stickers, target, shift=(0.0, 0.0): (
+            web.build_sheet = lambda stickers, target, shift=(0.0, 0.0), progress=None: (
                 seen.extend(s.mode for s in stickers) or original(stickers, target))
-            client.post("/sheet", data={
-                "models": ["TS-0001"], "counts": ["2"], "modes": ["fit"],
-            })
+            print_sheet(client, [("TS-0001", 2, "fit")])
         finally:
             web.build_sheet = original
 
@@ -175,14 +168,17 @@ class TestSheet:
     def test_refuses_a_sheet_with_nothing_on_it(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 
-        response = client.post("/sheet", data={"models": ["TS-0001"], "counts": ["0"]})
+        response = print_sheet(client, [("TS-0001", 0)])
 
         assert response.status_code == 400
 
-    def test_leaves_no_pdf_behind_in_the_data_directory(self, client, settings):
-        client.post("/sheet", files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))])
+    def test_keeps_only_the_latest_sheets_for_downloading_again(self, client, settings):
+        from tonie_studio.pages.printing import KEEP_SHEETS
 
-        assert list(settings.data_dir.glob("sheet-*.pdf")) == []
+        for _sheet in range(KEEP_SHEETS + 2):
+            print_sheet(client, files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))])
+
+        assert len(list(settings.data_dir.glob("sheet-*.pdf"))) == KEEP_SHEETS
 
 
 class TestPrintFromTonie:
@@ -196,14 +192,14 @@ class TestPrintFromTonie:
 
         page = client.get("/sheet?model=TS-0001").text
 
-        assert 'value="1"' in page.split('name="counts"')[1][:80]
+        assert 'value="1:fill:TS-0001"' in page
 
     def test_without_a_model_nothing_is_preselected(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 
         page = client.get("/sheet").text
 
-        assert 'value="0"' in page.split('name="counts"')[1][:80]
+        assert 'value="0:fill:TS-0001"' in page
 
 
 class TestOverviewSheet:
@@ -257,13 +253,13 @@ class TestCalibrationPages:
 
         shifts = []
 
-        def instead(stickers, target, shift=(0.0, 0.0)):
+        def instead(stickers, target, shift=(0.0, 0.0), progress=None):
             shifts.append(shift)
             target.write_bytes(b"%PDF")
             return []
 
         with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
-            client.post("/sheet", data={"models": ["TS-0001"], "counts": ["1"]})
+            print_sheet(client, [("TS-0001", 1)])
 
         assert shifts[-1][0] == pytest.approx(-2.0, abs=0.06)
 
@@ -300,7 +296,7 @@ class TestPrintedLanguage:
 
 class TestSheetRefusesWhatItCannotPrint:
     def test_only_pictures_it_cannot_read_is_refused_not_a_crash(self, client):
-        response = client.post("/sheet", files=[("files", ("x.png", b"not an image", "image/png"))])
+        response = print_sheet(client, files=[("files", ("x.png", b"not an image", "image/png"))])
 
         assert response.status_code == 400
 
@@ -310,13 +306,13 @@ class TestSheetRefusesWhatItCannotPrint:
         model = teddycloud.custom_tonies()[0]["model"]
         asked = []
 
-        def instead(stickers, target, shift=(0.0, 0.0)):
+        def instead(stickers, target, shift=(0.0, 0.0), progress=None):
             asked.extend(sticker.count for sticker in stickers)
             target.write_bytes(b"%PDF")
             return []
 
         with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
-            client.post("/sheet", data={"models": [model], "counts": ["100000000"]})
+            print_sheet(client, [(model, 100000000)])
 
         assert asked and max(asked) <= 99
 
@@ -330,7 +326,7 @@ class TestSheetReadsTheModelsOnce:
         teddycloud.custom_tonies = lambda: asked.append(1) or original()
 
         with captured_sheet():
-            client.post("/sheet", data={"models": [model, model, model], "counts": ["1", "1", "1"]})
+            print_sheet(client, [(model, 1)] * 3)
 
         assert len(asked) == 1
 
@@ -341,14 +337,14 @@ class TestNoPdfIsLeftBehind:
         publish_album(client, runner, teddycloud)
         model = teddycloud.custom_tonies()[0]["model"]
 
-        def half_written(stickers, target, shift):
+        def half_written(stickers, target, shift, progress=None):
             target.write_bytes(b"%PDF-1.4 half")
             raise RuntimeError("reportlab ran out of something")
 
         with patch("tonie_studio.pages.printing.build_sheet", side_effect=half_written):
-            with pytest.raises(RuntimeError):
-                client.post("/sheet", data={"models": [model], "counts": ["1"]})
+            response = print_sheet(client, [(model, 1)])
 
+        assert response.status_code == 500
         assert list(settings.data_dir.glob("*.pdf")) == []
 
     def test_housekeeping_clears_a_pdf_a_dead_process_left(self, settings):
@@ -385,3 +381,81 @@ class TestPrintedCoversAreNotStickers:
 
         assert "46 mm covers to cut out" in page
         assert "46 mm stickers" not in page
+
+
+class TestEveryStickerIsOnThePage:
+    """The page lists every sticker with a cover, findable by its UID, and prints any number."""
+
+    @staticmethod
+    def two_stickers(client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
+        teddycloud.add_tag("11dfc517500304e0", source="lib://x.taf", tonie_model="TS-0001")
+
+    def test_a_row_per_sticker_even_when_two_play_the_same(self, client, runner, teddycloud):
+        self.two_stickers(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert page.count('data-model="TS-0001"') == 2
+        assert "E0:04:03:50:0E:ED:B4:7A" in page and "E0:04:03:50:17:C5:DF:11" in page
+
+    def test_the_uid_is_searchable_with_and_without_its_colons(self, client, runner,
+                                                              teddycloud):
+        self.two_stickers(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert "e0:04:03:50:17:c5:df:11 e004035017c5df11" in page
+
+    def test_a_model_on_no_sticker_is_still_offered(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        teddycloud.custom_models.append({"model": "TS-0009", "series": "Nirgends",
+                                         "pic": "/custom_img/TS-0009.jpg"})
+
+        assert 'data-model="TS-0009"' in client.get("/sheet").text
+
+    def test_a_search_asked_for_by_address_is_put_in_the_search_box(self, client, runner,
+                                                                     teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        assert 'value="bobo"' in client.get("/sheet?q=bobo").text
+
+    def test_a_sheet_of_hundreds_of_covers_is_taken(self, client, runner, teddycloud):
+        # Three fields a row would pass the 1000 fields a form may carry.
+        publish_album(client, runner, teddycloud)
+
+        with captured_sheet() as asked:
+            response = print_sheet(client, [("TS-0001", 1)] * 600)
+
+        assert response.status_code == 200 and len(asked[-1]) == 600
+
+
+class TestTheSheetIsMadeInTheBackground:
+    def test_asking_leads_to_a_page_that_watches_it(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        with captured_sheet():
+            response = client.post("/sheet", data={"picks": ["1:fill:TS-0001"]},
+                                   follow_redirects=False)
+            job_id = response.headers["location"].rsplit("/", 1)[1]
+            client.app.state.prints.get(job_id).done.wait(10)
+
+        assert response.status_code == 303
+        assert client.get(f"/sheet/print/{job_id}").status_code == 200
+        state = client.get(f"/api/sheet/print/{job_id}").json()
+        assert (state["state"], state["percent"]) == ("done", 100)
+
+    def test_a_job_nobody_started_is_unknown(self, client):
+        assert client.get("/sheet/print/nope").status_code == 404
+        assert client.get("/sheet/print/nope/pdf").status_code == 404
+
+    def test_a_failed_sheet_says_why(self, client):
+        response = client.post("/sheet", files=[("files", ("x.png", b"not an image", "image/png"))],
+                               follow_redirects=False)
+        job_id = response.headers["location"].rsplit("/", 1)[1]
+        client.app.state.prints.get(job_id).done.wait(10)
+
+        state = client.get(f"/api/sheet/print/{job_id}").json()
+
+        assert state["state"] == "failed" and state["problem"]

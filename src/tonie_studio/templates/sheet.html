@@ -14,36 +14,34 @@
 {% endif %}
 {% if first_print %}<div class="warn">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
 
-{% if images_cached != false %}
-<form method="get" action="/sheet" class="row wrap gap-12 items-end mb-8">
-  <label class="field grow m-0">
-    <span>{{ t("sheet.search") }}</span>
-    <input type="search" name="q" value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}">
-  </label>
-  <button type="submit">{{ t("sheet.search_button") }}</button>
-</form>
-{% if query and not found %}<p class="muted">{{ t("sheet.search_none", query=query) }}</p>{% endif %}
-{% endif %}
-
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
-  {% if models %}
+  {% if rows %}
+  {#- Applied on the page: the rows are all here, so a search costs no request. #}
+  <div class="toolbar">
+    <input type="search" id="find" value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}"
+           autocomplete="off" aria-label="{{ t('sheet.search') }}">
+    <button type="button" id="tickshown">{{ t("sheet.tick_shown") }}</button>
+    <button type="button" id="untick">{{ t("sheet.untick") }}</button>
+    <label class="row gap-8 clickable"><input type="checkbox" id="onlyticked">
+      <span>{{ t("sheet.only_ticked") }}</span></label>
+    <span class="muted" id="shown"></span>
+  </div>
   <div class="row sheethead">
-    <label class="row gap-8 clickable">
-      <input type="checkbox" id="allon"><span class="muted">{{ t("common.all") }}</span>
-    </label>
     <span class="grow"></span>
     <span class="muted" style="width: 176px; text-align: center">{{ t("sheet.look") }}</span>
   </div>
   {% endif %}
 
-  <div class="list">
-    {% for model in models %}
-    <div class="album sticker" data-src="{{ model.picture | cover_url(images_cached) }}">
-      <input type="checkbox" class="want" {% if model.id in preset %}checked{% endif %}
+  <div class="list" id="rows">
+    {% for row in rows %}
+    {%- set model = row.model %}
+    <div class="album sticker" data-src="{{ model.picture | cover_url(images_cached) }}"
+         data-search="{{ row.search }}">
+      <input type="checkbox" class="want" {% if row.ticked %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
       <span class="grow truncate">
         <strong class="truncate">{{ model.series }}</strong>
-        <span class="muted truncate">{{ model.episode }} &middot; {{ model.id }}</span>
+        <span class="muted truncate">{{ model.episode }} &middot; {{ row.uid or t("sheet.no_sticker") }}</span>
       </span>
 
       <!-- The two circles are the choice, not a preview of it. In the space a
@@ -64,8 +62,6 @@
         </label>
       </span>
 
-      <input type="hidden" name="models" value="{{ model.id }}">
-      <input type="hidden" name="modes" value="{{ fill }}">
       <!-- One sticker per ticked tonie is what almost everyone wants. The
            number only appears once something is ticked, for the rarer case of
            wanting the same motif several times. -->
@@ -74,7 +70,9 @@
         <span class="count">1</span>&times;
         <button type="button" class="small" data-step="1">+</button>
       </span>
-      <input type="hidden" name="counts" value="{{ 1 if model.id in preset else 0 }}">
+      {#- count:mode:model, kept up to date by the page and only sent while ticked. #}
+      <input type="hidden" name="picks" data-model="{{ model.id }}"
+             value="{{ 1 if row.ticked else 0 }}:{{ fill }}:{{ model.id }}">
     </div>
     {% else %}
     <div class="album muted">
@@ -82,8 +80,9 @@
     </div>
     {% endfor %}
   </div>
+  <p class="muted" id="nohits" hidden>{{ t("sheet.no_match") }}</p>
 
-  {% if models %}
+  {% if rows %}
   <p class="row wrap gap-12 mt-12">
     <strong id="total"></strong>
     <button type="button" class="small" id="fillsheet">{{ t("sheet.fill_sheet") }}</button>
@@ -169,10 +168,10 @@
 </div>
 
 
-{% if models %}
+{% if rows %}
 <script type="application/json" id="backdata">{{ backs | tojson }}</script>
 {% endif %}
 
-<script type="application/json" id="page-data">{{ {"perPage": per_page, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures"), "diameterMm": diameter_mm, "backFade": back_fade} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"perPage": per_page, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.pictures", "sheet.shown_of"), "diameterMm": diameter_mm, "backFade": back_fade} | tojson }}</script>
 <script src="{{ asset('sheet.js') }}"></script>
 {% endblock %}

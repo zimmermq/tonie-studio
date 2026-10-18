@@ -7,24 +7,50 @@ const rows = [...document.querySelectorAll('.sticker')];
 const total = document.getElementById('total');
 
 // Both circles show the same cover, each rendered in its own mode, so the
-// choice is made by looking rather than by reading a description of it.
-for (const row of rows) {
+// choice is made by looking rather than by reading a description of it. The
+// picture is only asked for once its row comes into view: a page of every
+// tonie would otherwise load hundreds of full-size covers at once.
+function showCover(row) {
+  if (row.dataset.shown) return;
+  row.dataset.shown = 'yes';
   const url = `url("${row.dataset.src}")`;
   for (const layer of row.querySelectorAll('.preview span')) layer.style.backgroundImage = url;
+}
+const watcher = typeof IntersectionObserver === 'function'
+  ? new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) { showCover(entry.target); watcher.unobserve(entry.target); }
+      }
+    }, { rootMargin: '400px' })
+  : null;
+
+// A row's choice travels in one field, "count:mode:model", so a sheet of
+// every tonie stays under the number of fields a request may carry. An
+// unticked row's field is switched off and not sent at all.
+const pickOf = row => row.querySelector('input[name=picks]');
+const modelOf = row => pickOf(row).dataset.model;
+const countOf = row => +pickOf(row).value.split(':')[0] || 0;
+const modeOf = row => pickOf(row).value.split(':')[1];
+function setPick(row, count, mode) {
+  const pick = pickOf(row);
+  pick.value = `${count}:${mode}:${modelOf(row)}`;
+  pick.disabled = count < 1;
+}
+
+for (const row of rows) {
+  if (watcher) watcher.observe(row); else showCover(row);
   for (const radio of row.querySelectorAll('input[type=radio]')) {
     radio.addEventListener('change', () => {
-      row.querySelector('input[name=modes]').value = radio.value;
+      setPick(row, countOf(row), radio.value);
       row.querySelectorAll('.mode').forEach(mode => mode.classList.remove('chosen'));
       radio.closest('.mode').classList.add('chosen');
     });
   }
 }
 
-const countOf = row => +row.querySelector('input[name=counts]').value || 0;
-
 function setCount(row, value) {
   value = Math.max(0, Math.min(data.mostCopies, value));
-  row.querySelector('input[name=counts]').value = value;
+  setPick(row, value, modeOf(row));
   row.querySelector('.want').checked = value > 0;
   row.querySelector('.times').classList.toggle('empty', value < 1);
   row.querySelector('.count').textContent = value;
@@ -37,8 +63,6 @@ function refresh() {
   total.textContent = sum
     ? say(words['sheet.total'], {count: sum}) + ', ' + say(words['sheet.sheets'], {count: sheets})
     : words['sheet.nothing_chosen'];
-  const all = document.getElementById('allon');
-  if (all) all.checked = rows.length > 0 && rows.every(row => countOf(row) > 0);
 }
 
 for (const row of rows) {
@@ -50,13 +74,53 @@ for (const row of rows) {
   });
 }
 
-const all = document.getElementById('allon');
-if (all) all.addEventListener('change', () => {
-  // Read once: setCount refreshes the header box, so reading it inside the
-  // loop would turn the first row off again for every row after it.
-  const wanted = all.checked ? 1 : 0;
-  for (const row of rows) setCount(row, wanted);
-});
+// The search. Names are matched word by word, every word having to fit. A
+// comma or a new line starts another search whose hits are added, and a run
+// of UIDs separated by spaces counts as one search per UID: chips are read
+// off one after the other, often typed or pasted in one go. Colons in a UID
+// are left out on both sides, since chips print it either way.
+const isUid = word => /^[0-9a-f]{6,}$/.test(word);
+function searches(text) {
+  return text.toLowerCase().split(/[,;\n]+/).map(part => part.trim()).filter(Boolean)
+    .flatMap(part => {
+      const words = part.split(/\s+/).map(word => word.replace(/:/g, ''));
+      return words.length > 1 && words.every(isUid) ? words.map(word => [word]) : [words];
+    });
+}
+
+const find = document.getElementById('find');
+const onlyticked = document.getElementById('onlyticked');
+const shown = document.getElementById('shown');
+const nohits = document.getElementById('nohits');
+
+function filter() {
+  if (!find) return;
+  const wanted = searches(find.value);
+  let count = 0;
+  for (const row of rows) {
+    const hit = !wanted.length
+      || wanted.some(words => words.every(word => row.dataset.search.includes(word)));
+    row.hidden = !(hit && (!onlyticked.checked || countOf(row) > 0));
+    if (!row.hidden) count += 1;
+  }
+  shown.textContent = count === rows.length ? ''
+    : say(words['sheet.shown_of'], {shown: count, count: rows.length});
+  nohits.hidden = count > 0 || !rows.length;
+}
+
+if (find) {
+  find.addEventListener('input', filter);
+  // Enter would send the whole form, and with it a sheet nobody asked for yet.
+  find.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+  onlyticked.addEventListener('change', filter);
+  document.getElementById('tickshown').addEventListener('click', () => {
+    for (const row of rows) if (!row.hidden && countOf(row) < 1) setCount(row, 1);
+  });
+  document.getElementById('untick').addEventListener('click', () => {
+    for (const row of rows) setCount(row, 0);
+    filter();
+  });
+}
 
 const fillsheet = document.getElementById('fillsheet');
 if (fillsheet) fillsheet.addEventListener('click', () => {
@@ -92,7 +156,7 @@ if (backdata) {
 
   function drawBack() {
     const row = rows.find(row => countOf(row) > 0) || rows[0];
-    const model = row && row.querySelector('input[name=models]').value;
+    const model = row && modelOf(row);
     const back = model && backs[model];
     if (!back) { disc.style.display = 'none'; return; }
 
@@ -137,3 +201,4 @@ if (backdata) {
 
 for (const row of rows) setCount(row, countOf(row));
 refresh();
+filter();

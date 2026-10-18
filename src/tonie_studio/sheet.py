@@ -25,14 +25,14 @@ from __future__ import annotations
 
 import io
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from PIL import Image, UnidentifiedImageError
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
@@ -119,7 +119,10 @@ class TextLine:
 class Sticker:
     """One motif and how many copies of it to print."""
 
-    image: Union[bytes, Path]
+    # The picture, or what fetches it. A fetcher is called only when the
+    # sheet gets to this motif, so a sheet of hundreds holds one original at
+    # a time rather than all of them; it answers None when there is none.
+    image: Union[bytes, Path, Callable[[], Optional[bytes]]]
     count: int = 1
     mode: str = FILL
     # Only used to name the motif in a message about a picture that failed.
@@ -169,33 +172,45 @@ def sticker_positions(count: int, shift_mm: Tuple[float, float] = (0.0, 0.0)) ->
 
 
 def build_sheet(stickers: Sequence[Sticker], target: Path,
-                shift_mm: Tuple[float, float] = (0.0, 0.0)) -> List[str]:
+                shift_mm: Tuple[float, float] = (0.0, 0.0),
+                progress: Optional[Callable[[int, int], None]] = None) -> List[str]:
     """Write the sheet to ``target`` and return the motifs that had to be skipped.
 
     A cover that cannot be decoded is left out rather than failing the sheet:
     the other stickers are still worth printing, and the caller is told which
-    one to look at.
+    one to look at. ``progress`` hears how many motifs of how many are ready.
     """
-    prepared: List[Tuple[ImageReader, List[TextLine]]] = []
+    prepared: List[Tuple[str, List[TextLine]]] = []
     skipped: List[str] = []
+    wanted = [sticker for sticker in stickers if sticker.count >= 1]
 
-    for sticker in stickers:
-        if sticker.count < 1:
-            continue
-        try:
-            square = _square(sticker.image, sticker.mode,
-                             fade=BACK_FADE if sticker.back else 0.0)
-        except (OSError, UnidentifiedImageError, ValueError) as error:
-            log.warning("skipping cover %r: %s", sticker.label, error)
-            skipped.append(sticker.label or "unnamed")
-            continue
-        lines = back_lines(sticker.back) if sticker.back else []
-        prepared.extend([(square, lines)] * sticker.count)
+    # Each rendered square waits here as a JPEG file. Handed a file, reportlab
+    # puts the JPEG into the PDF as it is; handed the picture in memory, it
+    # decodes it to raw pixels and holds those until the PDF is saved, about
+    # 1 MB a motif, which a sheet of every tonie turns into most of a gigabyte.
+    with tempfile.TemporaryDirectory(prefix="sheet-") as staging:
+        for done, sticker in enumerate(wanted, 1):
+            try:
+                source = sticker.image() if callable(sticker.image) else sticker.image
+                if source is None:
+                    raise ValueError("no picture")
+                square = Path(staging) / f"{done}.jpg"
+                square.write_bytes(render_square(source, sticker.mode,
+                                                 fade=BACK_FADE if sticker.back else 0.0))
+            except (OSError, UnidentifiedImageError, ValueError) as error:
+                log.warning("skipping cover %r: %s", sticker.label, error)
+                skipped.append(sticker.label or "unnamed")
+                continue
+            finally:
+                if progress:
+                    progress(done, len(wanted))
+            lines = back_lines(sticker.back) if sticker.back else []
+            prepared.extend([(str(square), lines)] * sticker.count)
 
-    if not prepared:
-        raise ValueError("there is no cover to print")
+        if not prepared:
+            raise ValueError("there is no cover to print")
 
-    _draw(prepared, target, shift_mm)
+        _draw(prepared, target, shift_mm)
     return skipped
 
 
@@ -322,12 +337,7 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
     return buffer.getvalue()
 
 
-def _square(source: Union[bytes, Path], mode: str = FILL, fade: float = 0.0) -> ImageReader:
-    """Render a cover into the square the circle is drawn over."""
-    return ImageReader(io.BytesIO(render_square(source, mode, fade=fade)))
-
-
-def _draw(images: Sequence[Tuple[ImageReader, Sequence[TextLine]]], target: Path,
+def _draw(images: Sequence[Tuple[str, Sequence[TextLine]]], target: Path,
           shift_mm: Tuple[float, float] = (0.0, 0.0)) -> None:
     sheet = canvas.Canvas(str(target), pagesize=A4)
     sheet.setTitle("Traveltonies")

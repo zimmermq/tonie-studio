@@ -320,6 +320,8 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 .chip[aria-pressed=true] span { color: inherit; opacity: .8; }
 .views { display: inline-flex; gap: 6px; }
 .tonie[hidden] { display: none !important; }
+/* The print page filters its rows the same way. */
+.sticker[hidden] { display: none !important; }
 a.tonie { color: inherit; text-decoration: none; }
 a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 .tonie img, .tonie .noart { border-radius: 8px; object-fit: contain; }

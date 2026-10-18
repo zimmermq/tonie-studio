@@ -65,6 +65,7 @@ def create_app(
     templates.env.filters["cover_url"] = cover_url
     templates.env.globals["describe_progress"] = describe_progress
     jobs = runner or JobRunner()
+    prints = JobRunner()
     catalogue = Catalogue(settings)
     groups = Groups(jobs)
     listening = ListeningLog(settings.data_dir)
@@ -123,6 +124,7 @@ def create_app(
         finally:
             box.stop()
             importer.shutdown()
+            prints.shutdown()
             stopping.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
@@ -130,12 +132,13 @@ def create_app(
     app.state.settings = settings
     app.state.catalogue = catalogue
     app.state.jobs = jobs
+    app.state.prints = prints
 
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
         groups=groups, library=library, importer=importer, namer=namer,
-        shop=shop,
+        shop=shop, prints=prints,
     )
     for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing, importing):
         part.register(app, ctx)

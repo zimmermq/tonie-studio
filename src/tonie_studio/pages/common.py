@@ -86,6 +86,8 @@ class Context:
     namer: Namer
     # What the tonies.com shop says about tonies.
     shop: Shop
+    # Sheets being made, apart from ``jobs`` so a print never waits for an encode.
+    prints: JobRunner
 
 
 class Catalogue:

@@ -305,3 +305,29 @@ class TestShortening:
         for width in range(30, 200):
             cut = shorten_text(word, TITLE_PT, float(width), bold=True)
             assert text_width(cut, TITLE_PT, bold=True) <= width
+
+
+class TestPicturesFetchedOnTheWay:
+    """A sheet of hundreds holds one original picture at a time, not all of them."""
+
+    def test_a_picture_is_fetched_only_when_the_sheet_gets_to_it(self, tmp_path):
+        fetched = []
+
+        def fetcher(name):
+            def fetch():
+                fetched.append(name)
+                return _image()
+            return fetch
+
+        seen = []
+        build_sheet([Sticker(image=fetcher("a")), Sticker(image=fetcher("b"))],
+                    tmp_path / "sheet.pdf",
+                    progress=lambda done, total: seen.append((done, total, list(fetched))))
+
+        assert seen == [(1, 2, ["a"]), (2, 2, ["a", "b"])]
+
+    def test_a_motif_without_a_picture_is_left_off_and_named(self, tmp_path):
+        skipped = build_sheet([Sticker(image=_image()), Sticker(image=lambda: None, label="gone")],
+                              tmp_path / "sheet.pdf")
+
+        assert skipped == ["gone"]

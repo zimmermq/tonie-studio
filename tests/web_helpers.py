@@ -85,13 +85,29 @@ def captured_sheet():
     """
     asked = []
 
-    def instead(stickers, target, shift=(0.0, 0.0)):
+    def instead(stickers, target, shift=(0.0, 0.0), progress=None):
         asked.append(list(stickers))
         target.write_bytes(b"%PDF-1.4\n")
         return []
 
     with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
         yield asked
+
+
+def print_sheet(client, picks=(), files=None, **form):
+    """Ask for a sheet as the print page does, wait for it, and answer what the download gives.
+
+    ``picks`` are (model, count) or (model, count, mode), one per ticked row.
+    A request refused before any sheet is started is answered as it is.
+    """
+    data = {"picks": [f"{pick[1]}:{pick[2] if len(pick) > 2 else 'fill'}:{pick[0]}"
+                      for pick in picks], **form}
+    response = client.post("/sheet", data=data, files=files, follow_redirects=False)
+    if response.status_code != 303:
+        return response
+    job_id = response.headers["location"].rsplit("/", 1)[1]
+    assert client.app.state.prints.get(job_id).done.wait(30)
+    return client.get(f"/sheet/print/{job_id}/pdf")
 
 
 def list_tags_of(teddycloud):
