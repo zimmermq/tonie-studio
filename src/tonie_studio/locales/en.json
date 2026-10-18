@@ -308,7 +308,6 @@
  "job.to_podcasts": "To the podcasts",
  "job.to_tonies": "To the tonies",
  "job.uploaded": "Uploaded track {done} of {count}",
- "library.all": "All",
  "library.chapters": {
   "one": "{count} chapter",
   "other": "{count} chapters"
@@ -334,6 +333,8 @@
   "one": "{count} taf, {size} in all.",
   "other": "{count} tafs, {size} in all."
  },
+ "list.all": "All",
+ "list.order": "Order",
  "list.shown_of": "{shown} of {count} shown",
  "listening.all": "all",
  "listening.days": {
@@ -631,7 +632,6 @@
  "tonies.kind.nopicture": "No picture",
  "tonies.kind.official": "Official",
  "tonies.kind.own": "Own",
- "tonies.kind_all": "All",
  "tonies.no_match": "No tonie matches.",
  "tonies.none": "teddyCloud knows no sticker yet. Hold one against the box.",
  "tonies.note_nothing": ", nothing on the box",
@@ -643,14 +643,9 @@
  "tonies.print": "Print a sheet",
  "tonies.search": "Name, series or sticker",
  "tonies.search_label": "Search the tonies",
- "tonies.sort": "Order",
  "tonies.sort_added": "Newest first",
  "tonies.sort_age": "Age, youngest first",
- "tonies.sort_category": "Category",
  "tonies.sort_chapters": "Most chapters",
- "tonies.sort_kind": "Kind",
- "tonies.sort_name": "Name",
- "tonies.sort_series": "Series",
  "tonies.sticker": "Print cover",
  "tonies.summary": "{used} of {count} stickers in use",
  "tonies.view_grid": "Grid",

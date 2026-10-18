@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_list.html" import toolbar, chips, head with context %}
 {% block title %}{{ t("nav.library") }} - tonie-studio{% endblock %}
 
 {% block body %}
@@ -9,42 +10,19 @@
 </p>
 
 {% if shelf %}
-<div class="toolbar">
-  <input type="search" id="search" placeholder="{{ t('library.search') }}"
-         autocomplete="off" aria-label="{{ t('library.search_label') }}">
-  <label class="muted">{{ t("tonies.sort") }}
-    <select id="sort">
-      {% for key in ("name", "origin", "played", "chapters", "size", "added") %}
-      <option value="{{ key }}">{{ t("library.col_" ~ key) }}</option>
-      {% endfor %}
-    </select>
-  </label>
-</div>
-<div class="chips">
-  <button type="button" class="chip" data-filter="">{{ t("library.all") }} <span>{{ shelf | length }}</span></button>
-  {% for tag in filters %}
-  <button type="button" class="chip" data-filter="{{ tag }}">{{ t("library.origin." ~ tag) }} <span>{{ counts[tag] }}</span></button>
-  {% endfor %}
-  <span class="muted" id="count"></span>
-</div>
+{{ toolbar(columns, "library.search", "library.search_label") }}
+{{ chips(shelf | length, filters, counts, "library.origin.") }}
 {% endif %}
 
-<div id="library" class="tonies library" data-list data-view="list">
+<div id="library" class="listing library" data-list data-view="list">
   {% if shelf %}
-  {#- A heading orders by its column; again, the other way round. #}
-  <div class="tonies-head muted">
-    <span></span>
-    {% for key in ("name", "origin", "chapters", "size", "added", "played") %}
-    <span><button type="button" class="sorter" data-sort="{{ key }}">{{ t("library.col_" ~ key) }}</button></span>
-    {% endfor %}
-    <span></span>
-  </div>
+  {{ head(columns, trailing=True) }}
   {% endif %}
   {% for item in shelf %}
   {%- set taf = item.taf %}
   {%- set picture = taf.picture | cover_url(false) %}
   {%- set players = item.played_by | map(attribute="label") | join(", ") %}
-  <div class="taf tonie" data-path="{{ taf.path }}" data-tags="{{ item.tags }}"
+  <div class="taf listing-row" data-path="{{ taf.path }}" data-tags="{{ item.tags }}"
        data-name="{{ item.label | lower }}" data-origin="{{ t('library.origin.' ~ item.origin) | lower }}"
        data-played="{{ players | lower }}" data-chapters="{{ taf.chapters or '' }}"
        data-size="{{ taf.size or '' }}" data-added="{{ taf.date or '' }}"
@@ -85,8 +63,6 @@
 
 <p><a class="button" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "name", "orders": {
-    "name": {}, "origin": {}, "played": {}, "chapters": {"number": true, "desc": true},
-    "size": {"number": true, "desc": true}, "added": {"number": true, "desc": true}}} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "name", "orders": columns | orders} | tojson }}</script>
 <script src="{{ asset('list.js') }}"></script>
 {% endblock %}

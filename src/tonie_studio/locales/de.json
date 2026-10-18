@@ -308,7 +308,6 @@
  "job.to_podcasts": "Zu den Podcasts",
  "job.to_tonies": "Zu den Tonies",
  "job.uploaded": "Track {done} von {count} hochgeladen",
- "library.all": "Alle",
  "library.chapters": {
   "one": "{count} Kapitel",
   "other": "{count} Kapitel"
@@ -334,6 +333,8 @@
   "one": "{count} Taf, zusammen {size}.",
   "other": "{count} Tafs, zusammen {size}."
  },
+ "list.all": "Alle",
+ "list.order": "Sortierung",
  "list.shown_of": "{shown} von {count} angezeigt",
  "listening.all": "alles",
  "listening.days": {
@@ -631,7 +632,6 @@
  "tonies.kind.nopicture": "Ohne Bild",
  "tonies.kind.official": "Offiziell",
  "tonies.kind.own": "Eigene",
- "tonies.kind_all": "Alle",
  "tonies.no_match": "Kein Tonie passt.",
  "tonies.none": "teddyCloud kennt noch keinen Sticker. Halte einen an die Box.",
  "tonies.note_nothing": ", nichts auf der Box",
@@ -643,14 +643,9 @@
  "tonies.print": "Blatt drucken",
  "tonies.search": "Name, Serie oder Sticker",
  "tonies.search_label": "Tonies durchsuchen",
- "tonies.sort": "Sortierung",
  "tonies.sort_added": "Neueste zuerst",
  "tonies.sort_age": "Alter, jüngste zuerst",
- "tonies.sort_category": "Kategorie",
  "tonies.sort_chapters": "Meiste Kapitel",
- "tonies.sort_kind": "Art",
- "tonies.sort_name": "Name",
- "tonies.sort_series": "Serie",
  "tonies.sticker": "Cover drucken",
  "tonies.summary": "{used} von {count} Sticker bespielt",
  "tonies.view_grid": "Raster",

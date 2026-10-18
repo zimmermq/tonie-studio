@@ -141,7 +141,26 @@ class TestSortableColumns:
     def test_every_column_but_the_picture_sorts(self, client, official):
         page = client.get("/tonies").text
 
-        head = page[page.index('class="tonies-head'):page.index("</div>", page.index('class="tonies-head'))]
+        head = page[page.index('class="listing-head'):page.index("</div>", page.index('class="listing-head'))]
         assert [key for key in ("name", "series", "kind", "chapters", "category", "age", "added")
                 if f'data-sort="{key}"' in head] == \
             ["name", "series", "kind", "chapters", "category", "age", "added"]
+
+
+class TestOneDescriptionOfTheColumns:
+    """The order menu, the headings and the script's orders come from one list per page."""
+
+    @pytest.mark.parametrize("path", ["/tonies", "/library"])
+    def test_all_three_name_the_same_columns(self, client, runner, teddycloud, official, path):
+        import json
+        import re
+
+        publish_album(client, runner, teddycloud)
+        page = client.get(path).text
+
+        menu = re.findall(r'<option value="([a-z]+)"', page[page.index('id="sort"'):])
+        headings = re.findall(r'data-sort="([a-z]+)"', page)
+        data = json.loads(page[page.index('id="page-data">') + 15:page.index("</script>",
+                                                                             page.index('id="page-data">'))])
+        # The page data comes out in alphabetical order; menu and headings in the column order.
+        assert menu == headings and set(menu) == set(data["orders"])

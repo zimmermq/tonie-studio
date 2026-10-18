@@ -18,6 +18,7 @@ from ..albumnotes import forget_model
 from ..checkup import BOX_SOUND_PREFIX
 from ..encode import EncodeError, Taf, delete_taf, list_tafs
 from ..library import same
+from ..listing import Column
 from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, cover_url,
                       fetch_cover, find_model, images_cached, is_cover_name, list_models,
                       update_model)
@@ -73,6 +74,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "free": [row for row in rows if row.kind == FREE],
             "counts": counts,
             "kinds": [kind for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE) if counts[kind]],
+            "columns": TONIE_COLUMNS,
             "box": box.state,
             "images_cached": images_cached(connection),
         })
@@ -352,6 +354,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "total": sum(taf.size for taf in tafs),
             "counts": counts,
             "filters": [tag for tag in (RECORDED, IMPORTED, BOX, UNUSED) if counts[tag]],
+            "columns": LIBRARY_COLUMNS,
         })
 
 
@@ -423,6 +426,17 @@ def _picture_suffix(url: str) -> str:
     """The cover type of a picture address, ``png`` or ``jpg`` as teddyCloud keeps covers."""
     return "png" if url.split("?", 1)[0].lower().endswith(".png") else "jpg"
 
+
+# The tonie list's columns, in the order the rows show them.
+TONIE_COLUMNS = (
+    Column("name", "tonies.col_name"),
+    Column("series", "tonies.col_series"),
+    Column("kind", "tonies.col_kind"),
+    Column("chapters", "tonies.col_chapters", "tonies.sort_chapters", number=True, desc=True),
+    Column("category", "tonies.col_category"),
+    Column("age", "tonies.col_age", "tonies.sort_age", number=True),
+    Column("added", "tonies.col_added", "tonies.sort_added", number=True, desc=True),
+)
 
 # What kind of tonie a row of the list is; the filters of the page go by it.
 OFFICIAL, OWN, NO_MODEL, FREE = "official", "own", "none", "free"
@@ -498,6 +512,16 @@ def _library_dates(connection: TeddyCloudClient) -> Dict[str, datetime]:
     return {LIBRARY_PREFIX + entry["name"]: datetime.fromtimestamp(entry["date"], timezone.utc)
             for entry in files if not entry.get("isDir") and entry.get("date")}
 
+
+# The library's columns, in the order the rows show them.
+LIBRARY_COLUMNS = (
+    Column("name", "library.col_name"),
+    Column("origin", "library.col_origin"),
+    Column("chapters", "library.col_chapters", number=True, desc=True),
+    Column("size", "library.col_size", number=True, desc=True),
+    Column("added", "library.col_added", number=True, desc=True),
+    Column("played", "library.col_played"),
+)
 
 # Where a taf of the library comes from; the library page filters by it.
 RECORDED, IMPORTED, BOX = "recorded", "imported", "box"

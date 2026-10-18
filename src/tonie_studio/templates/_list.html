@@ -1,0 +1,47 @@
+{#- The parts every list page shares, imported with context. The columns come
+    from listing.py; what the search, chips and headings do is list.js. #}
+
+{% macro toolbar(columns, search, search_label, views=()) %}
+<div class="toolbar">
+  <input type="search" id="search" placeholder="{{ t(search) }}"
+         autocomplete="off" aria-label="{{ t(search_label) }}">
+  <label class="muted">{{ t("list.order") }}
+    <select id="sort">
+      {% for column in columns %}
+      <option value="{{ column.key }}">{{ t(column.choice or column.heading) }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if views %}
+  <span class="views" role="group">
+    {% for key, label in views %}
+    <button type="button" class="chip" data-view="{{ key }}">{{ t(label) }}</button>
+    {% endfor %}
+  </span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{#- ``label`` is the start of each filter's translation key, the filter after it. #}
+{% macro chips(total, filters, counts, label) %}
+<div class="chips">
+  <button type="button" class="chip" data-filter="">{{ t("list.all") }} <span>{{ total }}</span></button>
+  {% for tag in filters %}
+  <button type="button" class="chip" data-filter="{{ tag }}">{{ t(label ~ tag) }} <span>{{ counts[tag] }}</span></button>
+  {% endfor %}
+  <span class="muted" id="count"></span>
+</div>
+{% endmacro %}
+
+{#- A heading orders by its column; again, the other way round. The first
+    cell sits over the pictures, ``trailing`` adds one over a last column of
+    buttons. #}
+{% macro head(columns, trailing=False) %}
+<div class="listing-head muted">
+  <span></span>
+  {% for column in columns %}
+  <span><button type="button" class="sorter" data-sort="{{ column.key }}">{{ t(column.heading) }}</button></span>
+  {% endfor %}
+  {% if trailing %}<span></span>{% endif %}
+</div>
+{% endmacro %}

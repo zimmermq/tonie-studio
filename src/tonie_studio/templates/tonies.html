@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_list.html" import toolbar, chips, head with context %}
 {% block title %}{{ t("nav.tonies") }} - tonie-studio{% endblock %}
 
 {% block body %}
@@ -24,48 +25,19 @@
 {% endif %}
 
 {% if tonies %}
-<div class="toolbar">
-  <input type="search" id="search" placeholder="{{ t('tonies.search') }}"
-         autocomplete="off" aria-label="{{ t('tonies.search_label') }}">
-  <label class="muted">{{ t("tonies.sort") }}
-    <select id="sort">
-      <option value="name">{{ t("tonies.sort_name") }}</option>
-      <option value="series">{{ t("tonies.sort_series") }}</option>
-      <option value="kind">{{ t("tonies.sort_kind") }}</option>
-      <option value="category">{{ t("tonies.sort_category") }}</option>
-      <option value="age">{{ t("tonies.sort_age") }}</option>
-      <option value="added">{{ t("tonies.sort_added") }}</option>
-      <option value="chapters">{{ t("tonies.sort_chapters") }}</option>
-    </select>
-  </label>
-  <span class="views" role="group">
-    <button type="button" class="chip" data-view="grid">{{ t("tonies.view_grid") }}</button>
-    <button type="button" class="chip" data-view="list">{{ t("tonies.view_list") }}</button>
-  </span>
-</div>
-<div class="chips">
-  <button type="button" class="chip" data-filter="">{{ t("tonies.kind_all") }} <span>{{ tonies | length }}</span></button>
-  {% for kind in kinds %}
-  <button type="button" class="chip" data-filter="{{ kind }}">{{ t("tonies.kind." ~ kind) }} <span>{{ counts[kind] }}</span></button>
-  {% endfor %}
-  <span class="muted" id="count"></span>
-</div>
+{{ toolbar(columns, "tonies.search", "tonies.search_label",
+           views=(("grid", "tonies.view_grid"), ("list", "tonies.view_list"))) }}
+{{ chips(tonies | length, kinds, counts, "tonies.kind.") }}
 {% endif %}
 
-<div id="tonies" class="tonies" data-list data-view="grid" data-remember="tonies.view">
+<div id="tonies" class="listing" data-list data-view="grid" data-remember="tonies.view">
   {% if tonies %}
-  {#- A heading orders by its column; again, the other way round. #}
-  <div class="tonies-head muted">
-    <span></span>
-    {% for key in ("name", "series", "kind", "chapters", "category", "age", "added") %}
-    <span><button type="button" class="sorter" data-sort="{{ key }}">{{ t("tonies.col_" ~ key) }}</button></span>
-    {% endfor %}
-  </div>
+  {{ head(columns) }}
   {% endif %}
   {% for row in tonies %}
   {%- set tag = row.tag %}
   {%- set picture = tag.picture | cover_url(false) %}
-  <a class="tonie" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
+  <a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
      data-kind="{{ row.kind }}" data-tags="{{ row.kind }}{% if not picture %} nopicture{% endif %}"
      data-name="{{ row.name }}" data-series="{{ (tag.series ~ ' ' ~ row.name) | trim | lower }}"
      data-added="{{ row.added.timestamp() | int if row.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
@@ -94,9 +66,7 @@
 
 <p><a class="button" href="/sheet">{{ t("tonies.print") }}</a></p>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "list.shown_of"), "first": "name", "orders": {
-    "name": {}, "series": {}, "kind": {}, "category": {}, "age": {"number": true},
-    "added": {"number": true, "desc": true}, "chapters": {"number": true, "desc": true}}} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "list.shown_of"), "first": "name", "orders": columns | orders} | tojson }}</script>
 <script src="{{ asset('list.js') }}"></script>
 <script src="{{ asset('tonies.js') }}"></script>
 {% endblock %}

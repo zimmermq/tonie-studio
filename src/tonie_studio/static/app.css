@@ -307,9 +307,10 @@ p.technical { margin-top: 28px; overflow-wrap: anywhere; }
 .card.danger { border-left: 4px solid var(--bad); }
 button.danger { color: var(--bad); border-color: var(--bad); }
 
-/* The tonie list: one set of rows, laid out as a grid of covers or as a
-   table, whichever the person picked. The hidden attribute has to win over
-   the display both layouts set, or a filtered row stays on screen. */
+/* A list page, the tonies or the library: one set of rows, laid out as a
+   grid of covers or as a table, whichever the person picked. The hidden
+   attribute has to win over the display both layouts set, or a filtered row
+   stays on screen. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 0 0 10px; }
 .toolbar input[type=search] { flex: 1 1 260px; }
 .chips, .freestrip { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
@@ -319,80 +320,80 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 .chip[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--card); }
 .chip[aria-pressed=true] span { color: inherit; opacity: .8; }
 .views { display: inline-flex; gap: 6px; }
-.tonie[hidden] { display: none !important; }
+.listing-row[hidden] { display: none !important; }
 /* The print page filters its rows the same way. */
 .sticker[hidden] { display: none !important; }
-a.tonie { color: inherit; text-decoration: none; }
-a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
-.tonie img, .tonie .noart { border-radius: 8px; object-fit: contain; }
-.tonie .noart { background: var(--line); }
-.tonie .t-name, .tonie .t-series, .tonie .t-category { overflow: hidden; text-overflow: ellipsis; }
-.tonie .t-name strong { font-weight: 600; }
+a.listing-row { color: inherit; text-decoration: none; }
+a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.listing-row img, .listing-row .noart { border-radius: 8px; object-fit: contain; }
+.listing-row .noart { background: var(--line); }
+.listing-row .t-name, .listing-row .t-series, .listing-row .t-category { overflow: hidden; text-overflow: ellipsis; }
+.listing-row .t-name strong { font-weight: 600; }
 
-.tonies[data-view=grid] { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-.tonies[data-view=grid] .tonies-head,
-.tonies[data-view=grid] .t-kind,
-.tonies[data-view=grid] .t-category,
-.tonies[data-view=grid] .t-age,
-.tonies[data-view=grid] .t-added { display: none; }
-.tonies[data-view=grid] .tonie {
+.listing[data-view=grid] { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.listing[data-view=grid] .listing-head,
+.listing[data-view=grid] .t-kind,
+.listing[data-view=grid] .t-category,
+.listing[data-view=grid] .t-age,
+.listing[data-view=grid] .t-added { display: none; }
+.listing[data-view=grid] .listing-row {
   display: flex; flex-direction: column; gap: 2px; padding: 10px;
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
 }
-.tonies[data-view=grid] .tonie img,
-.tonies[data-view=grid] .tonie .noart { width: 100%; aspect-ratio: 1; margin-bottom: 6px; }
+.listing[data-view=grid] .listing-row img,
+.listing[data-view=grid] .listing-row .noart { width: 100%; aspect-ratio: 1; margin-bottom: 6px; }
 /* Two lines of the name, then cut: long episode titles are common. */
-.tonies[data-view=grid] .t-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.tonies[data-view=grid] .t-series,
-.tonies[data-view=grid] .t-chapters { white-space: nowrap; font-size: 13px; }
+.listing[data-view=grid] .t-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.listing[data-view=grid] .t-series,
+.listing[data-view=grid] .t-chapters { white-space: nowrap; font-size: 13px; }
 
-.tonies[data-view=list] { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-.tonies[data-view=list] .tonies-head,
-.tonies[data-view=list] .tonie {
+.listing[data-view=list] { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.listing[data-view=list] .listing-head,
+.listing[data-view=list] .listing-row {
   display: grid; align-items: center; gap: 12px; padding: 6px 12px;
   grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 100px 90px minmax(0, 1fr) 60px 100px;
 }
 /* The library: always a table, with the file's path under its name. */
-.tonies.library .tonies-head,
-.tonies.library .tonie {
+.listing.library .listing-head,
+.listing.library .listing-row {
   grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px 80px 100px minmax(0, 1.6fr) 70px;
 }
-.tonies.library .t-played { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tonies.library .t-delete form { margin: 0; }
+.listing.library .t-played { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listing.library .t-delete form { margin: 0; }
 /* A column heading is a button that reads like the heading it is. */
-.tonies-head .sorter {
+.listing-head .sorter {
   border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
 }
-.tonies-head .sorter:hover, .tonies-head .sorter[data-dir=asc],
-.tonies-head .sorter[data-dir=desc] { color: var(--ink); }
-.tonies-head .sorter[data-dir=asc]::after { content: " \25B2"; font-size: 10px; }
-.tonies-head .sorter[data-dir=desc]::after { content: " \25BC"; font-size: 10px; }
-.tonies[data-view=list] .tonies-head { font-size: 13px; border-bottom: 1px solid var(--line); }
-.tonies[data-view=list] .tonie { border-bottom: 1px solid var(--line); }
-.tonies[data-view=list] .tonie:last-child { border-bottom: 0; }
-.tonies[data-view=list] .tonie img,
-.tonies[data-view=list] .tonie .noart { width: 44px; height: 44px; }
-.tonies[data-view=list] .t-name,
-.tonies[data-view=list] .t-series,
-.tonies[data-view=list] .t-category { white-space: nowrap; }
+.listing-head .sorter:hover, .listing-head .sorter[data-dir=asc],
+.listing-head .sorter[data-dir=desc] { color: var(--ink); }
+.listing-head .sorter[data-dir=asc]::after { content: " \25B2"; font-size: 10px; }
+.listing-head .sorter[data-dir=desc]::after { content: " \25BC"; font-size: 10px; }
+.listing[data-view=list] .listing-head { font-size: 13px; border-bottom: 1px solid var(--line); }
+.listing[data-view=list] .listing-row { border-bottom: 1px solid var(--line); }
+.listing[data-view=list] .listing-row:last-child { border-bottom: 0; }
+.listing[data-view=list] .listing-row img,
+.listing[data-view=list] .listing-row .noart { width: 44px; height: 44px; }
+.listing[data-view=list] .t-name,
+.listing[data-view=list] .t-series,
+.listing[data-view=list] .t-category { white-space: nowrap; }
 
 @media (max-width: 640px) {
-  .tonies[data-view=grid] { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+  .listing[data-view=grid] { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   /* Name and series only on a phone: a seven-column table does not fit. */
-  .tonies[data-view=list] .tonies-head { display: none; }
-  .tonies[data-view=list] .tonie { grid-template-columns: 44px minmax(0, 1fr) auto; }
-  .tonies[data-view=list] .t-series { grid-column: 2; grid-row: 2; font-size: 13px; }
-  .tonies[data-view=list] .t-name { grid-row: 1; }
-  .tonies.library .tonie { grid-template-columns: 44px minmax(0, 1fr) auto; }
-  .tonies.library .t-size, .tonies.library .t-played { display: none; }
-  .tonies.library .t-delete { grid-column: 3; grid-row: 1 / span 2; }
-  .tonies[data-view=list] .t-kind,
-  .tonies[data-view=list] .t-category,
-  .tonies[data-view=list] .t-age,
-  .tonies[data-view=list] .t-added { display: none; }
-  .tonies[data-view=list] .tonie img,
-  .tonies[data-view=list] .tonie .noart { grid-row: 1 / span 2; }
-  .tonies[data-view=list] .t-chapters { grid-column: 3; grid-row: 1 / span 2; font-size: 13px; }
+  .listing[data-view=list] .listing-head { display: none; }
+  .listing[data-view=list] .listing-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .listing[data-view=list] .t-series { grid-column: 2; grid-row: 2; font-size: 13px; }
+  .listing[data-view=list] .t-name { grid-row: 1; }
+  .listing.library .listing-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .listing.library .t-size, .listing.library .t-played { display: none; }
+  .listing.library .t-delete { grid-column: 3; grid-row: 1 / span 2; }
+  .listing[data-view=list] .t-kind,
+  .listing[data-view=list] .t-category,
+  .listing[data-view=list] .t-age,
+  .listing[data-view=list] .t-added { display: none; }
+  .listing[data-view=list] .listing-row img,
+  .listing[data-view=list] .listing-row .noart { grid-row: 1 / span 2; }
+  .listing[data-view=list] .t-chapters { grid-column: 3; grid-row: 1 / span 2; font-size: 13px; }
   .hero, .columns { flex-direction: column; }
   .columns .tracklist { flex: none; }
   .stackable { flex-direction: column; align-items: stretch !important; }

@@ -28,6 +28,7 @@ from .shop import Shop
 from .jobs import Groups, JobRunner
 from .library import same
 from .listening import ListeningLog
+from .listing import orders
 from .models import ModelCache, cover_name, cover_url
 from .pages import albums, batch, extras, importing, printing, site, tonies, upkeep
 from .pages import jobs as job_pages
@@ -63,6 +64,7 @@ def create_app(
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     templates.env.filters["cover_name"] = cover_name
     templates.env.filters["cover_url"] = cover_url
+    templates.env.filters["orders"] = orders
     templates.env.globals["describe_progress"] = describe_progress
     jobs = runner or JobRunner()
     prints = JobRunner()
