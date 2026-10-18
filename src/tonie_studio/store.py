@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
 import time
 from contextlib import contextmanager
 from dataclasses import fields
@@ -74,29 +76,42 @@ def from_record(cls: Type[T], record: Mapping) -> T:
 
 
 def write_json(path: Path, value: Any) -> None:
-    """Replace the file in one step, so a crash leaves the old one whole."""
+    """Replace the file in one step, so a crash leaves the old one whole.
+
+    Readable by this app's user only: a running import keeps each dump's cloud
+    token in its record, and a GitHub token while it reads the repository.
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         scratch = path.with_suffix(path.suffix + ".tmp")
-        scratch.write_text(json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False),
-                           encoding="utf-8")
+        text = json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False)
+        handle = os.open(scratch, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        # A scratch file a crash left keeps the mode it was made with.
+        os.chmod(scratch, 0o600)
         scratch.replace(path)
     except OSError as error:
         log.warning("cannot store %s: %s", path, error)
 
 
 def sweep(folder: Path, pattern: str, older_than: float) -> None:
-    """Remove the files in ``folder`` matching ``pattern`` that are older than ``older_than`` seconds.
+    """Remove what in ``folder`` matches ``pattern`` and is older than ``older_than`` seconds.
 
-    For what a process that died half way left behind; one being worked on
-    right now is younger. A file that cannot be removed is logged and left.
+    Files and whole folders alike. For what a process that died half way left
+    behind; one being worked on right now is younger. What cannot be removed
+    is logged and left.
     """
     if not folder.is_dir():
         return
     cutoff = time.time() - older_than
     for leftover in folder.glob(pattern):
         try:
-            if leftover.stat().st_mtime < cutoff:
+            if leftover.stat().st_mtime >= cutoff:
+                continue
+            if leftover.is_dir():
+                shutil.rmtree(leftover)
+            else:
                 leftover.unlink()
         except OSError as error:
             log.warning("cannot remove %s: %s", leftover, error)

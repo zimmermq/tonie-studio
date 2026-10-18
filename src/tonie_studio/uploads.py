@@ -11,6 +11,7 @@ or when the same album is about to be cut a second way.
 
 from __future__ import annotations
 
+import errno
 import logging
 import shutil
 import time
@@ -20,9 +21,14 @@ from typing import BinaryIO, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .album import is_audio_name
 from .batch import episode_order
+from .i18n import Problem
 from .models import is_cover_name
 
 log = logging.getLogger(__name__)
+
+
+class UploadError(Problem, OSError):
+    """An upload that could not be kept."""
 
 
 def spool(upload_dir: Path, files: Iterable[Tuple[Optional[str], BinaryIO]]) -> List[Path]:
@@ -40,11 +46,18 @@ def spool(upload_dir: Path, files: Iterable[Tuple[Optional[str], BinaryIO]]) -> 
     root.mkdir(parents=True)
     destinations = ({key: root for key in by_folder} if len(by_folder) == 1
                     else _subfolders(root, by_folder))
-    for key, members in by_folder.items():
-        destinations[key].mkdir(parents=True, exist_ok=True)
-        for name, data in members:
-            with (destinations[key] / _base_name(name)).open("wb") as target:
-                shutil.copyfileobj(data, target)
+    try:
+        for key, members in by_folder.items():
+            destinations[key].mkdir(parents=True, exist_ok=True)
+            for name, data in members:
+                with (destinations[key] / _base_name(name)).open("wb") as target:
+                    shutil.copyfileobj(data, target)
+    except OSError as error:
+        # Half an album is no album, and would hold its space for days.
+        shutil.rmtree(root, ignore_errors=True)
+        if error.errno == errno.ENOSPC:
+            raise UploadError("upload.no_space") from error
+        raise
     return sorted(set(destinations.values()), key=lambda path: episode_order(path.name))
 
 

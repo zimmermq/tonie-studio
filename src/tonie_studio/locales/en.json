@@ -256,6 +256,7 @@
  "feed.sticker_reused": "The sticker now plays something else ({playing}). The subscription does not overwrite it; unsubscribe or move it to another sticker.",
  "feed.sticker_unknown": "The box no longer knows this subscription's sticker.",
  "feed.too_large": "{url} is larger than {megabytes} MB.",
+ "feed.too_slow": "{url} took longer than {minutes} minutes to download, so it was given up.",
  "field.category": "Category",
  "field.episode": "Episode",
  "field.series": "Series",
@@ -267,6 +268,7 @@
  "github.too_large": "{path} is larger than {kilobytes} KB, so it is not a tonie dump.",
  "github.truncated": "GitHub returned only part of the repository. Give a subfolder to narrow it down.",
  "github.unreachable": "GitHub cannot be reached: {detail}",
+ "github.unreadable": "GitHub's answer could not be read: {detail}",
  "import.bad_pace": "That pace makes no sense: 1 to 120 tonies an hour, a spread below 100 %, at least 1 failure before stopping.",
  "import.branch": "Branch (empty: default branch)",
  "import.busy": "An import is already running. Pause or stop it before starting a new one.",
@@ -669,6 +671,7 @@
  "upload.files": "Single files",
  "upload.folder": "Choose folder",
  "upload.hint": "For albums that are not on the server. Pictures may come along; the first one becomes the cover. A folder holding one subfolder per episode becomes several albums, set up together.",
+ "upload.no_space": "The upload does not fit: the app's disk is full. Delete old uploads or make room, then try again.",
  "upload.picked": {
   "one": "{count} file, {size} MB",
   "other": "{count} files, {size} MB"

@@ -14,9 +14,12 @@ const STATIC = fileURLToPath(new URL('../../src/tonie_studio/static/', import.me
 // answers inside it; ``fire`` hands an event to its listeners.
 export function element(id, text = '', { dataset = {}, children = {} } = {}) {
   const listeners = {};
+  const attributes = {};
   return {
     id, textContent: text, hidden: false, className: '', style: {}, dataset,
     checked: false, disabled: false,
+    setAttribute(name, value) { attributes[name] = String(value); },
+    getAttribute: name => (name in attributes ? attributes[name] : null),
     classList: { toggle() {}, add() {}, remove() {} },
     addEventListener(type, listener) { (listeners[type] ||= []).push(listener); },
     fire(type, event = {}) { for (const listener of listeners[type] || []) listener(event); },

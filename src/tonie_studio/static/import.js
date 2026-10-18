@@ -6,7 +6,7 @@
   if (!data.watch) return;
   let seen = null;
   window.every(5000, async () => {
-    const response = await fetch('/api/import');
+    const response = await ask('/api/import');
     if (!response.ok) return true;
     const state = await response.json();
     const now = JSON.stringify(state);

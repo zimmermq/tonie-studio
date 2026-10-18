@@ -75,13 +75,15 @@ for (const row of rows) {
   }
 }
 
-function setCount(row, value) {
+// ``recount`` false leaves the total to the caller: a loop over every row
+// that recounted each time would add up 460 rows 460 times.
+function setCount(row, value, recount = true) {
   value = Math.max(0, Math.min(data.mostCopies, value));
   setPick(row, value, modeOf(row));
   row.querySelector('.want').checked = value > 0;
   row.querySelector('.times').classList.toggle('empty', value < 1);
   row.querySelector('.count').textContent = value;
-  refresh();
+  if (recount) refresh();
 }
 
 function refresh() {
@@ -139,10 +141,12 @@ if (find) {
   find.addEventListener('input', filter);
   onlyticked.addEventListener('change', filter);
   document.getElementById('tickshown').addEventListener('click', () => {
-    for (const row of rows) if (!row.hidden && countOf(row) < 1) setCount(row, 1);
+    for (const row of rows) if (!row.hidden && countOf(row) < 1) setCount(row, 1, false);
+    refresh();
   });
   document.getElementById('untick').addEventListener('click', () => {
-    for (const row of rows) setCount(row, 0);
+    for (const row of rows) setCount(row, 0, false);
+    refresh();
     filter();
   });
 }
@@ -155,8 +159,9 @@ if (fillsheet) fillsheet.addEventListener('click', () => {
   const perPage = layout().perPage;
   const each = Math.floor(perPage / spread.length);
   spread.forEach((row, index) => {
-    setCount(row, each + (index === 0 ? perPage % spread.length : 0));
+    setCount(row, each + (index === 0 ? perPage % spread.length : 0), false);
   });
+  refresh();
 });
 
 // The text side. The server decides which lines fit, so this only has to
@@ -164,13 +169,15 @@ if (fillsheet) fillsheet.addEventListener('click', () => {
 // deliver. The lines are asked for when shown, per model and layout.
 const disc = document.getElementById('backdisc');
 if (disc) {
+  // Only answers are kept: a failed ask is asked again the next time.
   const backs = {};
   async function backOf(model) {
     const key = `${model} ${layoutOf()}`;
     if (!(key in backs)) {
       const params = new URLSearchParams({model, layout: layoutOf()});
       const answer = await fetch(`/api/sheet/back?${params}`);
-      backs[key] = answer.ok ? await answer.json() : null;
+      if (!answer.ok) return null;
+      backs[key] = await answer.json();
     }
     return backs[key];
   }
@@ -182,10 +189,20 @@ if (disc) {
   const DISC_PX = 240;
   const pxPerPt = () => DISC_PX / (layout().diameterMm / 25.4 * 72);
 
+  // Counts the draws, so an older one whose answer came late does not paint
+  // over a newer one: ticking A, slow to answer, then B would show A.
+  let drawn = 0;
   async function drawBack() {
+    const mine = ++drawn;
     const row = rows.find(row => countOf(row) > 0) || rows[0];
     const model = row && modelOf(row);
-    const back = model && await backOf(model);
+    let back = null;
+    try {
+      back = model && await backOf(model);
+    } catch (error) {
+      back = null;
+    }
+    if (mine !== drawn) return;
     if (!back) { disc.style.display = 'none'; return; }
     const PX_PER_PT = pxPerPt();
 
@@ -231,6 +248,6 @@ if (disc) {
 
 layoutChanged.push(refresh);
 showLayout();
-for (const row of rows) setCount(row, countOf(row));
+for (const row of rows) setCount(row, countOf(row), false);
 refresh();
 filter();

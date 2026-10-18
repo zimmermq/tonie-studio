@@ -14,12 +14,16 @@ function tonie(name, { kind = 'official', picture = 'yes', added = 0, chapters =
 }
 
 async function page(rows, globals = {}) {
-  const order = [];
+  const order = [...rows];
   const list = element('tonies', '', { dataset: { view: 'grid', remember: 'tonies.view' } });
   list.querySelectorAll = () => rows;
-  list.append = row => {
-    if (order.includes(row)) order.splice(order.indexOf(row), 1);
-    order.push(row);
+  list.moves = 0;
+  list.append = (...items) => {
+    list.moves += items.length;
+    for (const row of items) {
+      if (order.includes(row)) order.splice(order.indexOf(row), 1);
+      order.push(row);
+    }
   };
   const sort = element('sort');
   sort.value = 'name';
@@ -64,8 +68,8 @@ async function page(rows, globals = {}) {
   assert.deepEqual(names(), ['a', 'c']);
   chip('nopicture').fire('click');
   assert.deepEqual(names(), ['c']);
-  assert.equal(chip('nopicture').ariaPressed, 'true');
-  assert.equal(chip('own').ariaPressed, 'false');
+  assert.equal(chip('nopicture').getAttribute('aria-pressed'), 'true');
+  assert.equal(chip('own').getAttribute('aria-pressed'), 'false');
 }
 
 // Newest first, the undated last; equal ones by name.
@@ -90,7 +94,7 @@ async function page(rows, globals = {}) {
   const { view, list } = await page([tonie('a')]);
   view('list').fire('click');
   assert.equal(list.dataset.view, 'list');
-  assert.equal(view('list').ariaPressed, 'true');
+  assert.equal(view('list').getAttribute('aria-pressed'), 'true');
 }
 
 // Nothing found says so.
@@ -143,3 +147,15 @@ async function page(rows, globals = {}) {
   assert.equal(written.at(-1), '?period=7&q=a');
 }
 
+
+// Rows that arrive in order are not moved: 460 rows appended one by one is
+// a long relayout for nothing. Out of order, they are put right in one go.
+{
+  const { list } = await page([tonie('a'), tonie('b'), tonie('c')]);
+  assert.equal(list.moves, 0);
+}
+{
+  const { list, names } = await page([tonie('c'), tonie('a'), tonie('b')]);
+  assert.equal(list.moves, 3);
+  assert.deepEqual(names(), ['a', 'b', 'c']);
+}

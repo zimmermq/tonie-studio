@@ -202,3 +202,19 @@ class TestGroups:
 
         found = groups.get(group)
         assert (found.batch, found.placing) == (True, "the placing")
+
+
+class TestShutdown:
+    def test_says_how_many_waiting_jobs_are_dropped(self):
+        # Jobs live in memory; a rollout drops the queued ones, and the log is
+        # the only place that can say so.
+        runner = JobRunner()
+        release = threading.Event()
+        runner.submit("encode", "running", lambda progress: release.wait(5))
+        queued = [runner.submit("encode", f"waiting {n}", lambda progress: None) for n in range(2)]
+
+        dropped = runner.shutdown()
+        release.set()
+
+        assert dropped == 2
+        assert all(runner.get(job_id).state is JobState.FAILED for job_id in queued)

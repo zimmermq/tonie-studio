@@ -11,11 +11,14 @@ rules about staging and cleanup hold no matter which page started the work.
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Callable, Optional
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -40,9 +43,11 @@ from .pages import radio as radio_page
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Context, describe_progress,
                            page_context)
+from .podcast import WORK_FOLDER as PODCAST_WORK_FOLDER
 from .podcast import Fetch, PodcastUpdater, download
 from .printing import clear_old_pdfs
 from .settings import Settings
+from .store import sweep
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .uploads import remove_old_uploads
 
@@ -131,11 +136,15 @@ def create_app(
         finally:
             box.stop()
             importer.shutdown()
-            prints.shutdown()
+            # Jobs live in memory only: what was still waiting is lost, and
+            # the log is the one place that can say so.
+            dropped = jobs.shutdown() + prints.shutdown()
+            if dropped:
+                log.warning("shutting down: %d job(s) that had not started are dropped", dropped)
             stopping.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    app.mount("/static", VersionedStatic(directory=str(STATIC)), name="static")
     app.state.settings = settings
     app.state.catalogue = catalogue
     app.state.jobs = jobs
@@ -174,7 +183,41 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
             remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
             clear_parked(settings.data_dir)
             clear_old_pdfs(settings.data_dir)
+            # A refresh takes minutes; a day-old folder is one a crash left.
+            sweep(settings.data_dir / PODCAST_WORK_FOLDER, "*", 86400)
+            _check_space(settings.data_dir)
         except Exception:
             log.exception("housekeeping round failed")
         if stop.wait(HOUSEKEEPING_EVERY):
             return
+
+
+class VersionedStatic(StaticFiles):
+    """The static files, kept by the browser for good when asked for by version.
+
+    pages.common.asset puts the file's content hash in ``v``; a release that
+    changes the file changes the address, so a kept copy is never stale.
+    """
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200 and b"v=" in scope.get("query_string", b""):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+# Below this much free space on the data volume housekeeping warns: uploads
+# and podcast episodes need room, and a full volume only shows as records
+# quietly not being saved.
+LOW_SPACE = 1024 ** 3
+
+
+def _check_space(data_dir: Path) -> None:
+    try:
+        free = shutil.disk_usage(data_dir).free
+    except OSError as error:
+        log.warning("cannot tell how full %s is: %s", data_dir, error)
+        return
+    if free < LOW_SPACE:
+        log.warning("only %d MB free on %s", free // 1024 ** 2, data_dir)
+

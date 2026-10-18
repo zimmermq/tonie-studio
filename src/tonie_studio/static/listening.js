@@ -10,7 +10,7 @@ const REFRESH_MS = 5000;
 
 window.every(REFRESH_MS, async () => {
   if (document.hidden) return true;
-  const response = await fetch(window.location.href, {cache: 'no-store'});
+  const response = await ask(window.location.href, {cache: 'no-store'});
   if (!response.ok) return true;
   const next = new DOMParser().parseFromString(await response.text(), 'text/html');
   const live = document.getElementById('live');

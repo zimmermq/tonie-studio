@@ -202,10 +202,10 @@ class TestOneBoxPoller:
         job, _page = encode_and_assign_page(client, runner)
         shared = client.get(_script_of(client.get("/").text)).text
 
-        assert shared.count("fetch('/api/box')") == 1 and "new CustomEvent('box'" in shared
+        assert shared.count("ask('/api/box')") == 1 and "new CustomEvent('box'" in shared
         for path in ["/", "/tonies", f"/job/{job.id}/assign", "/sheet", "/listening"]:
             page = client.get(path).text
-            assert "fetch('/api/box')" not in page, path
+            assert "'/api/box'" not in page, path
             assert _script_of(page).startswith("/static/app.js?v="), path
 
 
@@ -392,3 +392,57 @@ class TestEveryPageNamesItselfOnce:
 
         assert "<title>Lichterkinder - Halloween - tonie-studio</title>" in page
         assert page.count("<h1") == 1  # the one beside the picture
+
+
+class TestStaticFiles:
+    def test_a_versioned_file_is_kept_for_good(self, client):
+        # asset() names a file after its content, so its address changes with it.
+        from tonie_studio.pages.common import asset
+
+        response = client.get(asset("app.js"))
+
+        assert response.status_code == 200
+        assert "immutable" in response.headers["cache-control"]
+
+    def test_an_unversioned_one_is_not(self, client):
+        response = client.get("/static/app.js")
+
+        assert "immutable" not in response.headers.get("cache-control", "")
+
+
+class TestChoosingTheLanguage:
+    def test_remembers_it_and_goes_back(self, client):
+        response = client.get("/lang/en?next=/tonies", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/tonies"
+        assert "lang=en" in response.headers["set-cookie"]
+
+    @pytest.mark.parametrize("next_page", ["//evil.example", "/\\evil.example",
+                                           "https://evil.example", "/\\/evil.example"])
+    def test_never_leaves_the_site(self, client, next_page):
+        response = client.get("/lang/en", params={"next": next_page}, follow_redirects=False)
+
+        assert response.headers["location"] == "/"
+
+    def test_an_unknown_language_is_refused(self, client):
+        assert client.get("/lang/xx", follow_redirects=False).status_code == 404
+
+
+class TestLowSpace:
+    def test_says_so_before_the_volume_is_full(self, settings, monkeypatch, caplog):
+        # A full volume only shows as records quietly not being saved.
+        import shutil
+        from collections import namedtuple
+
+        from tonie_studio import web
+
+        usage = namedtuple("usage", "total used free")
+        monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(10**10, 10**10 - 10**8, 10**8))
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+        web._check_space(settings.data_dir)
+
+        assert any("free" in record.getMessage() and record.levelname == "WARNING"
+                   for record in caplog.records)
+

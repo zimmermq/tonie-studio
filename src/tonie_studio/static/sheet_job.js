@@ -12,7 +12,7 @@ const POLL_MS = 1000;
 // Asked until the sheet is done or failed; a missed answer is asked again,
 // but a sheet the server no longer knows - it restarted - is gone for good.
 window.every(POLL_MS, async () => {
-  const answer = await fetch(`/api/sheet/print/${data.id}`);
+  const answer = await ask(`/api/sheet/print/${data.id}`);
   if (answer.status === 404) {
     detail.textContent = '';
     ended(words['sheet.job_gone'], true);

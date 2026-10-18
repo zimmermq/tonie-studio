@@ -126,6 +126,23 @@ class TestDumps:
 
         assert raised.value.key == "github.not_found"
 
+    @pytest.mark.parametrize("answer", [
+        Response(text="<html>proxy error</html>"),       # json() raises
+        Response(json=["not", "an", "object"]),
+        Response(json={"name": "tonies"}),                 # no default_branch
+    ])
+    def test_an_answer_that_is_not_what_github_sends_is_reported(self, answer):
+        # Anything but a RepoError would retry the run every minute, for ever.
+        if answer.text:
+            def broken():
+                raise ValueError("Expecting value")
+            answer.json = broken
+
+        with pytest.raises(RepoError) as raised:
+            dumps(Repo("owner", "tonies"), get=lambda url, headers=None, timeout=None: answer)
+
+        assert raised.value.key == "github.unreadable"
+
     def test_a_cut_off_tree_is_reported_rather_than_read_in_part(self):
         with pytest.raises(RepoError) as raised:
             dumps(Repo("owner", "tonies"), get=FakeGitHub(FILES, truncated=True))

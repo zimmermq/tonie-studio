@@ -340,9 +340,13 @@ class BoxWatcher:
             try:
                 self._listen()
             except Exception as error:
-                # Any failure here is a connection that went away, which is
-                # normal. Losing the thread over it would not be.
-                log.info("event stream from %s ended: %s", self.base_url, error)
+                # A connection that went away is normal; anything else is a
+                # bug that would reconnect for ever unnoticed, so it is logged
+                # with its traceback. Losing the thread over either would not do.
+                if isinstance(error, (requests.RequestException, OSError)):
+                    log.info("event stream from %s ended: %s", self.base_url, error)
+                else:
+                    log.exception("event stream from %s failed", self.base_url)
                 with self._lock:
                     self._state.silent = isinstance(error, requests.exceptions.ReadTimeout)
             with self._lock:

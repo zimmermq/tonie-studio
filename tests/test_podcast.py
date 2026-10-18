@@ -6,9 +6,8 @@ import pytest
 import requests
 from fake_teddycloud import FakeTeddyCloud
 
-from tonie_studio.podcast import (LARGEST_FEED, FeedError, Subscription, check_public,
-                                  load_subscriptions, newest, parse_feed, refresh,
-                                  save_subscriptions)
+from tonie_studio.podcast import (LARGEST_FEED, FeedError, Subscription, add_subscription, check_public,
+                                  load_subscriptions, newest, parse_feed, refresh)
 from tonie_studio.teddycloud import TeddyCloudError
 
 RUID = "7ab4ed0e500304e0"
@@ -174,7 +173,7 @@ class TestRefresh:
 
 class TestStore:
     def test_subscriptions_survive_a_restart(self, tmp_path, subscription):
-        save_subscriptions(tmp_path, [subscription])
+        add_subscription(tmp_path, subscription)
 
         assert load_subscriptions(tmp_path) == [subscription]
 
@@ -380,6 +379,21 @@ class TestDownload:
             download("https://example.org/ep.mp3", limit=2 * 1024 * 1024)
 
         assert caught.value.key == "feed.too_large"
+
+    def test_a_host_that_trickles_is_given_up_on(self, web, monkeypatch):
+        # Every job waits behind a download; a host sending a byte a minute
+        # must not hold them all for hours.
+        from tonie_studio import podcast
+
+        answers, _hosts, _asked = web
+        answers["https://example.org/ep.mp3"] = FakeResponse(b"x" * (4 * 1024 * 1024))
+        clock = iter(range(0, 100000, 1000))
+        monkeypatch.setattr(podcast.time, "monotonic", lambda: next(clock))
+
+        with pytest.raises(FeedError) as caught:
+            podcast.download("https://example.org/ep.mp3")
+
+        assert caught.value.key == "feed.too_slow"
 
     def test_endless_redirects_are_refused(self, web):
         from tonie_studio.podcast import MOST_REDIRECTS, download

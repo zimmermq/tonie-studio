@@ -47,14 +47,16 @@
     const firstWay = key => ORDERS[key].desc ? 'desc' : 'asc';
     state.dir = asked.get('dir') || firstWay(state.sort);
 
+    // One collator for every comparison; localeCompare makes one per call.
+    const collate = new Intl.Collator().compare;
     // A row without the value goes last either way round; rows alike go by name.
     function compare(a, b) {
       const left = a.dataset[state.sort], right = b.dataset[state.sort];
       if (!left !== !right) return left ? -1 : 1;
       const way = state.dir === 'desc' ? -1 : 1;
       const by = !left ? 0
-        : ORDERS[state.sort].number ? Number(left) - Number(right) : left.localeCompare(right);
-      return way * by || a.dataset.name.localeCompare(b.dataset.name);
+        : ORDERS[state.sort].number ? Number(left) - Number(right) : collate(left, right);
+      return way * by || collate(a.dataset.name, b.dataset.name);
     }
 
     // The list's own keys in the address; anything else there belongs to the
@@ -84,12 +86,20 @@
       }
       count.textContent = shown === rows.length ? '' : say(shownOf, { shown, count: rows.length });
       nohits.hidden = shown > 0;
-      for (const chip of chips) chip.ariaPressed = String(chip.dataset.filter === state.filter);
+      // As an attribute: the property reflecting it is missing in older browsers.
+      for (const chip of chips) chip.setAttribute('aria-pressed', chip.dataset.filter === state.filter);
     }
 
-    // Appending moves a row, so the rows end up in order behind the column heads.
+    // Appending moves a row, so the rows end up in order behind the column
+    // heads. All in one go, and not at all when they are in order already, as
+    // they usually are on arrival: 460 rows moved one by one is a long relayout.
+    let current = rows;
     function order() {
-      for (const row of [...rows].sort(compare)) list.append(row);
+      const sorted = [...rows].sort(compare);
+      if (sorted.some((row, index) => row !== current[index])) {
+        list.append(...sorted);
+        current = sorted;
+      }
       sort.value = state.sort;
       for (const sorter of sorters) {
         sorter.dataset.dir = sorter.dataset.sort === state.sort ? state.dir : '';
@@ -99,7 +109,7 @@
     function lay() {
       if (!views.length) return;
       list.dataset.view = state.view;
-      for (const button of views) button.ariaPressed = String(button.dataset.view === state.view);
+      for (const button of views) button.setAttribute('aria-pressed', button.dataset.view === state.view);
     }
 
     search.value = state.q;

@@ -95,7 +95,9 @@ def dumps(repo: Repo, token: str = "", get: Get = requests.get) -> List[Tuple[st
         headers["Authorization"] = f"Bearer {token}"
     base = f"{API}/repos/{quote(repo.owner)}/{quote(repo.name)}"
 
-    branch = repo.branch or _api(get, base, headers)["default_branch"]
+    branch = repo.branch or _api(get, base, headers).get("default_branch")
+    if not isinstance(branch, str) or not branch:
+        raise RepoError("github.unreadable", detail="no default branch")
     tree = _api(get, f"{base}/git/trees/{quote(branch, safe='')}?recursive=1", headers)
     if tree.get("truncated"):
         raise RepoError("github.truncated")
@@ -123,7 +125,16 @@ def dumps(repo: Repo, token: str = "", get: Get = requests.get) -> List[Tuple[st
 
 
 def _api(get: Get, url: str, headers: dict) -> dict:
-    return _get(get, url, headers).json()
+    """A JSON object from GitHub's API; anything else, such as a proxy's error
+    page, is a RepoError like every other way of not reading the repository."""
+    response = _get(get, url, headers)
+    try:
+        answer = response.json()
+    except ValueError as error:
+        raise RepoError("github.unreadable", detail=str(error)) from error
+    if not isinstance(answer, dict):
+        raise RepoError("github.unreadable", detail=f"{type(answer).__name__} instead of an object")
+    return answer
 
 
 def _get(get: Get, url: str, headers: dict) -> "requests.Response":

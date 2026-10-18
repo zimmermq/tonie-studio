@@ -25,8 +25,8 @@ from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
 from ..planning import chosen_tracks, expected_targets, plan_parts
 from ..publishing import Crop, Details, encode_job
-from ..uploads import spool
-from .common import Context, Refused, album_or_404, refused, upload_form
+from ..uploads import UploadError, spool
+from .common import Context, Refused, album_or_404, refused, refusing, upload_form
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +82,8 @@ def register(app: FastAPI, ctx: Context) -> None:
     def upload(form: FormData = Depends(upload_form)):
         """Spool a browser upload, then hand its albums to the batch page together."""
         files = [part for part in form.getlist("files") if isinstance(part, StarletteUploadFile)]
-        albums = spool(settings.upload_dir, [(file.filename, file.file) for file in files])
+        with refusing(UploadError, status=507):
+            albums = spool(settings.upload_dir, [(file.filename, file.file) for file in files])
         if not albums:
             raise Refused(400, "error.no_audio")
 

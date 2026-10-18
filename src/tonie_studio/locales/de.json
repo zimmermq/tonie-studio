@@ -256,6 +256,7 @@
  "feed.sticker_reused": "Der Sticker spielt inzwischen etwas anderes ({playing}). Das Abo überschreibt ihn nicht; abbestellen oder auf einen anderen Sticker legen.",
  "feed.sticker_unknown": "Die Box kennt den Sticker dieses Abos nicht mehr.",
  "feed.too_large": "{url} ist größer als {megabytes} MB.",
+ "feed.too_slow": "{url} hat länger als {minutes} Minuten zum Herunterladen gebraucht und wurde abgebrochen.",
  "field.category": "Kategorie",
  "field.episode": "Folge",
  "field.series": "Serie",
@@ -267,6 +268,7 @@
  "github.too_large": "{path} ist größer als {kilobytes} KB und damit kein Tonie-Dump.",
  "github.truncated": "GitHub hat nur einen Teil des Repositorys geliefert. Gib einen Unterordner an, um es einzugrenzen.",
  "github.unreachable": "GitHub ist nicht erreichbar: {detail}",
+ "github.unreadable": "Die Antwort von GitHub war nicht lesbar: {detail}",
  "import.bad_pace": "Diese Einstellung ergibt keinen Sinn: 1 bis 120 Tonies pro Stunde, Streuung unter 100 %, mindestens 1 Fehler bis zum Abbruch.",
  "import.branch": "Branch (leer: Standard-Branch)",
  "import.busy": "Es läuft schon ein Import. Halte ihn an oder beende ihn, bevor du einen neuen startest.",
@@ -669,6 +671,7 @@
  "upload.files": "Einzelne Dateien",
  "upload.folder": "Ordner wählen",
  "upload.hint": "Für Alben, die nicht auf dem Server liegen. Bilder dürfen mit dabei sein, das erste davon wird als Cover genommen. Ein Ordner mit einem Unterordner pro Folge wird zu mehreren Alben, die zusammen angelegt werden.",
+ "upload.no_space": "Der Upload passt nicht: der Speicher der App ist voll. Lösche alte Uploads oder schaffe Platz und versuch es noch einmal.",
  "upload.picked": {
   "one": "{count} Datei, {size} MB",
   "other": "{count} Dateien, {size} MB"

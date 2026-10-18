@@ -15,6 +15,15 @@ window.say = (text, values = {}) => {
 // script runs at the end of the body, where it is already there.
 window.pageData = () => JSON.parse(document.getElementById('page-data').textContent);
 
+// fetch, given up after ``ms``: a request hanging at the gateway would
+// otherwise hold a progress bar or the box status at what it last showed, for
+// minutes, as if it were current. Browsers without AbortSignal.timeout
+// (Safari before 16) wait as fetch does.
+window.ask = (url, options = {}, ms = 10000) => {
+  const timeout = typeof AbortSignal !== 'undefined' && AbortSignal.timeout;
+  return fetch(url, timeout ? { ...options, signal: AbortSignal.timeout(ms) } : options);
+};
+
 // Calls ``step`` now and again every ``ms`` for as long as it returns true.
 // A step that fails - a dropped connection, a server restarting - is tried
 // again rather than ending the loop: the work being watched goes on.
@@ -219,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function tick() {
       try {
-        const response = await fetch('/api/box');
+        const response = await ask('/api/box');
         if (response.ok) {
           known = await response.json();
           document.dispatchEvent(new CustomEvent('box', {detail: known}));

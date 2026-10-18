@@ -30,6 +30,7 @@ import re
 import shutil
 import socket
 import threading
+import time
 import uuid
 import xml.etree.ElementTree as ElementTree
 from dataclasses import asdict, dataclass, field
@@ -77,6 +78,16 @@ LARGEST_FEED = 10 * 1024 * 1024
 LARGEST_IMAGE = 10 * 1024 * 1024
 
 MOST_REDIRECTS = 5
+
+# Where a refresh keeps the episodes it downloads until they are encoded;
+# emptied as each refresh ends, swept by housekeeping after a crash.
+WORK_FOLDER = "podcasts"
+
+# How long one download may take, start to end, in seconds. The timeout of a
+# request only bounds the wait for each piece, so a host sending a byte a
+# minute would hold the one job worker, and every encode behind it, for days.
+# Half an hour fetches the largest episode allowed at some 170 KB/s.
+LONGEST_DOWNLOAD = 30 * 60
 
 # How much of the podcast's title goes into a taf's name, in characters and in
 # bytes. Names are cut at MAX_NAME and MAX_NAME_BYTES, and what tells one
@@ -207,10 +218,13 @@ def download(url: str, limit: int = LARGEST_DOWNLOAD) -> bytes:
                 continue
             response.raise_for_status()
             chunks, size = [], 0
+            give_up = time.monotonic() + LONGEST_DOWNLOAD
             for chunk in response.iter_content(1024 * 1024):
                 size += len(chunk)
                 if size > limit:
                     raise FeedError("feed.too_large", url=url, megabytes=limit // 1048576)
+                if time.monotonic() > give_up:
+                    raise FeedError("feed.too_slow", url=url, minutes=LONGEST_DOWNLOAD // 60)
                 chunks.append(chunk)
             return b"".join(chunks)
     raise FeedError("feed.redirects", count=MOST_REDIRECTS, url=url)
@@ -283,7 +297,7 @@ def refresh(
         subscription.error, subscription.error_key, subscription.error_params = "", "", {}
         return False
 
-    folder = data_dir / "podcasts" / subscription.id
+    folder = data_dir / WORK_FOLDER / subscription.id
     folder.mkdir(parents=True, exist_ok=True)
     try:
         paths = []
@@ -375,11 +389,6 @@ def _delete_quietly(client: TeddyCloudClient, path: str, subscription_id: str) -
 def load_subscriptions(data_dir: Path) -> List[Subscription]:
     with LOCK:
         return _read(data_dir)
-
-
-def save_subscriptions(data_dir: Path, subscriptions: List[Subscription]) -> None:
-    with LOCK:
-        _write(data_dir, subscriptions)
 
 
 def add_subscription(data_dir: Path, subscription: Subscription) -> None:

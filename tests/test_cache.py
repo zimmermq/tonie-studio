@@ -30,6 +30,30 @@ class TestBackgroundCache:
 
         assert cache.get() == "first"
 
+    @pytest.mark.parametrize("error, level", [
+        ("away", "INFO"),
+        ("bug", "ERROR"),
+    ])
+    def test_teddycloud_away_is_weather_but_a_bug_is_an_error(self, caplog, error, level):
+        import logging
+
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        def load():
+            raise TeddyCloudError("unreachable") if error == "away" else KeyError("models")
+
+        caplog.set_level(logging.INFO, logger="tonie_studio.cache")
+        cache = BackgroundCache(load, name="models", ttl=0)
+        cache.get()
+        # By the cache's name: a refresh of another test may still be logging.
+        ours = lambda: [r for r in caplog.records  # noqa: E731
+                        if r.name == "tonie_studio.cache" and "models" in r.getMessage()]
+        eventually(ours)
+
+        (record,) = ours()
+        assert record.levelname == level
+        assert (record.exc_info is not None) == (error == "bug")
+
 
 class TestTtlCache:
     @staticmethod

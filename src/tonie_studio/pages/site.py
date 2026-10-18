@@ -81,8 +81,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         if code not in catalogs():
             raise Refused(404, "error.no_language")
         # Only a path on this site: an address from elsewhere in ``next``
-        # would make this an open redirect.
-        target = next if next.startswith("/") and not next.startswith("//") else "/"
+        # would make this an open redirect. Browsers read a backslash as a
+        # slash, so "/\evil.example" is as much another site as "//evil.example".
+        local = next.startswith("/") and not next.startswith("//") and "\\" not in next
+        target = next if local else "/"
         response = RedirectResponse(target, 303)
         response.set_cookie(LANG_COOKIE, code, max_age=365 * 24 * 3600, samesite="lax")
         return response

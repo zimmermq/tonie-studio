@@ -4,6 +4,8 @@ import io
 import os
 import time
 
+import pytest
+
 from tonie_studio.uploads import remove_old_uploads, spool
 
 
@@ -159,3 +161,25 @@ class TestSpool:
     def test_no_audio_is_no_album(self, tmp_path):
         assert spool(tmp_path, self.sent("Bilder/cover.jpg")) == []
         assert self.tree(tmp_path) == []
+
+    def test_a_full_disk_leaves_nothing_half_written(self, tmp_path, monkeypatch):
+        import errno
+
+        from tonie_studio import uploads
+
+        written = []
+
+        def copy(source, target):
+            written.append(target)
+            if len(written) == 2:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            target.write(source.read())
+
+        monkeypatch.setattr(uploads.shutil, "copyfileobj", copy)
+
+        with pytest.raises(uploads.UploadError) as caught:
+            spool(tmp_path, self.sent("Hits/01.mp3", "Hits/02.mp3"))
+
+        assert caught.value.key == "upload.no_space"
+        assert self.tree(tmp_path) == [] and list(tmp_path.iterdir()) == []
+

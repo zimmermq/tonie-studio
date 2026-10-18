@@ -7,13 +7,20 @@ const data = pageData();
 const note = document.getElementById('boxnote');
 const words = data.words;
 
+// Only the marker that was shown is hidden again: a report every few seconds
+// that touched every row would rewrite 460 of them each time.
+let marked = null;
 document.addEventListener('box', event => {
   const box = event.detail;
-  for (const marker of document.querySelectorAll('.onbox')) marker.hidden = true;
   const row = box.ruid ? document.getElementById(`tag-${box.ruid}`) : null;
+  const marker = box.on_box && row ? row.querySelector('.onbox') : null;
+  if (marked !== marker) {
+    if (marked) marked.hidden = true;
+    if (marker) marker.hidden = false;
+    marked = marker;
+  }
 
-  if (box.on_box && row) {
-    row.querySelector('.onbox').hidden = false;
+  if (marker) {
     note.textContent = box.playing ? words['tonies.note_playing'] : words['tonies.note_on_box'];
   } else if (!box.connected) {
     note.textContent = words['tonies.note_offline'];

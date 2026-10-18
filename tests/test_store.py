@@ -25,6 +25,14 @@ class TestReadJson:
 
         assert read_json(path, None) == [1, 2]
 
+    def test_a_record_is_readable_by_this_app_only(self, tmp_path):
+        # The import run keeps each dump's cloud token in its record.
+        from tonie_studio.store import write_json
+
+        write_json(tmp_path / "record.json", {"token": "x"})
+
+        assert (tmp_path / "record.json").stat().st_mode & 0o777 == 0o600
+
 
 class TestChangingJson:
     def test_a_change_is_written(self, tmp_path):
@@ -77,3 +85,22 @@ class TestAlbumNotesOfAnotherShape:
         (tmp_path / MADE_FILE).write_text("[]", encoding="utf-8")
 
         change(tmp_path)
+
+
+class TestSweep:
+    def test_takes_old_folders_too(self, tmp_path):
+        # A podcast refresh works in a folder of its own; a process killed
+        # in the middle leaves it behind.
+        import os
+
+        from tonie_studio.store import sweep
+
+        old, new = tmp_path / "old", tmp_path / "new"
+        (old / "inner").mkdir(parents=True)
+        (old / "inner" / "ep.mp3").write_bytes(b"x")
+        new.mkdir()
+        os.utime(old, (0, 0))
+
+        sweep(tmp_path, "*", 3600)
+
+        assert not old.exists() and new.exists()

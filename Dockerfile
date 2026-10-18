@@ -2,12 +2,16 @@ FROM python:3.15-slim
 
 # The audio archive is mounted read-only at /archive and browser uploads are
 # spooled under /data; both come from volumes. Europe/Berlin so a job timestamp
-# shown in the UI matches the clock on the wall.
+# shown in the UI matches the clock on the wall. TMPDIR on the data volume too:
+# an upload is buffered in a temporary file before it is spooled, and in the
+# container's own /tmp a folder of FLACs counts against the pod's ephemeral
+# storage, which gets it evicted.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=Europe/Berlin \
     TS_ARCHIVE_DIR=/archive \
     TS_DATA_DIR=/data \
+    TMPDIR=/data/tmp \
     PYTHONPATH=/app/src
 
 WORKDIR /app

@@ -45,7 +45,7 @@ function show(job) {
 
 if (data.running) {
   every(1000, async () => {
-    const response = await fetch(`/api/job/${id}`);
+    const response = await ask(`/api/job/${id}`);
     // A job that is gone stays gone; there is nothing left to watch.
     return response.ok ? show(await response.json()) : false;
   });

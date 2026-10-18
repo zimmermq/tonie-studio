@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -103,6 +103,8 @@ class JobRunner:
         self._pool = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="job")
         # Jobs a group still needs; see Groups.
         self._kept: set = set()
+        # Each job's place in the pool, so shutdown can tell which never ran.
+        self._futures: Dict[str, Future] = {}
 
     def submit(self, kind: str, label: str, work: Callable[[Callable], Any],
                job_id: Optional[str] = None) -> str:
@@ -117,7 +119,9 @@ class JobRunner:
             self._order.append(job.id)
             self._forget_old()
 
-        self._pool.submit(self._run, job, work)
+        future = self._pool.submit(self._run, job, work)
+        with self._lock:
+            self._futures[job.id] = future
         return job.id
 
     def get(self, job_id: str) -> Optional[Job]:
@@ -129,8 +133,21 @@ class JobRunner:
         with self._lock:
             return [self._jobs[job_id] for job_id in reversed(self._order)]
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> int:
+        """Stop taking work and drop what has not started; returns how many were dropped.
+
+        A running job is left to finish. The dropped ones end as failed, so a
+        page still watching one says it stopped rather than waiting for it.
+        """
         self._pool.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            dropped = [self._jobs[job_id] for job_id, future in self._futures.items()
+                       if future.cancelled() and job_id in self._jobs]
+        for job in dropped:
+            job.error = "stopped before it began: the app was shutting down"
+            job.state = JobState.FAILED
+            job.done.set()
+        return len(dropped)
 
     # --- internals --------------------------------------------------------
 
@@ -177,6 +194,7 @@ class JobRunner:
         ]
         for job_id in finished[:max(0, len(finished) - KEEP_FINISHED)]:
             self._jobs.pop(job_id, None)
+            self._futures.pop(job_id, None)
             self._order.remove(job_id)
 
 

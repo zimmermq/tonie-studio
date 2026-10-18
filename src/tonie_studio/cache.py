@@ -15,6 +15,10 @@ import threading
 import time
 from typing import Callable, Dict, Generic, Hashable, Optional, Tuple, TypeVar
 
+import requests
+
+from .teddycloud import TeddyCloudError
+
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -93,8 +97,13 @@ class BackgroundCache(Generic[T]):
         value = None
         try:
             value = self.load()
-        except Exception as error:  # whatever it is, the page simply goes without
+        except (TeddyCloudError, requests.RequestException, OSError) as error:
+            # teddyCloud or the network being away: the page simply goes without.
             log.info("the %s are not to be had this time: %s", self.name, error)
+        except Exception:
+            # Anything else is a bug, which would leave the page without for
+            # good; it needs its traceback, not a line among the weather.
+            log.exception("loading the %s failed", self.name)
         finally:
             with self._lock:
                 if value is not None:

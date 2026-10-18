@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -16,9 +17,31 @@ from .settings import Settings
 from .web import create_app
 
 
+# Asked of the app all the time: by the cluster's probes, and by every open
+# page about the box every three seconds. Logged, they would bury the rest.
+QUIET_PATHS = ("/health", "/api/box")
+
+
+class QuietPolls(logging.Filter):
+    """Leaves the access log's lines for answered polls out; failed ones stay."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args if isinstance(record.args, tuple) else ()
+        if len(args) < 5:
+            return True
+        path, status = str(args[2]).split("?", 1)[0], args[4]
+        return not (path in QUIET_PATHS and isinstance(status, int) and status < 400)
+
+
 def app() -> FastAPI:
     logging.basicConfig(
         level=os.environ.get("TS_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    logging.getLogger("uvicorn.access").addFilter(QuietPolls())
+    # The image points TMPDIR into the data volume, which is mounted over
+    # whatever the image had there; without the folder Python would quietly
+    # fall back to /tmp.
+    if os.environ.get("TMPDIR"):
+        Path(os.environ["TMPDIR"]).mkdir(parents=True, exist_ok=True)
     return create_app(Settings.from_env())
