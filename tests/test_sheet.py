@@ -395,3 +395,104 @@ class TestTransparentPictures:
         assert min(rendered.getpixel((5, 5))) > 245
         red, green, blue = rendered.getpixel((100, 100))
         assert red > 150 and green < 80
+
+
+class TestDistinctTracks:
+    """On a small circle, track names show what tells them apart."""
+
+    def test_the_beginning_every_track_shares_is_left_off(self):
+        from tonie_studio.sheet import distinct_tracks
+
+        tracks = [f"Asterix - Die goldene Sichel Teil 0{n}" for n in range(1, 4)]
+
+        assert distinct_tracks(tracks) == ["Teil 01", "Teil 02", "Teil 03"]
+
+    def test_it_is_cut_at_a_word_not_inside_one(self):
+        from tonie_studio.sheet import distinct_tracks
+
+        assert distinct_tracks(["Flocke Anleitung", "Flocke Intro", "Flockenlied"]) == \
+            ["Flocke Anleitung", "Flocke Intro", "Flockenlied"]
+
+    def test_names_that_would_be_left_as_bare_numbers_stay_whole(self):
+        # "1. 1", "2. 2" says less than "1. Kapitel 1".
+        from tonie_studio.sheet import distinct_tracks
+
+        assert distinct_tracks(["Kapitel 1", "Kapitel 2"]) == ["Kapitel 1", "Kapitel 2"]
+
+    def test_a_single_track_or_names_without_a_shared_start_stay_as_they_are(self):
+        from tonie_studio.sheet import distinct_tracks
+
+        assert distinct_tracks(["Asterix - Teil 1"]) == ["Asterix - Teil 1"]
+        assert distinct_tracks(["Eins", "Zwei"]) == ["Eins", "Zwei"]
+
+    def test_the_back_side_lists_them_that_way(self):
+        from tonie_studio.sheet import Back, back_lines
+
+        lines = back_lines(Back(title="Die goldene Sichel",
+                                tracks=["Asterix - Die goldene Sichel Teil 01",
+                                        "Asterix - Die goldene Sichel Teil 02"]))
+
+        assert [line.text for line in lines][-2:] == ["1. Teil 01", "2. Teil 02"]
+
+
+class TestFigureFillsTheCover:
+    """A shop picture is a figure on a transparent background, often with wide margins."""
+
+    @staticmethod
+    def figure(width=1200, height=900, box=(500, 150, 700, 750)):
+        import io
+
+        picture = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        picture.paste(Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (200, 30, 30, 255)),
+                      box[:2])
+        buffer = io.BytesIO()
+        picture.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    @staticmethod
+    def red_rows(jpeg):
+        import io
+
+        rendered = Image.open(io.BytesIO(jpeg)).convert("RGB")
+        width, height = rendered.size
+        column = [rendered.getpixel((width // 2, y)) for y in range(height)]
+        return sum(1 for red, green, _blue in column if red > 150 and green < 90) / height
+
+    def test_the_margins_around_the_figure_are_trimmed(self):
+        from tonie_studio.sheet import SHEET, render_square
+
+        # The figure is two thirds of the picture's height; trimmed, it spans
+        # nearly the whole cut circle.
+        share = self.red_rows(render_square(self.figure(), size=400))
+
+        assert share > 0.8 * SHEET.diameter_mm / SHEET.picture_mm
+
+    def test_the_whole_figure_stays_on_the_cover(self):
+        from tonie_studio.sheet import SHEET, render_square
+
+        share = self.red_rows(render_square(self.figure(), size=400))
+
+        assert share < SHEET.diameter_mm / SHEET.picture_mm
+
+    def test_a_cover_without_transparency_is_left_as_it_is(self):
+        import io
+
+        from tonie_studio.sheet import render_square
+
+        plain = Image.new("RGB", (400, 400), (255, 255, 255))
+        plain.paste(Image.new("RGB", (100, 100), (200, 30, 30)), (150, 150))
+        buffer = io.BytesIO()
+        plain.save(buffer, format="JPEG")
+
+        assert 0.2 < self.red_rows(render_square(buffer.getvalue(), size=400)) < 0.3
+
+    def test_whole_cover_leaves_the_ring_around_a_figure_white(self):
+        # The blurred copy that hides the ring around album art would show
+        # here as a smudge around the figure.
+        import io
+
+        from tonie_studio.sheet import FIT, render_square
+
+        rendered = Image.open(io.BytesIO(render_square(self.figure(), FIT, size=400)))
+
+        assert min(rendered.convert("RGB").getpixel((200, 392))) > 245

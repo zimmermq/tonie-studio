@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
-from .pictures import centre_square, inset, on_white
+from .pictures import around_figure, centre_square, inset, on_white
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,12 @@ FIT = "fit"
 
 # A square fits inside a circle at 1/sqrt(2) of its diameter.
 FIT_FACTOR = 0.707
+
+# How much larger than a figure the cut circle is, for a picture whose figure
+# stands on a transparent background: its longer side then spans 1/ROOM of
+# the cover. The rest keeps it clear of the cut, where a punch or scissors
+# wander.
+FIGURE_ROOM = 1.12
 
 # How far text stays clear of the cut line. Scissors wander by about a
 # millimetre and a clipped letter is worse than a shorter line.
@@ -307,7 +314,7 @@ def back_lines(back: Back, with_tracks: bool = True, layout: Layout = SHEET) -> 
 
     # One line per track, each shortened to the width rather than wrapped: a
     # track running over two lines makes the list unreadable as a list.
-    numbered = [f"{index}. {track}" for index, track in enumerate(back.tracks, 1)]
+    numbered = [f"{index}. {track}" for index, track in enumerate(distinct_tracks(back.tracks), 1)]
     spacer = TextLine("", NOTE_PT * 0.5)
 
     for keep in range(len(numbered), -1, -1):
@@ -322,6 +329,28 @@ def back_lines(back: Back, with_tracks: bool = True, layout: Layout = SHEET) -> 
             return lines if keep else head
 
     return head
+
+
+def distinct_tracks(tracks: Sequence[str]) -> List[str]:
+    """Track names without the beginning they all share.
+
+    The catalogue often names every track after its tonie ("Asterix - Die
+    goldene Sichel Teil 01"); cut to the width of a circle, every line then
+    reads the same. What all of them start with is left off, at a word, so
+    what tells them apart is what shows. A bare number keeps the word before
+    it ("Teil 01", not "01"); names that would be left empty, or with nothing
+    but numbers, stay whole: "1. 1" says less than "1. Kapitel 1".
+    """
+    if len(tracks) < 2:
+        return list(tracks)
+    shared = os.path.commonprefix(list(tracks))
+    shared = shared[:shared.rfind(" ") + 1]
+    while shared.strip():
+        rest = [track[len(shared):].lstrip(" -:\u2013") for track in tracks]
+        if all(rest) and not all(name.isdigit() for name in rest):
+            return rest
+        shared = shared[:shared.rstrip().rfind(" ") + 1]
+    return list(tracks)
 
 
 def wrap_text(text: str, size: float, bold: bool, width: float) -> List[str]:
@@ -379,11 +408,12 @@ def render_square(source: Union[bytes, Path], mode: str = FILL, size: Optional[i
     handle = io.BytesIO(source) if isinstance(source, bytes) else source
     with Image.open(handle) as image:
         image.load()
-        picture = on_white(image)
+        figure = around_figure(image, FIGURE_ROOM * layout.picture_mm / layout.diameter_mm)
+        picture = on_white(figure)
 
     picture = centre_square(picture, size or layout.pixels)
     if mode == FIT:
-        picture = inset(picture, layout.fit_factor)
+        picture = inset(picture, layout.fit_factor, on_paper=figure is not image)
 
     if fade:
         picture = Image.blend(picture, Image.new("RGB", picture.size, (255, 255, 255)),

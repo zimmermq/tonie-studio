@@ -124,15 +124,18 @@ def crop(
     return buffer.getvalue()
 
 
-def inset(square: Image.Image, share: float) -> Image.Image:
+def inset(square: Image.Image, share: float, on_paper: bool = False) -> Image.Image:
     """Shrink a square picture to ``share`` of its edge, over a blurred copy of itself.
 
     A cover placed whole inside the circle leaves a ring, and a flat colour
     there reads as a mistake. The blurred copy carries the cover's own colours
     to the edge, so the ring looks intended and the print bleeds cleanly.
+    ``on_paper`` is for a figure that already stands on white: its blurred
+    copy would only smudge the white around it, so the ring stays white.
     """
     size = square.size[0]
-    background = square.filter(ImageFilter.GaussianBlur(max(1, size // 25)))
+    background = (Image.new("RGB", square.size, (255, 255, 255)) if on_paper
+                  else square.filter(ImageFilter.GaussianBlur(max(1, size // 25))))
     shrunk = max(1, round(size * share))
     foreground = square.resize((shrunk, shrunk), Image.LANCZOS)
     background.paste(foreground, ((size - shrunk) // 2, (size - shrunk) // 2))
@@ -141,6 +144,28 @@ def inset(square: Image.Image, share: float) -> Image.Image:
 
 def _clamp(value: float) -> float:
     return max(-1.0, min(float(value), 1.0))
+
+
+def around_figure(image: Image.Image, room: float) -> Image.Image:
+    """``image`` cut down to what is not transparent, centred on a square ``room`` times its size.
+
+    Shop pictures are a figure on a transparent background with wide margins
+    around it, so the figure ends up small on a cover. Its edges are known
+    exactly from the transparency, which a picture without any lacks: album
+    covers and photos come back unchanged, since a white margin there may be
+    part of the artwork.
+    """
+    if image.mode not in ("RGBA", "LA", "PA") and "transparency" not in image.info:
+        return image
+    picture = image.convert("RGBA")
+    box = picture.getchannel("A").getbbox()
+    if box is None or box == (0, 0, *picture.size):
+        return image
+    figure = picture.crop(box)
+    side = round(max(figure.size) * room)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.paste(figure, ((side - figure.size[0]) // 2, (side - figure.size[1]) // 2))
+    return square
 
 
 def on_white(image: Image.Image) -> Image.Image:
