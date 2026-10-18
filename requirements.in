@@ -1,0 +1,9 @@
+requests==2.34.2
+mutagen==1.48.1
+fastapi==0.143.3
+uvicorn==0.54.0
+Jinja2==3.1.6
+python-multipart==0.0.32
+reportlab==5.0.1
+pillow==13.0.0
+brotli==1.2.0

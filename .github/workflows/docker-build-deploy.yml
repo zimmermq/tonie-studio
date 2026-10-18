@@ -10,6 +10,14 @@ on:
   release:
     types: [published]
 
+# Read only: nothing here writes to this repository. The release job reaches
+# Docker Hub and homelab-iac with secrets of their own, not with this token.
+permissions:
+  contents: read
+
+# Actions are pinned by commit, not by tag: a tag can be moved to other code,
+# which would then run next to DOCKER_PASSWORD and HOMELAB_PAT. Renovate keeps
+# the commits current and the version comments next to them.
 jobs:
   # Pinned rather than ubuntu-latest: setup-python needs a build of the exact
   # Python version for the runner image, and a freshly switched image may not
@@ -19,17 +27,18 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.15.0'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest httpx2
+          pip install --require-hashes -r requirements.txt
+          pip install pytest httpx2
 
       - name: Run tests
         run: |
@@ -52,10 +61,10 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.4.1
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build Docker image for validation
         run: |
@@ -73,13 +82,13 @@ jobs:
       IMAGE: docker.io/zimmermq/tonie-studio
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.4.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.4.1
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Get release version
         id: version
@@ -89,13 +98,14 @@ jobs:
           echo "Release version: $VERSION"
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7.4.0
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -115,6 +125,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.HOMELAB_PAT }}
           VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           git clone https://x-access-token:$GITHUB_TOKEN@github.com/JonasHess/homelab-iac.git
           cd homelab-iac
@@ -127,8 +138,11 @@ jobs:
 
           # Pure-generic app: the image is inline in generic.deployment.image.
           # The whole reference is written, registry included, so a deployment
-          # still pointing at an older registry moves along with the tag.
-          sed -i "s#image:[[:space:]]*.*tonie-studio:.*#image: $IMAGE:$VERSION#" apps/tonie-studio/values.yaml
+          # still pointing at an older registry moves along with the tag. The
+          # digest pins the image just built: a tag on Docker Hub can be pushed
+          # over, a digest cannot. The tag stays in front for a person reading it.
+          test -n "$DIGEST"
+          sed -i "s#image:[[:space:]]*.*tonie-studio:.*#image: $IMAGE:$VERSION@$DIGEST#" apps/tonie-studio/values.yaml
 
           # If the chart already pins this tag (e.g. the very first release), there
           # is nothing to change - succeed without opening an empty PR.
@@ -142,7 +156,7 @@ jobs:
           git commit -m "chore: Update tonie-studio to $VERSION
 
           Automated update from tonie-studio release
-          - Image: $IMAGE:$VERSION"
+          - Image: $IMAGE:$VERSION@$DIGEST"
 
           git push origin $BRANCH_NAME
 
@@ -154,5 +168,5 @@ jobs:
               \"title\": \"Update tonie-studio to $VERSION\",
               \"head\": \"$BRANCH_NAME\",
               \"base\": \"main\",
-              \"body\": \"Automated update of the tonie-studio container image to $VERSION.\\n\\n- Updated apps/tonie-studio/values.yaml image tag\\n- Image: $IMAGE:$VERSION\"
+              \"body\": \"Automated update of the tonie-studio container image to $VERSION.\\n\\n- Updated apps/tonie-studio/values.yaml image tag\\n- Image: $IMAGE:$VERSION@$DIGEST\"
             }"

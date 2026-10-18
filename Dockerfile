@@ -1,4 +1,6 @@
-FROM python:3.15-slim
+# By digest as well as tag: the tag moves with every rebuild upstream, so the
+# same commit could otherwise build on a different base. Renovate moves both.
+FROM python:3.15-slim@sha256:2da676046630d7bf14c6764ae1143dc7fa0377a53f94bf5a642f0b214aca5bce
 
 # The audio archive is mounted read-only at /archive and browser uploads are
 # spooled under /data; both come from volumes. Europe/Berlin so a job timestamp
@@ -16,8 +18,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# requirements.txt is the lock compiled from requirements.in, every package
+# with its hashes: what is installed is exactly what was locked, or nothing.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY src/ ./src/
 

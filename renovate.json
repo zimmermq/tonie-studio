@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Europe/Berlin",
   "schedule": [
@@ -63,6 +64,21 @@
       "matchPackageNames": [
         "/aws-actions/"
       ]
+    },
+    {
+      "description": "An action runs next to the release secrets: a person looks at every update first.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "automerge": false
     }
-  ]
+  ],
+  "pip-compile": {
+    "managerFilePatterns": [
+      "/(^|/)requirements\\.txt$/"
+    ]
+  },
+  "pip_requirements": {
+    "enabled": false
+  }
 }

@@ -130,11 +130,16 @@ for a private repository is kept only until the repository has been read.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt pytest
+.venv/bin/pip install --require-hashes -r requirements.txt
+.venv/bin/pip install pytest httpx2
 .venv/bin/python -m pytest -q
 uvx ruff check src tests
 for test in tests/js/*.test.mjs; do node "$test"; done   # needs Node 22
 ```
+
+Dependencies are listed in `requirements.in`; `requirements.txt` is the lock built from it, with
+every package's hashes. After changing `requirements.in`, lock again with
+`uv pip compile requirements.in --generate-hashes --python-version 3.15 --universal -o requirements.txt`.
 
 To run it locally, set `TS_TEDDYCLOUD_URL` (and usually `TS_ARCHIVE_DIR` and `TS_DATA_DIR`) and
 start `uvicorn --factory tonie_studio.main:app` with `src` on the `PYTHONPATH`.
