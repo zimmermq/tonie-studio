@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import field with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("tonies.print") %}
 {% set page_heading = t("sheet.heading") %}
@@ -160,14 +161,12 @@
   </p>
   <form method="post" action="/sheet/calibration" class="row stackable wrap gap-10 items-end">
     <a class="button" href="/sheet/calibration">{{ t("calibration.sheet") }}</a>
-    <label class="field m-0">
-      <span>{{ t("calibration.left") }}</span>
+    {% call field(t("calibration.left"), class="m-0") %}
       <input type="text" name="left_mm" inputmode="decimal" required class="input-medium">
-    </label>
-    <label class="field m-0">
-      <span>{{ t("calibration.top") }}</span>
+    {% endcall %}
+    {% call field(t("calibration.top"), class="m-0") %}
       <input type="text" name="top_mm" inputmode="decimal" required class="input-medium">
-    </label>
+    {% endcall %}
     <button type="submit">{{ t("common.save") }}</button>
   </form>
   {% if shift[0] or shift[1] %}

@@ -1,23 +1,17 @@
-{% extends "base.html" %}
+{% extends "_progress_page.html" %}
 {% set page_title = job.label %}
+{% set percent, detail = job.percent or 0, describe_progress(job, t) %}
+{% set finished, failed = job.state.value in ('done', 'failed'), job.state.value == 'failed' %}
+{% set page_data = {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies"), "doneKey": done_key, "assigned": assigned_ending, "running": not finished} %}
 
-{% block body %}
-<p class="sub" id="state">{{ t("job.state." ~ job.state.value) }}</p>
+{% block intro %}<span id="state">{{ t("job.state." ~ job.state.value) }}</span>{% endblock %}
 
-<div class="card">
-  <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
-  <p class="muted mb-0" id="detail">{{ describe_progress(job, t) }}</p>
-</div>
+{% block message %}{% if error %}{{ error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif %}{% endblock %}
 
-<div class="card" id="outcome" {% if job.state.value not in ('done', 'failed') %}hidden{% endif %}>
-  <p id="message" class="{% if job.state.value == 'failed' %}state-failed{% else %}state-done{% endif %}">
-    {%- if error %}{{ error }}{% elif job.state.value == 'done' %}{{ t(done_key) }}{% endif -%}
-  </p>
-  <a class="button" id="next" href="{{ next_href }}"
+{% block actions %}
+  <a class="button primary" id="next" href="{{ next_href }}"
      {% if job.state.value != 'done' %}hidden{% endif %}>{{ t(next_key) }}</a>
   <a class="button" href="/">{{ t("job.back") }}</a>
-</div>
-
-<script type="application/json" id="page-data">{{ {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies"), "doneKey": done_key, "assigned": assigned_ending, "running": job.state.value not in ('done', 'failed')} | tojson }}</script>
-<script src="{{ asset('job.js') }}"></script>
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('job.js') }}"></script>{% endblock %}

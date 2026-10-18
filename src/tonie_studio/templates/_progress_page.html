@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{#- A page that watches work in the background: a bar and a line saying
+    where it is, then what came of it, and the buttons on. The page's own
+    script asks how the work is going and fills the parts by their ids:
+      #fill     the bar, as a width in percent
+      #detail   the line under it
+      #outcome  hidden until the work is done or failed; #message in it says
+                which, as state-done or state-failed
+    The page sets ``percent`` and ``detail`` for the first drawing,
+    ``finished`` and ``failed`` once the work has ended, and ``page_data``
+    for its script, which ``scripts`` loads. ``outcome`` adds to the
+    outcome card, ``actions`` fills the row of buttons under it. #}
+{% block body %}
+<div class="card">
+  <div class="bar"><div id="fill" style="width: {{ percent | default(0) }}%"></div></div>
+  <p class="muted mb-0" id="detail">{{ detail }}</p>
+</div>
+
+<div class="card" id="outcome" {% if not finished | default(false) %}hidden{% endif %}>
+  <p id="message" class="mt-0 {% if failed | default(false) %}state-failed{% else %}state-done{% endif %}">
+    {%- block message %}{% endblock -%}
+  </p>
+  {% block outcome %}{% endblock %}
+</div>
+
+<p class="row wrap gap-10">{% block actions %}{% endblock %}</p>
+
+<script type="application/json" id="page-data">{{ page_data | tojson }}</script>
+{% block scripts %}{% endblock %}
+{% endblock %}

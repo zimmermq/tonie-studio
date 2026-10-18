@@ -41,7 +41,7 @@ function show(job) {
       next.textContent = words[ending.nextKey];
     }
     message.textContent = job.error || words[(ending || data).doneKey];
-    message.className = job.state === 'failed' ? 'state-failed' : 'state-done';
+    message.className = job.state === 'failed' ? 'mt-0 state-failed' : 'mt-0 state-done';
     return false;
   }
   return true;

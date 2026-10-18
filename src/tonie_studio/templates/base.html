@@ -63,9 +63,13 @@
 <script type="application/json" id="box-words">{{ t.strings("box.unreachable", "box.silent", "box.playing", "box.on_box") | tojson }}</script>
 <main>
 {% block above %}{% endblock %}
+{#- A kind of page with a top of its own - the picture of a details page -
+    replaces this block. #}
+{% block heading %}
 {%- set heading = page_heading if page_heading is defined else page_title | default("") %}
 {% if heading %}<h1>{{ heading }}</h1>{% endif %}
 {% if self.intro() | trim %}<p class="sub">{% block intro %}{% endblock %}</p>{% endif %}
+{% endblock %}
 {% block body %}{% endblock %}
 </main>
 <div id="peek"><img alt=""></div>

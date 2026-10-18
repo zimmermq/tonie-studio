@@ -1,8 +1,13 @@
-{% extends "base.html" %}
+{% extends "_list_page.html" %}
 {% from "_parts.html" import thumb with context %}
 {% from "_steps.html" import steps with context %}
-{% from "_list.html" import toolbar, chips with context %}
 {% set page_title = t("albums.title") %}
+{% set rows = uploads + archive %}
+{% set filter_label = "albums.filter." %}
+{% set search, search_label, no_match = "albums.search", "albums.search_label", "albums.no_match" %}
+{% set list_id, list_class, headings, first = "albums", "list", false, "name" %}
+{% set page_words = ["upload.picked", "batch.picked", "albums.pick_slow"] %}
+{% set page_data = {"slowPick": slow_pick} %}
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
@@ -30,7 +35,8 @@
 
 {% block above %}{{ steps("1") }}{% endblock %}
 {% block intro %}{{ t("albums.intro") }}{% endblock %}
-{% block body %}
+
+{% block before_list %}
 {% if jobs %}
 <h2>{{ t("albums.running") }}</h2>
 {% for job in jobs %}
@@ -44,12 +50,10 @@
 </div>
 {% endfor %}
 {% endif %}
+{% endblock %}
 
-{% if albums %}
-{{ toolbar(columns, "albums.search", "albums.search_label") }}
-{{ chips(albums | length, filters, counts, "albums.filter.") }}
-{% endif %}
-{% if albums | length > 1 %}
+{% block above_rows %}
+{% if rows | length > 1 %}
 {#- Ticking gathers albums for one batch; like on the print page, it acts on
     what the search and the chips leave in view. #}
 <p class="row wrap gap-8 mt-0" id="ticks">
@@ -57,13 +61,14 @@
   <button type="button" id="untick">{{ t("list.untick") }}</button>
 </p>
 {% endif %}
+{% endblock %}
 
-<div class="list" id="albums" data-list>
-  {% for id, album, origin in uploads %}{{ album_row(id, album) }}{% endfor %}
-  {% for id, album, origin in archive %}{{ album_row(id, album) }}{% endfor %}
-</div>
-<p class="muted" id="nohits" hidden>{{ t("albums.no_match") }}</p>
-{% if not albums %}<p class="warn">{{ t("albums.empty") }}</p>{% endif %}
+{% block row %}{{ album_row(item[0], item[1]) }}{% endblock %}
+
+{#- No album at all means the archive is out of reach, not that it is empty. #}
+{% block empty %}<p class="warn">{{ t("albums.empty") }}</p>{% endblock %}
+
+{% block after_list %}
 <div class="toast" id="loading" role="status" hidden>{{ t("albums.loading") }}</div>
 <form id="pick" method="get" action="/batch" class="pickbar" hidden>
   <span class="grow" id="pickcount"></span>
@@ -91,8 +96,6 @@
     </div>
   </form>
 </div>
-
-<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of", "upload.picked", "batch.picked", "albums.pick_slow"), "slowPick": slow_pick, "first": "name", "orders": columns | orders} | tojson }}</script>
-<script src="{{ asset('list.js') }}"></script>
-<script src="{{ asset('index.js') }}"></script>
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('index.js') }}"></script>{% endblock %}

@@ -1,9 +1,12 @@
-{% extends "base.html" %}
+{% extends "_list_page.html" %}
 {% from "_parts.html" import thumb with context %}
-{% from "_list.html" import toolbar, chips, head with context %}
 {% set page_title = t("nav.listening") %}
+{% set filter_label = "listening.filter." %}
+{% set search, search_label = "listening.search", "listening.search_label" %}
+{% set no_match = "listening.no_match" %}
+{% set list_id, list_class, first = "lists", "listing listening", "played" %}
 
-{% block body %}
+{% block before_list %}
 <div id="live">
 <p class="sub">
   {% if recorded_since %}
@@ -12,7 +15,6 @@
   {{ t("listening.nothing_yet") }}
   {% endif %}
 </p>
-
 </div>
 
 <p class="row wrap gap-8">
@@ -20,41 +22,34 @@
   <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}">{{ name }}</a>
   {% endfor %}
 </p>
+{% endblock %}
 
-{% if rows %}
-{{ toolbar(columns, "listening.search", "listening.search_label") }}
-{{ chips(rows | length, filters, counts, "listening.filter.") }}
-{% endif %}
-
-<div id="lists" class="listing listening" data-list data-view="list">
-  {% if rows %}{{ head(columns) }}{% endif %}
-  {% for row in rows %}
-  {%- set tag = row.tag %}
-  <div class="listing-row" id="heard-{{ tag.ruid }}" data-tags="{{ row.kind }}"
-       data-name="{{ tag.label | lower }}" data-placed="{{ row.placed }}" data-played="{{ row.played }}"
-       data-last="{{ row.last.timestamp() | int if row.last else 0 }}"
-       data-search="{{ (tag.label ~ ' ' ~ tag.uid) | lower }}">
-    {{ thumb(tag.picture | cover_url(false)) }}
-    <span class="t-name"><a href="/tonies/{{ tag.ruid }}"><strong>{{ tag.label }}</strong></a></span>
-    <span class="t-played muted">{% if row.played %}{{ t.duration(row.entry.played) }}{% endif %}</span>
-    <span class="t-placed muted">{% if row.placed %}{{ t("listening.placed", count=row.placed) }}{% endif %}</span>
-    <span class="t-last muted">
-      {%- if row.last %}{{ t.when(row.last) }}{% else %}<span title="{{ t('listening.never') }}">{{ t("listening.never_short") }}</span>{% endif -%}
-    </span>
-  </div>
-  {% else %}
-  <p class="empty">
-    {% if days %}{{ t("listening.nothing_in", count=days) }}{% else %}{{ t("listening.nothing") }}{% endif %}
-  </p>
-  {% endfor %}
+{% block row %}
+{%- set tag = item.tag %}
+<div class="listing-row" id="heard-{{ tag.ruid }}" data-tags="{{ item.kind }}"
+     data-name="{{ tag.label | lower }}" data-placed="{{ item.placed }}" data-played="{{ item.played }}"
+     data-last="{{ item.last.timestamp() | int if item.last else 0 }}"
+     data-search="{{ (tag.label ~ ' ' ~ tag.uid) | lower }}">
+  {{ thumb(tag.picture | cover_url(false)) }}
+  <span class="t-name"><a href="/tonies/{{ tag.ruid }}"><strong>{{ tag.label }}</strong></a></span>
+  <span class="t-played muted">{% if item.played %}{{ t.duration(item.entry.played) }}{% endif %}</span>
+  <span class="t-placed muted">{% if item.placed %}{{ t("listening.placed", count=item.placed) }}{% endif %}</span>
+  <span class="t-last muted">
+    {%- if item.last %}{{ t.when(item.last) }}{% else %}<span title="{{ t('listening.never') }}">{{ t("listening.never_short") }}</span>{% endif -%}
+  </span>
 </div>
-<p class="muted" id="nohits" hidden>{{ t("listening.no_match") }}</p>
+{% endblock %}
 
+{% block empty %}
+<p class="empty">
+  {% if days %}{{ t("listening.nothing_in", count=days) }}{% else %}{{ t("listening.nothing") }}{% endif %}
+</p>
+{% endblock %}
+
+{% block after_list %}
 <p class="muted small-text">
   {{ t("listening.refresh_note") }}
 </p>
-
-<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "played", "orders": columns | orders} | tojson }}</script>
-<script src="{{ asset('list.js') }}"></script>
-<script src="{{ asset('listening.js') }}"></script>
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('listening.js') }}"></script>{% endblock %}

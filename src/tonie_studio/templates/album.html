@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import field with context %}
 {% set page_title = album.title %}
 
 {% block intro %}
@@ -52,14 +53,12 @@
     </div>
     {% endif %}
     <div class="grow">
-      <label class="field">
-        <span>{{ t("album.series") }}</span>
+      {% call field(t("album.series")) %}
         <input type="text" name="series" value="{{ form.series }}">
-      </label>
-      <label class="field mb-0">
-        <span>{{ t("album.episode") }}</span>
+      {% endcall %}
+      {% call field(t("album.episode"), class="mb-0") %}
         <input type="text" name="episode" value="{{ form.episode }}" required>
-      </label>
+      {% endcall %}
     </div>
   </div>
 

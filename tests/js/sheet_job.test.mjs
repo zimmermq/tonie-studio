@@ -5,9 +5,14 @@ import { element, runPage } from './page.mjs';
 async function watch(state) {
   const download = element('download');
   download.href = '/sheet/print/x/pdf';
+  download.hidden = true;
+  const outcome = element('outcome');
+  outcome.hidden = true;
+  const skipped = element('skipped');
+  skipped.hidden = true;
   return runPage(['app.js', 'sheet_job.js'], {
-    ids: ['fill', 'detail', 'ready', 'problem', 'skipped'],
-    prepared: { download },
+    ids: ['fill', 'detail', 'message'],
+    prepared: { download, outcome, skipped },
     pageData: { id: 'x', words: { 'sheet.job_waiting': 'waiting',
                                   'sheet.job_pictures': '{done} of {total}',
                                   'sheet.job_pdf': 'pdf', 'sheet.job_done': 'done',
@@ -21,23 +26,30 @@ async function watch(state) {
   const page = await watch({ state: 'running', percent: 30, done: 3, total: 10, skipped: [] });
   assert.equal(page.detail.textContent, '3 of 10');
   assert.equal(page.fill.style.width, '30%');
+  assert.equal(page.outcome.hidden, true);
   assert.equal(page.timers.length, 1);
 }
 
-// Done: the download starts and the button stays; what was left off is named.
+// Done: the outcome says so, the download starts and its button shows; what
+// was left off is named.
 {
   const page = await watch({ state: 'done', percent: 100, done: 2, total: 2, skipped: ['Wolf'] });
+  assert.equal(page.outcome.hidden, false);
+  assert.equal(page.message.textContent, 'done');
+  assert.equal(page.message.className, 'mt-0 state-done');
+  assert.equal(page.download.hidden, false);
   assert.equal(page.location.href, '/sheet/print/x/pdf');
-  assert.equal(page.ready.hidden, false);
   assert.equal(page.skipped.textContent, 'left off: Wolf');
   assert.equal(page.timers.length, 0);
 }
 
-// A failure says why and stops asking.
+// A failure says why in the outcome, offers no download and stops asking.
 {
   const page = await watch({ state: 'failed', percent: 0, done: 0, total: 0, skipped: [],
                              problem: 'Nothing selected to print.' });
-  assert.equal(page.problem.textContent, 'Nothing selected to print.');
-  assert.equal(page.problem.hidden, false);
+  assert.equal(page.outcome.hidden, false);
+  assert.equal(page.message.textContent, 'Nothing selected to print.');
+  assert.equal(page.message.className, 'mt-0 state-failed');
+  assert.equal(page.download.hidden, true);
   assert.equal(page.timers.length, 0);
 }

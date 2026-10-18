@@ -1,17 +1,25 @@
-{% extends "base.html" %}
+{% extends "_list_page.html" %}
 {% from "_parts.html" import thumb with context %}
-{% from "_list.html" import toolbar, chips, head with context %}
 {% set page_title = t("nav.tonies") %}
+{% set rows = tonies %}
+{% set filters, filter_label = kinds, "tonies.kind." %}
+{% set search, search_label = "tonies.search", "tonies.search_label" %}
+{% set no_match, empty = "tonies.no_match", "tonies.none" %}
+{% set list_id, list_class, list_view = "tonies", "listing", "grid" %}
+{% set views = (("grid", "tonies.view_grid"), ("list", "tonies.view_list")) %}
+{% set remember, first = "tonies.view", "name" %}
+{% set page_words = ["tonies.note_playing", "tonies.note_on_box", "tonies.note_offline",
+                     "tonies.note_stale", "tonies.note_nothing"] %}
 
 {% block intro %}
   {{ t("tonies.summary", used=tags | selectattr('assigned') | list | length, count=tags | length) }}<span
     id="boxnote" class="muted"></span>.
 {% endblock %}
-{% block body %}
+
+{% block before_list %}
 {% if images_cached == false %}
 <div class="warn">{{ t("covers.cache_off") }}</div>
 {% endif %}
-
 {% if free %}
 {#- Nameless and waiting for something to play: kept apart, where a new traveltonie is looked for. #}
 <div id="free" class="freestrip">
@@ -22,46 +30,34 @@
   {% endfor %}
 </div>
 {% endif %}
-
-{% if tonies %}
-{{ toolbar(columns, "tonies.search", "tonies.search_label",
-           views=(("grid", "tonies.view_grid"), ("list", "tonies.view_list"))) }}
-{{ chips(tonies | length, kinds, counts, "tonies.kind.") }}
-{% endif %}
-
-<div id="tonies" class="listing" data-list data-view="grid" data-remember="tonies.view">
-  {% if tonies %}
-  {{ head(columns) }}
-  {% endif %}
-  {% for row in tonies %}
-  {%- set tag = row.tag %}
-  {%- set picture = tag.picture | cover_url(false) %}
-  <a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
-     data-kind="{{ row.kind }}" data-tags="{{ row.kind }}{% if not picture %} nopicture{% endif %}"
-     data-name="{{ row.name }}" data-series="{{ (tag.series ~ ' ' ~ row.name) | trim | lower }}"
-     data-added="{{ row.added.timestamp() | int if row.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
-     data-category="{{ row.category | lower }}" data-age="{{ row.age if row.age is not none else '' }}"
-     data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ row.category) | lower }}">
-    {{ thumb(picture) }}
-    <span class="t-name"><strong>{{ tag.episode or tag.label }}</strong>
-      <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>
-    <span class="t-series muted">{% if tag.episode and tag.series != tag.episode %}{{ tag.series }}{% endif %}</span>
-    <span class="t-kind"><span class="pill done">{{ t("tonies.kind." ~ row.kind) }}</span></span>
-    <span class="t-chapters muted">{% if tag.chapters %}{{ t("tonies.chapters", count=tag.chapters) }}{% endif %}</span>
-    <span class="t-category muted">{{ row.category }}</span>
-    <span class="t-age muted">{% if row.age is not none %}{{ t("tonies.age", age=row.age) }}{% endif %}</span>
-    <span class="t-added muted">{% if row.added %}{{ t.day(row.added) }}{% endif %}</span>
-  </a>
-  {% endfor %}
-</div>
-{% if not tonies and not free %}
-<p class="empty">{{ t("tonies.none") }}</p>
-{% endif %}
-<p class="muted" id="nohits" hidden>{{ t("tonies.no_match") }}</p>
-
-<p><a class="button" href="/sheet">{{ t("tonies.print") }}</a></p>
-
-<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "list.shown_of"), "first": "name", "orders": columns | orders} | tojson }}</script>
-<script src="{{ asset('list.js') }}"></script>
-<script src="{{ asset('tonies.js') }}"></script>
 {% endblock %}
+
+{% block row %}
+{%- set tag = item.tag %}
+{%- set picture = tag.picture | cover_url(false) %}
+<a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
+   data-kind="{{ item.kind }}" data-tags="{{ item.kind }}{% if not picture %} nopicture{% endif %}"
+   data-name="{{ item.name }}" data-series="{{ (tag.series ~ ' ' ~ item.name) | trim | lower }}"
+   data-added="{{ item.added.timestamp() | int if item.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
+   data-category="{{ item.category | lower }}" data-age="{{ item.age if item.age is not none else '' }}"
+   data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ item.category) | lower }}">
+  {{ thumb(picture) }}
+  <span class="t-name"><strong>{{ tag.episode or tag.label }}</strong>
+    <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>
+  <span class="t-series muted">{% if tag.episode and tag.series != tag.episode %}{{ tag.series }}{% endif %}</span>
+  <span class="t-kind"><span class="pill done">{{ t("tonies.kind." ~ item.kind) }}</span></span>
+  <span class="t-chapters muted">{% if tag.chapters %}{{ t("tonies.chapters", count=tag.chapters) }}{% endif %}</span>
+  <span class="t-category muted">{{ item.category }}</span>
+  <span class="t-age muted">{% if item.age is not none %}{{ t("tonies.age", age=item.age) }}{% endif %}</span>
+  <span class="t-added muted">{% if item.added %}{{ t.day(item.added) }}{% endif %}</span>
+</a>
+{% endblock %}
+
+{#- A sticker that is free is no tonie of the list but still something the box knows. #}
+{% block empty %}{% if not free %}<p class="empty">{{ t(empty) }}</p>{% endif %}{% endblock %}
+
+{% block after_list %}
+<p><a class="button" href="/sheet">{{ t("tonies.print") }}</a></p>
+{% endblock %}
+
+{% block scripts %}<script src="{{ asset('tonies.js') }}"></script>{% endblock %}

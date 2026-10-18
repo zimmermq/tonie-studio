@@ -75,3 +75,25 @@ class TestPageScriptsRun:
         for test in sorted((Path(__file__).resolve().parent / "js").glob("*.test.mjs")):
             result = subprocess.run([node, str(test)], capture_output=True, text=True, timeout=60)
             assert result.returncode == 0, (test.name, result.stderr[-2000:])
+
+
+class TestPagesUseTheSharedParts:
+    """A part every page shows the same comes from one place, so it cannot drift apart."""
+
+    HAND_WRITTEN = {
+        '<label class="field': "field",
+        '<details class="section"': "section",
+        'class="card danger"': "danger",
+        'class="noart"': "thumb",
+        'class="listing-head': "head (_list.html)",
+        '<div class="hero"': "_details_page.html",
+        '<div class="bar">': "_progress_page.html",
+    }
+
+    def test_no_page_writes_a_shared_part_out_by_hand(self):
+        found = [(page.name, part) for page in TEMPLATES
+                 if not page.name.startswith("_")
+                 for snippet, part in self.HAND_WRITTEN.items()
+                 if snippet in page.read_text(encoding="utf-8")]
+
+        assert not found, found

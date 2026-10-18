@@ -1,11 +1,9 @@
-{% extends "base.html" %}
-{% from "_parts.html" import sticker_picker with context %}
+{% extends "_details_page.html" %}
+{% from "_parts.html" import danger, field, section, sticker_picker, technical with context %}
 {% set page_title = tag.label %}
-{#- The page opens with the tonie's picture beside its name instead. #}
-{% set page_heading = "" %}
-
-{% block body %}
-{%- set picture = tag.picture | cover_url(false) %}
+{% set picture, no_picture = tag.picture | cover_url(false), "tonie.no_picture" %}
+{% set title = tag.episode or tag.label %}
+{% set subtitle = tag.series if tag.episode and tag.series and tag.series != tag.episode else "" %}
 {%- if model %}{% set tracks = model.tracks %}{% elif entry %}{% set tracks = entry.tracks or [] %}{% else %}{% set tracks = [] %}{% endif %}
 {%- set facts = [] %}
 {%- if about and about.age_min %}{% set _ = facts.append(t("tonie.about_age", age=about.age_min)) %}{% endif %}
@@ -14,42 +12,30 @@
 {%- if about %}{% for theme in about.themes %}{% set _ = facts.append(theme) %}{% endfor %}{% endif %}
 {%- if year %}{% set _ = facts.append(t("tonie.about_year", year=year)) %}{% endif %}
 
-<div class="hero">
-  {% if picture %}
-  <img class="cover large" src="{{ picture }}" alt="Cover">
-  {% else %}
-  <div class="cover large empty">{{ t("tonie.no_picture") }}</div>
-  {% endif %}
-  <div class="grow">
-    <h1>{{ tag.episode or tag.label }}</h1>
-    {% if tag.episode and tag.series and tag.series != tag.episode %}<p class="sub mb-8">{{ tag.series }}</p>{% endif %}
-    <p class="mt-0 mb-8">
-      {%- if model %}
-      <span class="pill done">{{ t("tonie.badge_own", model=model.id) }}</span>
-      {%- elif tag.model %}
-      {#- Why there is nothing to edit, for whoever wonders; the badge says enough. #}
-      <span class="pill done" title="{{ t('tonie.official', model=tag.model) }}">{{ t("tonie.badge_official") }}</span>
-      {%- else %}
-      <span class="pill done">{{ t("tonie.badge_none") }}</span>
-      {%- endif %}
-    </p>
-    {% if facts %}
-    <p class="muted mt-0">{% for fact in facts %}{% if not loop.first %} &middot; {% endif %}{{ fact }}{% endfor %}</p>
-    {% endif %}
-    <p class="row wrap gap-10 mb-0">
-      {% if tag.model %}
-      <a class="button" href="/sheet?model={{ tag.model | urlencode }}">{{ t("tonies.sticker") }}</a>
-      {% endif %}
-      {% if about and about.url %}
-      <a class="button" href="{{ about.url }}" target="_blank" rel="noopener noreferrer">{{ t("tonie.on_shop") }}</a>
-      {% endif %}
-      {% if model %}
-      <a class="button{% if not about %} primary{% endif %}" href="/tonies/{{ tag.ruid }}/shop">{{ t("tonie.shop_search") }}</a>
-      {% endif %}
-    </p>
-  </div>
-</div>
+{% block badges %}
+{%- if model %}
+<span class="pill done">{{ t("tonie.badge_own", model=model.id) }}</span>
+{%- elif tag.model %}
+{#- Why there is nothing to edit, for whoever wonders; the badge says enough. #}
+<span class="pill done" title="{{ t('tonie.official', model=tag.model) }}">{{ t("tonie.badge_official") }}</span>
+{%- else %}
+<span class="pill done">{{ t("tonie.badge_none") }}</span>
+{%- endif %}
+{% endblock %}
 
+{% block actions %}
+{% if tag.model %}
+<a class="button" href="/sheet?model={{ tag.model | urlencode }}">{{ t("tonies.sticker") }}</a>
+{% endif %}
+{% if about and about.url %}
+<a class="button" href="{{ about.url }}" target="_blank" rel="noopener noreferrer">{{ t("tonie.on_shop") }}</a>
+{% endif %}
+{% if model %}
+<a class="button{% if not about %} primary{% endif %}" href="/tonies/{{ tag.ruid }}/shop">{{ t("tonie.shop_search") }}</a>
+{% endif %}
+{% endblock %}
+
+{% block body %}
 {%- set description = about.description if about else "" %}
 {% if description or tracks or model or not tag.model %}
 <div class="card columns">
@@ -75,37 +61,31 @@
 {% endif %}
 
 {% if model %}
-<details class="section">
-  <summary>{{ t("tonie.edit") }}</summary>
+{% call section(t("tonie.edit")) %}
   <form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data" class="card">
-    <label class="field">
-      <span>{{ t("field.series") }}</span>
+    {% call field(t("field.series")) %}
       <input type="text" name="series" value="{{ model.series }}">
-    </label>
-    <label class="field">
-      <span>{{ t("field.episode") }}</span>
+    {% endcall %}
+    {% call field(t("field.episode")) %}
       <input type="text" name="episode" value="{{ model.episode }}">
-    </label>
-    <label class="field">
-      <span>{{ t("field.category") }}</span>
+    {% endcall %}
+    {% call field(t("field.category")) %}
       <select name="category">
         {% for entry in categories %}
         <option value="{{ entry }}" {% if entry == model.category %}selected{% endif %}>{{ entry }}</option>
         {% endfor %}
       </select>
-    </label>
-    <label class="field">
-      <span>{{ t("tonie.replace_cover") }}</span>
+    {% endcall %}
+    {% call field(t("tonie.replace_cover")) %}
       <label class="button">{{ t("common.choose_picture") }}<input type="file" name="cover" accept="image/*"></label>
-    </label>
+    {% endcall %}
     <button class="primary" type="submit">{{ t("common.save") }}</button>
   </form>
-</details>
+{% endcall %}
 {% endif %}
 
 {% if tag.source %}
-<details class="section">
-  <summary>{{ t("tonie.copy_title") }}</summary>
+{% call section(t("tonie.copy_title")) %}
   <div class="card">
     <p class="muted mt-0">
       {{ t("tonie.copy_hint") }} {{ t("tonie.move_hint") }}
@@ -123,18 +103,13 @@
     <p class="empty">{{ t("tonie.no_other") }}</p>
     {% endif %}
   </div>
-</details>
+{% endcall %}
 {% endif %}
 
-<p class="muted technical">
-  {{ t("tonie.technical") }}: {{ tag.uid }}
-  {%- if tag.source %} &middot; {{ tag.source }}{% endif %}
-  {%- if tag.model %} &middot; {{ tag.model }}{% endif %}
-</p>
+{{ technical(t("tonie.technical"), [tag.uid, tag.source, tag.model]) }}
 
 {% if removal %}
-<h2>{{ t("tonie.remove_title") }}</h2>
-<div class="card danger">
+{% call danger(t("tonie.remove_title")) %}
   <p class="muted mt-0">{{ t("tonie.remove_hint") }}</p>
   <ul class="muted">
     <li>{{ t("tonie.removes_sticker", uid=tag.uid) }}</li>
@@ -145,6 +120,6 @@
         data-confirm="{{ t('tonie.confirm_remove') }}">
     <button class="danger" type="submit">{{ t("tonie.remove_button") }}</button>
   </form>
-</div>
+{% endcall %}
 {% endif %}
 {% endblock %}

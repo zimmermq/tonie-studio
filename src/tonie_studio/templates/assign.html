@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import sticker_picker with context %}
+{% from "_parts.html" import field, sticker_picker with context %}
 {% set page_title = t("assign.title") %}
 {% set page_heading = t("assign.heading") %}
 
@@ -25,22 +25,19 @@
 
   <h2>{{ t("assign.what") }}</h2>
   <div class="card">
-    <label class="field">
-      <span>{{ t("field.series") }}</span>
+    {% call field(t("field.series")) %}
       <input type="text" name="series" value="{{ result.series }}">
-    </label>
-    <label class="field">
-      <span>{{ t("field.episode") }}</span>
+    {% endcall %}
+    {% call field(t("field.episode")) %}
       <input type="text" name="episode" value="{{ result.episode }}" required>
-    </label>
-    <label class="field mb-0">
-      <span>{{ t("field.category") }}</span>
+    {% endcall %}
+    {% call field(t("field.category"), class="mb-0") %}
       <select name="category">
         {% for category in categories %}
         <option value="{{ category }}">{{ category }}</option>
         {% endfor %}
       </select>
-    </label>
+    {% endcall %}
   </div>
 
   <h2>{{ t("assign.tracks") }}</h2>

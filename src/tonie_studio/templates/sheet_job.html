@@ -1,19 +1,13 @@
-{% extends "base.html" %}
+{% extends "_progress_page.html" %}
 {% set page_title = t("sheet.job_title") %}
+{% set percent, detail = job.percent or 0, t("sheet.job_waiting") %}
+{% set page_data = {"id": job.id, "words": t.strings("sheet.job_waiting", "sheet.job_pictures", "sheet.job_pdf", "sheet.job_done", "sheet.skipped")} %}
 
-{% block body %}
-<div class="card">
-  <div class="bar"><div id="fill" style="width: {{ job.percent or 0 }}%"></div></div>
-  <p class="muted mb-0" id="detail">{{ t("sheet.job_waiting") }}</p>
-</div>
+{% block outcome %}<p class="muted mb-0" id="skipped" hidden></p>{% endblock %}
 
-<p class="warn" id="problem" hidden></p>
-<p class="muted" id="skipped" hidden></p>
-<p id="ready" hidden>
-  <a class="button primary" id="download" href="/sheet/print/{{ job.id }}/pdf">{{ t("sheet.download") }}</a>
-</p>
-<p><a class="button" href="/sheet">{{ t("sheet.back_to_sheet") }}</a></p>
-
-<script type="application/json" id="page-data">{{ {"id": job.id, "words": t.strings("sheet.job_waiting", "sheet.job_pictures", "sheet.job_pdf", "sheet.job_done", "sheet.skipped")} | tojson }}</script>
-<script src="{{ asset('sheet_job.js') }}"></script>
+{% block actions %}
+  <a class="button primary" id="download" href="/sheet/print/{{ job.id }}/pdf" hidden>{{ t("sheet.download") }}</a>
+  <a class="button" href="/sheet">{{ t("sheet.back_to_sheet") }}</a>
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('sheet_job.js') }}"></script>{% endblock %}

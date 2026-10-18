@@ -1,23 +1,21 @@
 {% extends "base.html" %}
+{% from "_parts.html" import field with context %}
 {% set page_title = t("nav.import") %}
 
 {% macro pace_fields(pace) %}
   <div class="row stackable wrap gap-12 items-end">
-    <label class="field m-0">
-      <span>{{ t("import.per_hour") }}</span>
+    {% call field(t("import.per_hour"), class="m-0") %}
       <input type="number" name="per_hour" value="{{ '%g' % pace.per_hour }}"
              min="0.1" max="120" step="any" class="input-short" required>
-    </label>
-    <label class="field m-0">
-      <span>{{ t("import.jitter") }}</span>
+    {% endcall %}
+    {% call field(t("import.jitter"), class="m-0") %}
       <input type="number" name="jitter" value="{{ (pace.jitter * 100) | round | int }}"
              min="0" max="99" step="1" class="input-short" required>
-    </label>
-    <label class="field m-0">
-      <span>{{ t("import.max_failures") }}</span>
+    {% endcall %}
+    {% call field(t("import.max_failures"), class="m-0") %}
       <input type="number" name="max_failures" value="{{ pace.max_failures }}"
              min="1" max="100" step="1" class="input-short" required>
-    </label>
+    {% endcall %}
   </div>
 {% endmacro %}
 
@@ -100,24 +98,20 @@
 {% if not run or not run.active %}
 <h2>{{ t("import.from_github") }}</h2>
 <form method="post" action="/import/github" class="card">
-  <label class="field">
-    <span>{{ t("import.repo") }}</span>
+  {% call field(t("import.repo")) %}
     <input type="text" name="repo" required placeholder="owner/repo">
-  </label>
+  {% endcall %}
   <div class="row stackable wrap gap-12">
-    <label class="field grow m-0">
-      <span>{{ t("import.branch") }}</span>
+    {% call field(t("import.branch"), class="grow m-0") %}
       <input type="text" name="branch">
-    </label>
-    <label class="field grow m-0">
-      <span>{{ t("import.subfolder") }}</span>
+    {% endcall %}
+    {% call field(t("import.subfolder"), class="grow m-0") %}
       <input type="text" name="subfolder">
-    </label>
+    {% endcall %}
   </div>
-  <label class="field">
-    <span>{{ t("import.token") }}</span>
+  {% call field(t("import.token")) %}
     <input type="password" name="token" autocomplete="off">
-  </label>
+  {% endcall %}
   {{ pace_fields(pace) }}
   <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
 </form>
@@ -125,14 +119,12 @@
 <h2>{{ t("import.from_files") }}</h2>
 <form method="post" action="/import/files" enctype="multipart/form-data" class="card">
   <div class="row stackable wrap gap-12">
-    <label class="field grow m-0">
-      <span>{{ t("import.folder") }}</span>
+    {% call field(t("import.folder"), class="grow m-0") %}
       <input type="file" name="files" webkitdirectory directory multiple>
-    </label>
-    <label class="field grow m-0">
-      <span>{{ t("import.single") }}</span>
+    {% endcall %}
+    {% call field(t("import.single"), class="grow m-0") %}
       <input type="file" name="files" accept=".nfc" multiple>
-    </label>
+    {% endcall %}
   </div>
   {{ pace_fields(pace) }}
   <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>

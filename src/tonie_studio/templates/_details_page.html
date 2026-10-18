@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{#- A page about one thing: its picture beside its name, what kind it is,
+    a line of facts and what can be done with it; below, whatever the page
+    says about it. The browser tab keeps ``page_title``.
+
+    The page sets, at its top:
+      picture        where the picture is, or empty for none
+      no_picture     translation key said in the picture's place then
+      title          the name beside the picture
+    and may set:
+      subtitle       a line under the name
+      facts          short facts, shown in one line
+    Blocks: ``badges`` (labels such as "Official"), ``actions`` (the
+    buttons beside the picture), ``body`` (everything below). #}
+{% block heading %}
+<div class="hero">
+  {% if picture %}
+  <img class="cover large" src="{{ picture }}" alt="Cover">
+  {% else %}
+  <div class="cover large empty">{{ t(no_picture) }}</div>
+  {% endif %}
+  <div class="grow">
+    <h1>{{ title }}</h1>
+    {% if subtitle | default("") %}<p class="sub mb-8">{{ subtitle }}</p>{% endif %}
+    {% if self.badges() | trim %}<p class="mt-0 mb-8">{% block badges %}{% endblock %}</p>{% endif %}
+    {% if facts | default([]) %}
+    <p class="muted mt-0">{% for fact in facts %}{% if not loop.first %} &middot; {% endif %}{{ fact }}{% endfor %}</p>
+    {% endif %}
+    {% if self.actions() | trim %}<p class="row wrap gap-10 mb-0">{% block actions %}{% endblock %}</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_list.html" import toolbar, chips, head with context %}
+{#- A page that is a list: search, filter chips and order over rows the
+    server sent all at once (list.js), the same on every list page.
+
+    The page sets, at its top:
+      rows          the items, each rendered by its ``row`` block as ``item``
+      columns       what the list orders by (listing.py); the headings and
+                    the order menu come from them
+      filters, counts, filter_label
+                    the chips: which filters, how many each, and the start
+                    of their translation keys
+      search, search_label, no_match, empty
+                    translation keys of the search box and of what is said
+                    when nothing matches or there is nothing at all
+      list_id, list_class
+                    the list's id and classes ("listing ..." for a table,
+                    "list" for plain rows)
+    and may set:
+      list_view     "list" (the default) or "grid"; ``views`` offers both,
+                    ``remember`` keeps the choice in the browser
+      headings      false for plain rows without column headings
+      trailing      true where rows end in a column of buttons
+      first         the order the list starts in, the first column's otherwise
+      page_words, page_data
+                    more words and values for the page's own script, which
+                    ``scripts`` loads after list.js
+    Blocks around the list: ``before_list``, ``above_rows`` (between the
+    chips and the list), ``after_list``; ``empty`` replaces what is said
+    when there are no rows. #}
+{% block body %}
+{% block before_list %}{% endblock %}
+{% if rows %}
+{{ toolbar(columns, search, search_label, views=views | default(())) }}
+{{ chips(rows | length, filters, counts, filter_label) }}
+{% block above_rows %}{% endblock %}
+{% endif %}
+
+<div id="{{ list_id }}" class="{{ list_class }}" data-list data-view="{{ list_view | default('list') }}"
+     {%- if remember is defined %} data-remember="{{ remember }}"{% endif %}>
+  {% if rows and headings | default(true) %}{{ head(columns, trailing=trailing | default(false)) }}{% endif %}
+  {% for item in rows %}{% block row scoped %}{% endblock %}{% endfor %}
+</div>
+{% if not rows %}{% block empty %}<p class="empty">{{ t(empty) }}</p>{% endblock %}{% endif %}
+<p class="muted" id="nohits" hidden>{{ t(no_match) }}</p>
+{% block after_list %}{% endblock %}
+
+{%- set list_data = {"words": t.strings("list.shown_of", *page_words | default([])),
+                     "first": first | default(columns[0].key), "orders": columns | orders} %}
+{%- set _ = list_data.update(page_data | default({})) %}
+<script type="application/json" id="page-data">{{ list_data | tojson }}</script>
+<script src="{{ asset('list.js') }}"></script>
+{% block scripts %}{% endblock %}
+{% endblock %}

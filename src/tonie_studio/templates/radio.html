@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import thumb, sticker_picker with context %}
+{% from "_parts.html" import field, sticker_picker, thumb with context %}
 {% set page_title = t("radio.title") %}
 
 {% block intro %}{{ t("radio.intro") }}{% endblock %}
@@ -27,41 +27,35 @@
 <h2>{{ t("radio.set_up") }}</h2>
 <form method="post" action="/radio" enctype="multipart/form-data">
   <div class="card">
-    <div class="field">
-      <span>{{ t("radio.which_tag") }}</span>
+    {% call field(t("radio.which_tag"), group=True) %}
       {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
-    </div>
+    {% endcall %}
 
-    <label class="field">
-      <span>{{ t("radio.stream") }}</span>
+    {% call field(t("radio.stream")) %}
       <input type="url" name="url" required placeholder="https://..."
              list="stations" value="">
       <datalist id="stations">
         {% for name, url in stations %}<option value="{{ url }}" label="{{ name }}">{% endfor %}
       </datalist>
-    </label>
+    {% endcall %}
     <p class="muted small-text field-hint">
       {{ t("radio.suggestions") }}
     </p>
 
-    <label class="field">
-      <span>{{ t("radio.name") }}</span>
+    {% call field(t("radio.name")) %}
       <input type="text" name="series" required placeholder="{{ t('radio.name_example') }}">
-    </label>
-    <label class="field">
-      <span>{{ t("radio.extra") }}</span>
+    {% endcall %}
+    {% call field(t("radio.extra")) %}
       <input type="text" name="episode" placeholder="{{ t('radio.extra_example') }}">
-    </label>
-    <label class="field">
-      <span>{{ t("field.category") }}</span>
+    {% endcall %}
+    {% call field(t("field.category")) %}
       <select name="category">
         {% for entry in categories %}<option value="{{ entry }}">{{ entry }}</option>{% endfor %}
       </select>
-    </label>
-    <label class="field mb-0">
-      <span>{{ t("radio.cover") }}</span>
+    {% endcall %}
+    {% call field(t("radio.cover"), class="mb-0") %}
       <label class="button">{{ t("common.choose_picture") }}<input type="file" name="cover" accept="image/*"></label>
-    </label>
+    {% endcall %}
   </div>
 
   <p><button class="primary" type="submit">{{ t("radio.submit") }}</button></p>

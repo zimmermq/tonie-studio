@@ -41,3 +41,35 @@
   {% endif %}
 </div>
 {%- endmacro %}
+
+{#- A part of a page folded away until wanted: editing, copying. #}
+{% macro section(title) -%}
+<details class="section">
+  <summary>{{ title }}</summary>
+  {{ caller() }}
+</details>
+{%- endmacro %}
+
+{#- What only matters when something goes wrong: ids and paths, small. #}
+{% macro technical(label, parts) -%}
+<p class="muted technical">{{ label }}: {{ parts | select | join(" &middot; " | safe) }}</p>
+{%- endmacro %}
+
+{#- What cannot be taken back, last on the page and marked as such. #}
+{% macro danger(title) -%}
+<h2>{{ title }}</h2>
+<div class="card danger">
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{#- A form field: its caption above what is filled in. ``class`` adds to
+    the field's own, such as "m-0" or "grow". A ``group`` of choices, such as
+    the sticker picker's, cannot sit in a label and gets a plain box. #}
+{% macro field(caption, class="", group=False) -%}
+{%- set tag = "div" if group else "label" %}
+<{{ tag }} class="field{% if class %} {{ class }}{% endif %}">
+  <span>{{ caption }}</span>
+  {{ caller() }}
+</{{ tag }}>
+{%- endmacro %}
