@@ -33,7 +33,7 @@ header a.brand { font-weight: 700; color: var(--accent); text-decoration: none; 
    enough that a line of prose stays readable. */
 main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .build { font-size: 12px; white-space: nowrap; }
-.list .album img.shop-picture { width: 120px; height: 90px; object-fit: contain; }
+.list .item img.shop-picture { width: 120px; height: 90px; }
 .build a { color: inherit; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 28px 0 10px; }
@@ -45,6 +45,24 @@ p.sub { color: var(--muted); margin: 0 0 20px; }
 a { color: var(--accent); }
 .row { display: flex; gap: 12px; align-items: center; }
 .grow { flex: 1; min-width: 0; }
+/* Choosing a sticker among hundreds: a search over a list that scrolls on
+   its own, so the rest of the form stays in view. */
+.picker-find { width: 100%; margin-bottom: 8px; }
+.picker-list {
+  max-height: 18em; overflow-y: auto; background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.picker-row { display: flex; gap: 10px; align-items: center; padding: 7px 12px;
+              border-bottom: 1px solid var(--line); cursor: pointer; }
+.picker-row:last-child { border-bottom: 0; }
+.picker-row[hidden] { display: none; }
+.picker-row:has(input:checked) { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.picker-none { margin: 8px 0 0; }
+/* Number fields hold a few digits; full width would read as a text box. */
+.input-short { width: 6em; }
+.input-medium { width: 9em; }
+/* A hint under a field belongs to it, closer than the next field. */
+.field-hint { margin-top: -6px; }
 .muted { color: var(--muted); font-size: 14px; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Like the text fields, and never wider than its row: an option naming a
@@ -99,8 +117,8 @@ input[type=password] {
   border-radius: 7px; background: #fff; color: var(--ink);
 }
 input[type=text], input[type=url], input[type=password], input[type=search] { width: 100%; }
-label.field { display: block; margin-bottom: 12px; }
-label.field span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+label.field, div.field { display: block; margin-bottom: 12px; }
+label.field span, div.field > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
 ol.tracks { list-style: none; margin: 0; padding: 0; }
 ol.tracks li {
   display: flex; gap: 10px; align-items: center;
@@ -145,28 +163,42 @@ img.cover { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; 
   font: inherit; flex: 1; padding: 9px 12px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--card); color: var(--ink);
 }
-.list {
+/* Rows in a card: a plain list (.list of .item rows, a picture, text and
+   buttons side by side) and a list page in its table view (.listing of
+   .listing-row, in columns) look the same; only how a row lays itself out
+   differs. A row that is a link reads as text and lights up under the
+   pointer. */
+.list, .listing[data-view=list] {
   background: var(--card); border: 1px solid var(--line);
   border-radius: 10px; overflow: hidden;
 }
-a.album {
-  display: flex; gap: 12px; align-items: center; padding: 8px 12px;
-  border-bottom: 1px solid var(--line); color: inherit; text-decoration: none;
+.list .item, a.item, .listing[data-view=list] .listing-row {
+  border-bottom: 1px solid var(--line);
 }
-a.album:last-child { border-bottom: 0; }
+.list .item:last-child, a.item:last-child,
+.listing[data-view=list] .listing-row:last-child { border-bottom: 0; }
+.list .item, a.item { display: flex; gap: 12px; align-items: center; padding: 8px 12px; }
+a.item, a.listing-row { color: inherit; text-decoration: none; }
+a.item:hover, a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+/* Figures stand on white with room around them, so a picture is shown whole. */
+.list .item img, a.item img, .item .noart,
+.listing[data-view=list] .listing-row img, .listing[data-view=list] .listing-row .noart {
+  width: 44px; height: 44px; border-radius: 6px; object-fit: contain; flex: none;
+}
+.noart { background: var(--line); }
+.list .item strong, a.item strong, .list .item .muted, a.item .muted { display: block; font-weight: 600; }
+.list .item .muted, a.item .muted { font-weight: 400; }
 /* An album row with a box in front to pick it for a batch. The row carries
    the line, since each link is the last child of its own row. */
 .pickrow { display: flex; align-items: center; padding-left: 12px;
            border-bottom: 1px solid var(--line); }
 .pickrow:last-child { border-bottom: 0; }
-.pickrow a.album { flex: 1; min-width: 0; border-bottom: 0; }
+.pickrow a.item { flex: 1; min-width: 0; border-bottom: 0; }
 .pickbar { position: sticky; bottom: 12px; display: flex; gap: 12px; align-items: center;
            margin-top: 12px; padding: 10px 14px; background: var(--card);
            border: 1px solid var(--accent); border-radius: 10px; }
 /* Rules that set display would otherwise show what a script hid. */
 [hidden] { display: none !important; }
-/* Series and episode side by side, the series narrower: it repeats down a
-   batch, the episode is what tells the rows apart. */
 /* A short notice at the bottom of the window while the next page loads. */
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30;
          padding: 10px 16px; border-radius: 10px; background: var(--ink); color: var(--card);
@@ -181,19 +213,6 @@ a.album:last-child { border-bottom: 0; }
 .steps li[aria-current] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .batchnames { display: grid; grid-template-columns: 2fr 3fr; gap: 8px; }
 .batchnames > .muted { grid-column: 1 / -1; }
-a.album:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-a.album img, a.album .noart {
-  width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none;
-}
-a.album .noart, .album .noart { background: var(--line); }
-.list .album { display: flex; gap: 12px; align-items: center; padding: 8px 12px;
-               border-bottom: 1px solid var(--line); }
-.list .album:last-child { border-bottom: 0; }
-.list .album img, .list .album .noart {
-  width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none;
-}
-.list .album strong, .list .album .muted { display: block; font-weight: 600; }
-.list .album .muted { font-weight: 400; }
 /* The sticker preview mirrors what the PDF does: a 46 mm circle, the cover
    either filling it or inset on a blurred copy of itself. */
 .preview {
@@ -263,6 +282,17 @@ input[type=range] { accent-color: var(--accent); }
 .times.empty { visibility: hidden; }
 .times .count { min-width: 1.4em; text-align: right; font-weight: 600; }
 .modes { display: flex; gap: 10px; justify-content: center; flex: none; }
+/* The two circles of a row and their heading above the rows share one width. */
+.sticker .modes, .modes-head { width: 176px; }
+.modes-head { text-align: center; }
+.back-preview { flex: none; text-align: center; }
+/* The album page's cover editor: the crop preview with its hint and zoom. */
+.cover-editor { flex: none; width: 140px; }
+.cover-editor .preview { width: 140px; height: 140px; }
+.cover-editor p { font-size: 13px; margin: 6px 0 4px; }
+.cover-editor input[type=range] { flex: 1; }
+.track-no { width: 2em; text-align: right; }
+.restore-what { width: 6em; }
 .mode {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   cursor: pointer; padding: 4px; border-radius: 10px; border: 2px solid transparent;
@@ -279,8 +309,6 @@ input[type=range] { accent-color: var(--accent); }
   border-radius: 99px; background: var(--accent); color: var(--card);
   vertical-align: 1px;
 }
-a.album strong, a.album .muted { display: block; font-weight: 600; }
-a.album .muted { font-weight: 400; }
 
 /* A file input cannot be styled, so the label is the button. The input stays
    in the page, invisible but focusable, so Tab reaches it and Space opens the
@@ -323,12 +351,13 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 .listing-row[hidden] { display: none !important; }
 /* The print page filters its rows the same way. */
 .sticker[hidden] { display: none !important; }
-a.listing-row { color: inherit; text-decoration: none; }
-a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
-.listing-row img, .listing-row .noart { border-radius: 8px; object-fit: contain; }
-.listing-row .noart { background: var(--line); }
+.listing-row img, .listing-row .noart { border-radius: 6px; object-fit: contain; }
 .listing-row .t-name, .listing-row .t-series, .listing-row .t-category { overflow: hidden; text-overflow: ellipsis; }
 .listing-row .t-name strong { font-weight: 600; }
+/* A link inside a row - a name, who plays a file - reads like the row's
+   other text and shows itself under the pointer. */
+.listing-row a, .list .item a { color: inherit; text-decoration: none; }
+.listing-row a:hover, .list .item a:hover { text-decoration: underline; }
 
 .listing[data-view=grid] { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
 .listing[data-view=grid] .listing-head,
@@ -347,7 +376,6 @@ a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--car
 .listing[data-view=grid] .t-series,
 .listing[data-view=grid] .t-chapters { white-space: nowrap; font-size: 13px; }
 
-.listing[data-view=list] { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .listing[data-view=list] .listing-head,
 .listing[data-view=list] .listing-row {
   display: grid; align-items: center; gap: 12px; padding: 6px 12px;
@@ -360,6 +388,11 @@ a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--car
 }
 .listing.library .t-played { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .listing.library .t-delete form { margin: 0; }
+/* What was heard: always a table, most played first. */
+.listing.listening .listing-head,
+.listing.listening .listing-row {
+  grid-template-columns: 44px minmax(0, 2.6fr) 110px 140px 170px;
+}
 /* A column heading is a button that reads like the heading it is. */
 .listing-head .sorter {
   border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
@@ -369,10 +402,6 @@ a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--car
 .listing-head .sorter[data-dir=asc]::after { content: " \25B2"; font-size: 10px; }
 .listing-head .sorter[data-dir=desc]::after { content: " \25BC"; font-size: 10px; }
 .listing[data-view=list] .listing-head { font-size: 13px; border-bottom: 1px solid var(--line); }
-.listing[data-view=list] .listing-row { border-bottom: 1px solid var(--line); }
-.listing[data-view=list] .listing-row:last-child { border-bottom: 0; }
-.listing[data-view=list] .listing-row img,
-.listing[data-view=list] .listing-row .noart { width: 44px; height: 44px; }
 .listing[data-view=list] .t-name,
 .listing[data-view=list] .t-series,
 .listing[data-view=list] .t-category { white-space: nowrap; }
@@ -385,6 +414,9 @@ a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--car
   .listing[data-view=list] .t-series { grid-column: 2; grid-row: 2; font-size: 13px; }
   .listing[data-view=list] .t-name { grid-row: 1; }
   .listing.library .listing-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .listing.listening .listing-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .listing.listening .t-placed, .listing.listening .t-last { display: none; }
+  .listing.listening .t-played { grid-column: 3; }
   .listing.library .t-size, .listing.library .t-played { display: none; }
   .listing.library .t-delete { grid-column: 3; grid-row: 1 / span 2; }
   .listing[data-view=list] .t-kind,
@@ -409,9 +441,9 @@ a.listing-row:hover { background: color-mix(in srgb, var(--accent) 8%, var(--car
   .sticker { flex-wrap: wrap; }
   /* Not 100 percent: that would push the name below its own checkbox. */
   .sticker > .grow { flex: 1 1 calc(100% - 2.5em); }
-  .sticker .modes { width: auto !important; margin-left: auto; }
+  .sticker .modes { width: auto; margin-left: auto; }
   .sheethead { display: none; }
-  .list .album { flex-wrap: wrap; }
+  .list .item { flex-wrap: wrap; }
 }
 
 @media (prefers-color-scheme: dark) {

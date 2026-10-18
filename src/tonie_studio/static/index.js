@@ -29,7 +29,7 @@ search.addEventListener('input', () => {
 // second or more per album; without a word the click looks ignored.
 const loading = document.getElementById('loading');
 function showLoading() { loading.hidden = false; }
-for (const link of document.querySelectorAll('#albums a.album')) {
+for (const link of document.querySelectorAll('#albums a.item')) {
   link.addEventListener('click', event => {
     if (!(event.metaKey || event.ctrlKey || event.shiftKey)) showLoading();
   });

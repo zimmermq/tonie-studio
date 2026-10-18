@@ -10,22 +10,19 @@ const skipped = document.getElementById('skipped');
 // A second a poll: a sheet takes seconds to a minute, and the bar should move.
 const POLL_MS = 1000;
 
-async function poll() {
-  let job;
-  try {
-    const answer = await fetch(`/api/sheet/print/${data.id}`);
-    if (!answer.ok) throw new Error(String(answer.status));
-    job = await answer.json();
-  } catch {
-    setTimeout(poll, POLL_MS);
-    return;
-  }
+// Asked until the sheet is done or failed; a missed answer is asked again.
+window.every(POLL_MS, async () => {
+  const answer = await fetch(`/api/sheet/print/${data.id}`);
+  if (!answer.ok) return true;
+  const job = await answer.json();
   fill.style.width = `${job.percent}%`;
   if (job.state === 'failed') {
     detail.textContent = '';
     problem.textContent = job.problem;
     problem.hidden = false;
-  } else if (job.state === 'done') {
+    return false;
+  }
+  if (job.state === 'done') {
     detail.textContent = words['sheet.job_done'];
     ready.hidden = false;
     if (job.skipped.length) {
@@ -34,12 +31,10 @@ async function poll() {
     }
     // The file is what was asked for; the button stays for a second copy.
     location.href = document.getElementById('download').href;
-  } else {
-    detail.textContent = !job.total ? words['sheet.job_waiting']
-      : job.done < job.total ? say(words['sheet.job_pictures'], {done: job.done, total: job.total})
-      : words['sheet.job_pdf'];
-    setTimeout(poll, POLL_MS);
+    return false;
   }
-}
-
-poll();
+  detail.textContent = !job.total ? words['sheet.job_waiting']
+    : job.done < job.total ? say(words['sheet.job_pictures'], {done: job.done, total: job.total})
+    : words['sheet.job_pdf'];
+  return true;
+});

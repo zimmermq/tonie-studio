@@ -31,7 +31,7 @@
 {% endif %}
 <div class="list">
   {% for finding in group %}
-  <div class="album checkup {{ severity }}">
+  <div class="item checkup {{ severity }}">
     <span class="grow">
       <strong class="truncate">{{ finding.subject }}</strong>
       {%- set params = dict(finding.params) %}

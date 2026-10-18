@@ -19,7 +19,8 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
            "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
            "sheet.layout.", "sheet.intro.", "tonies.col_",
-           "library.origin.", "library.col_")
+           "library.origin.", "library.col_",
+           "listening.filter.", "listening.col_")
 
 
 def placeholders(text):
@@ -109,6 +110,11 @@ class TestCatalogs:
         assert {f"library.origin.{origin}" for origin in (RECORDED, IMPORTED, BOX, UNUSED)} <= keys
         assert {f"library.col_{column}" for column in (
             "name", "origin", "chapters", "size", "added", "played")} <= keys
+
+        from tonie_studio.pages.extras import HEARD, LISTENING_COLUMNS, QUIET
+
+        assert {f"listening.filter.{kind}" for kind in (HEARD, QUIET)} <= keys
+        assert {column.heading for column in LISTENING_COLUMNS} <= keys
 
         from tonie_studio.sheet import LAYOUTS
 

@@ -299,12 +299,12 @@ class TestCatalogueCache:
         assert len(scans) <= 2  # one described listing, one cheap lookup
 
     def test_a_new_upload_shows_up_at_once(self, client):
-        before = client.get("/").text.count('class="album"')
+        before = client.get("/").text.count('class="item"')
 
         client.post("/upload", files=[("files", ("01-neu.mp3", b"\x01" * 8, "audio/mpeg"))],
                     follow_redirects=False)
 
-        assert client.get("/").text.count('class="album"') == before + 1
+        assert client.get("/").text.count('class="item"') == before + 1
 
     def test_two_archives_do_not_share_a_cache(self, settings, teddycloud, runner, tags, tmp_path):
         other = tmp_path / "other-archive"
@@ -361,7 +361,7 @@ class TestUpload:
 
         # Uploads lead the list: what was just added is what one is looking for.
         page = client.get("/").text
-        assert page.count('class="album"') == 2
+        assert page.count('class="item"') == 2
 
     def test_hides_the_unstylable_file_input_behind_a_label(self, client):
         page = client.get("/").text

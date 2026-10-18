@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("albums.title") %}
 
@@ -7,12 +8,8 @@
      data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}"
      data-library="{{ 'unknown' if in_library is none else ('yes' if id in in_library else 'no') }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label') }}">
-<a class="album" href="/batch?ids={{ id }}">
-  {% if album.has_cover %}
-  <img src="/album/{{ id }}/cover?size={{ thumb_size }}" alt="" loading="lazy">
-  {% else %}
-  <span class="noart" aria-hidden="true"></span>
-  {% endif %}
+<a class="item" href="/batch?ids={{ id }}">
+  {{ thumb("/album/" ~ id ~ "/cover?size=" ~ thumb_size if album.has_cover) }}
   <span class="grow truncate">
     <strong class="truncate">{{ album.title or album.name }}
       {%- if id in new %} <span class="pill new">{{ t("albums.new") }}</span>{% endif %}

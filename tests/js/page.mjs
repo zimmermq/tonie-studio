@@ -29,10 +29,11 @@ export function element(id, text = '', { dataset = {}, children = {} } = {}) {
 // ``queries`` maps a selector to the elements document.querySelectorAll finds;
 // ``texts`` gives elements by id with their content, such as other JSON blocks;
 // ``prepared`` gives elements by id built with ``element``, children and all;
-// ``found`` maps a selector to what document.querySelector answers.
+// ``found`` maps a selector to what document.querySelector answers;
+// ``globals`` adds what else a script uses of the browser, such as DOMParser.
 export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
                                          queries = {}, texts = {}, prepared = {},
-                                         found = {} } = {}) {
+                                         found = {}, globals = {} } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, element(id)]));
   for (const [id, text] of Object.entries(texts)) elements[id] = element(id, text);
   Object.assign(elements, prepared);
@@ -61,24 +62,28 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     setTimeout: step => timers.push(step),
     fetch: async (url, options = {}) => {
       fetched.push({ url, method: options.method || 'GET', body: options.body });
-      return { ok: url in answers, json: async () => answers[url] };
+      return { ok: url in answers, json: async () => answers[url],
+               text: async () => String(answers[url]) };
     },
   };
   context.window = context;
   context.addEventListener = () => {};
   // A page that reloads itself only counts here.
-  context.location = { reloaded: 0, reload() { this.reloaded += 1; } };
+  context.location = { href: 'http://localhost/page', reloaded: 0,
+                       reload() { this.reloaded += 1; } };
   // A touch screen: hover-only extras such as the cover preview stay off.
   context.matchMedia = () => ({ matches: false });
+  Object.assign(context, globals);
   vm.createContext(context);
   for (const name of scripts) {
     vm.runInContext(readFileSync(STATIC + name, 'utf8'), context, { filename: name });
   }
   // Let the page's first round of fetching and showing finish.
   for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
-  // Hands ``detail`` to the page's listeners for ``type`` and lets them finish.
-  async function dispatch(type, detail) {
-    for (const listener of listeners[type] || []) await listener({ detail });
+  // Hands ``detail`` to the page's listeners for ``type`` and lets them finish;
+  // ``event`` adds to what they are handed, such as its target.
+  async function dispatch(type, detail, event = {}) {
+    for (const listener of listeners[type] || []) await listener({ detail, ...event });
     for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
   }
   return Object.assign(elements, { timers, fetched, dispatch, location: context.location });

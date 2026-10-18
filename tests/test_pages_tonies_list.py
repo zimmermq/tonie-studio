@@ -150,7 +150,7 @@ class TestSortableColumns:
 class TestOneDescriptionOfTheColumns:
     """The order menu, the headings and the script's orders come from one list per page."""
 
-    @pytest.mark.parametrize("path", ["/tonies", "/library"])
+    @pytest.mark.parametrize("path", ["/tonies", "/library", "/listening"])
     def test_all_three_name_the_same_columns(self, client, runner, teddycloud, official, path):
         import json
         import re

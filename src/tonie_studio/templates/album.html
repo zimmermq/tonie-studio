@@ -22,19 +22,19 @@
 <form method="post" action="/album/{{ id }}/encode" id="form">
   <div class="card row stackable items-start">
     {% if album.cover_candidates %}
-    <div style="flex: none; width: 140px">
+    <div class="cover-editor">
       <!-- The sticker is round and the cover square, so something is always
            cut. Dragging the picture is how everyone expects to decide what. -->
-      <span class="preview grabbable" id="cover" style="width: 140px; height: 140px">
+      <span class="preview grabbable" id="cover">
         <span class="bg" id="coverbg"></span>
         <span class="fg" id="coverimg"></span>
       </span>
-      <p class="muted" style="font-size: 13px; margin: 6px 0 4px">
+      <p class="muted">
         {{ t("album.crop_hint") }}
       </p>
       <div class="row gap-8">
         <input type="range" name="cover_zoom" id="zoom" min="0.5" max="2.5" step="0.02" value="{{ form.cover_zoom }}"
-               style="flex: 1" aria-label="Zoom">
+               aria-label="Zoom">
         <button type="button" class="small" id="coverreset">{{ t("album.crop_reset") }}</button>
       </div>
       <input type="hidden" name="cover_index" id="cover_index" value="{{ form.cover_index }}">
@@ -80,7 +80,7 @@
           data-seconds="{{ track.duration or 0 }}">
         <input type="checkbox" name="selected" value="{{ track.number }}"
                {% if row.checked %}checked{% endif %}>
-        <span class="muted" style="width: 2em; text-align: right">{{ loop.index }}</span>
+        <span class="muted track-no">{{ loop.index }}</span>
         <input type="text" name="titles" value="{{ row.title }}" class="grow">
         <button type="button" class="small" data-move="up">&uarr;</button>
         <button type="button" class="small" data-move="down">&darr;</button>
@@ -92,7 +92,7 @@
   <div class="card row wrap gap-12 items-center" id="partsrow">
     <label class="row gap-8">
       <span>{{ t("album.parts_before") }}</span>
-      <input type="number" name="parts" id="parts" value="{{ form.parts }}" min="1" max="20" style="width: 4.5em">
+      <input type="number" name="parts" id="parts" value="{{ form.parts }}" min="1" max="20" class="input-short">
       <span>{{ t("album.parts_after") }}</span>
     </label>
     <span class="muted grow" id="partshint"></span>

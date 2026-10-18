@@ -41,14 +41,14 @@
   </div>
   <div class="row sheethead">
     <span class="grow"></span>
-    <span class="muted" style="width: 176px; text-align: center">{{ t("sheet.look") }}</span>
+    <span class="muted modes-head">{{ t("sheet.look") }}</span>
   </div>
   {% endif %}
 
   <div class="list" id="rows">
     {% for row in rows %}
     {%- set model = row.model %}
-    <div class="album sticker" data-src="{{ model.picture | cover_url(images_cached) }}"
+    <div class="item sticker" data-src="{{ model.picture | cover_url(images_cached) }}"
          data-search="{{ row.search }}">
       <input type="checkbox" class="want" {% if row.ticked %}checked{% endif %}
              aria-label="{{ t('sheet.on_sheet') }}">
@@ -62,7 +62,7 @@
            invisible - and an invisible difference is not a decision anyone can
            make. Here both are drawn at a size where the lettering either
            survives the circle or does not. -->
-      <span class="modes" style="width: 176px">
+      <span class="modes">
         <label class="mode chosen">
           <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fill }}" checked hidden>
           <span class="preview big"><span class="fg"></span></span>
@@ -88,7 +88,7 @@
              value="{{ 1 if row.ticked else 0 }}:{{ fill }}:{{ model.id }}">
     </div>
     {% else %}
-    <div class="album muted">
+    <div class="item muted">
       {{ t("sheet.none") }}
     </div>
     {% endfor %}
@@ -125,7 +125,7 @@
       </div>
       <!-- One preview, big enough to read, rather than one per row at a size
            where 5.5 pt is a grey smudge. -->
-      <div style="flex: none; text-align: center">
+      <div class="back-preview">
         <div class="backdisc" id="backdisc"></div>
         <span class="muted small-text" id="backwho"></span>
       </div>
@@ -165,11 +165,11 @@
     <a class="button" href="/sheet/calibration">{{ t("calibration.sheet") }}</a>
     <label class="field m-0">
       <span>{{ t("calibration.left") }}</span>
-      <input type="text" name="left_mm" inputmode="decimal" required style="width: 9em">
+      <input type="text" name="left_mm" inputmode="decimal" required class="input-medium">
     </label>
     <label class="field m-0">
       <span>{{ t("calibration.top") }}</span>
-      <input type="text" name="top_mm" inputmode="decimal" required style="width: 9em">
+      <input type="text" name="top_mm" inputmode="decimal" required class="input-medium">
     </label>
     <button type="submit">{{ t("common.save") }}</button>
   </form>

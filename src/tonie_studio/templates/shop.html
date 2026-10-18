@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
 {% set page_title = t("shop.title") %}
 
 {% block intro %}{{ model.series }} - {{ model.episode }} &middot; {{ model.id }}{% endblock %}
@@ -7,14 +8,10 @@
 
 <div class="list">
 {% for info in found %}
-  <div class="album">
-    {% if info.picture %}
+  <div class="item">
     {#- Shop pictures are wide with the figure in the middle; at the list's
         usual square size the figure would be a speck. #}
-    <img class="shop-picture" src="{{ info.picture }}" alt="" loading="lazy" referrerpolicy="no-referrer">
-    {% else %}
-    <span class="noart" aria-hidden="true"></span>
-    {% endif %}
+    {{ thumb(info.picture, class="shop-picture", no_referrer=True) }}
     <span class="grow truncate">
       <strong class="truncate">{{ info.name }}</strong>
       <span class="muted truncate">
@@ -35,7 +32,7 @@
     </form>
   </div>
 {% else %}
-  <div class="album muted">{{ t("shop.none") }}</div>
+  <div class="item muted">{{ t("shop.none") }}</div>
 {% endfor %}
 </div>
 

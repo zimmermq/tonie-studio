@@ -14,7 +14,7 @@ from ..jobs import Job, JobRunner, JobState
 from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
 from ..publishing import Outcome, job_states, publish_outcome
 from ..tags import TonieError, list_tags
-from .common import Context, Refused, translator
+from .common import Context, Refused, refusing, translator
 
 
 log = logging.getLogger(__name__)
@@ -118,10 +118,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         category: str = Form(DEFAULT_CATEGORY),
     ):
         outcome = _finished_outcome(jobs, job_id)
-        try:
+        with refusing(TonieError):
             publish_outcome(client(), settings.data_dir, ruid, outcome, series, episode, category)
-        except TonieError as error:
-            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
     @app.get("/api/job/{job_id}")

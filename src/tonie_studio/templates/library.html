@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
 {% from "_list.html" import toolbar, chips, head with context %}
 {% set page_title = t("nav.library") %}
 
@@ -25,11 +26,7 @@
        data-played="{{ players | lower }}" data-chapters="{{ taf.chapters or '' }}"
        data-size="{{ taf.size or '' }}" data-added="{{ taf.date or '' }}"
        data-search="{{ (item.label ~ ' ' ~ taf.path ~ ' ' ~ players) | lower }}">
-    {% if picture %}
-    <img src="{{ picture }}" alt="" loading="lazy">
-    {% else %}
-    <span class="noart" aria-hidden="true"></span>
-    {% endif %}
+    {{ thumb(picture) }}
     <span class="t-name"><strong>{{ item.label }}</strong>
       <span class="muted small-text block truncate">{{ taf.path }}
         {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}</span></span>
@@ -54,7 +51,7 @@
     </span>
   </div>
   {% else %}
-  <div class="album muted">{{ t("library.empty") }}</div>
+  <div class="item muted">{{ t("library.empty") }}</div>
   {% endfor %}
 </div>
 <p class="muted" id="nohits" hidden>{{ t("library.no_match") }}</p>

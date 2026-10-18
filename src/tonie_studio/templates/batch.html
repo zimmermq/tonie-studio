@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("batch.title") %}
 
@@ -26,13 +27,9 @@
   </div>
   <div class="list">
   {% for row in rows %}
-    <div class="album">
+    <div class="item">
       <input type="hidden" name="ids" value="{{ row.identifier }}">
-      {% if row.album.cover_candidates %}
-      <img src="/album/{{ row.identifier }}/cover?size={{ thumb_size }}" alt="" loading="lazy">
-      {% else %}
-      <span class="noart" aria-hidden="true"></span>
-      {% endif %}
+      {{ thumb("/album/" ~ row.identifier ~ "/cover?size=" ~ thumb_size if row.album.cover_candidates) }}
       <span class="grow batchnames">
         <input type="text" name="series" value="{{ row.series }}" aria-label="{{ t('field.series') }}"
                placeholder="{{ t('field.series') }}" {% if row.skipped %}readonly{% endif %}>

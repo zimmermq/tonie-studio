@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
+{% from "_list.html" import toolbar, chips, head with context %}
 {% set page_title = t("nav.listening") %}
 
 {% block body %}
@@ -19,57 +21,40 @@
   {% endfor %}
 </p>
 
-<div id="lists">
-<h2>{{ t("listening.most") }}</h2>
-<div class="list">
-{% for tag, entry in heard %}
-  <div class="album">
-    {% if tag.picture | cover_url(false) %}
-    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
-    {% else %}
-    <span class="noart" aria-hidden="true"></span>
-    {% endif %}
-    <span class="grow truncate">
-      <strong class="truncate">{{ tag.label }}</strong>
-      <span class="muted truncate">
-        {{ t("listening.placed", count=entry.placed) }} &middot; {{ t("listening.played", time=t.duration(entry.played)) }}
-        &middot; {{ t("listening.last", when=t.when(entry.last_placed)) }}
-      </span>
+{% if rows %}
+{{ toolbar(columns, "listening.search", "listening.search_label") }}
+{{ chips(rows | length, filters, counts, "listening.filter.") }}
+{% endif %}
+
+<div id="lists" class="listing listening" data-list data-view="list">
+  {% if rows %}{{ head(columns) }}{% endif %}
+  {% for row in rows %}
+  {%- set tag = row.tag %}
+  <div class="listing-row" id="heard-{{ tag.ruid }}" data-tags="{{ row.kind }}"
+       data-name="{{ tag.label | lower }}" data-placed="{{ row.placed }}" data-played="{{ row.played }}"
+       data-last="{{ row.last.timestamp() | int if row.last else 0 }}"
+       data-search="{{ (tag.label ~ ' ' ~ tag.uid) | lower }}">
+    {{ thumb(tag.picture | cover_url(false)) }}
+    <span class="t-name"><a href="/tonies/{{ tag.ruid }}"><strong>{{ tag.label }}</strong></a></span>
+    <span class="t-played muted">{% if row.played %}{{ t.duration(row.entry.played) }}{% endif %}</span>
+    <span class="t-placed muted">{% if row.placed %}{{ t("listening.placed", count=row.placed) }}{% endif %}</span>
+    <span class="t-last muted">
+      {%- if row.last %}{{ t.when(row.last) }}{% else %}<span title="{{ t('listening.never') }}">{{ t("listening.never_short") }}</span>{% endif -%}
     </span>
   </div>
-{% else %}
-  <div class="album muted">
+  {% else %}
+  <div class="card muted">
     {% if days %}{{ t("listening.nothing_in", count=days) }}{% else %}{{ t("listening.nothing") }}{% endif %}
   </div>
-{% endfor %}
+  {% endfor %}
 </div>
-
-{% if quiet %}
-<h2>{{ t("listening.quiet") }}</h2>
-<div class="list">
-{% for tag, entry in quiet %}
-  <div class="album">
-    {% if tag.picture | cover_url(false) %}
-    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
-    {% else %}
-    <span class="noart" aria-hidden="true"></span>
-    {% endif %}
-    <span class="grow truncate">
-      <strong class="truncate">{{ tag.label }}</strong>
-      <span class="muted truncate">
-        {% if entry and entry.last_placed %}{{ t("listening.last", when=t.when(entry.last_placed)) }}
-        {% else %}{{ t("listening.never") }}{% endif %}
-      </span>
-    </span>
-  </div>
-{% endfor %}
-</div>
-{% endif %}
-</div>
+<p class="muted" id="nohits" hidden>{{ t("listening.no_match") }}</p>
 
 <p class="muted small-text">
   {{ t("listening.refresh_note") }}
 </p>
 
+<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "played", "orders": columns | orders} | tojson }}</script>
+<script src="{{ asset('list.js') }}"></script>
 <script src="{{ asset('listening.js') }}"></script>
 {% endblock %}

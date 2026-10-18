@@ -1,0 +1,43 @@
+{#- Small parts several pages share, imported with context. #}
+
+{#- A row's picture, or a grey square of the same size where there is none,
+    so rows with and without one line up. ``src`` is empty for none. #}
+{% macro thumb(src, class="", no_referrer=False) -%}
+{% if src %}<img{% if class %} class="{{ class }}"{% endif %} src="{{ src }}" alt="" loading="lazy"
+  {%- if no_referrer %} referrerpolicy="no-referrer"{% endif %}>
+{%- else %}<span class="noart" aria-hidden="true"></span>{% endif %}
+{%- endmacro %}
+
+{#- Which sticker: a search over a list of every sticker teddyCloud knows,
+    free ones first as list_tags orders them. The search finds the name or
+    the UID printed on the chip, with or without its colons. ``preselect`` is
+    chosen when given and shown as just placed; otherwise the first free one
+    is. A sticker that plays something asks before it is replaced, by the
+    data-confirm the page's shared submit handler reads. ``empty`` is said
+    when there is no sticker to choose. #}
+{% macro sticker_picker(tags, name, empty, preselect=None) -%}
+<div class="picker" data-picker>
+  {% if tags %}
+  <input type="search" class="picker-find" placeholder="{{ t('picker.search') }}"
+         autocomplete="off" aria-label="{{ t('picker.search_label') }}">
+  <div class="picker-list">
+    {%- set chosen = preselect or (tags | rejectattr("assigned") | map(attribute="ruid") | first) %}
+    {% for tag in tags %}
+    <label class="picker-row" data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.uid | replace(':', '')) | lower }}">
+      <input type="radio" name="{{ name }}" value="{{ tag.ruid }}" required
+             {% if tag.assigned %}data-confirm="{{ t('assign.confirm_replace', label=tag.label) }}"{% endif %}
+             {% if tag.ruid == chosen %}checked{% endif %}>
+      <span class="grow truncate">
+        {% if preselect and tag.ruid == preselect %}<span class="onbox">{{ t("assign.just_placed") }}</span> {% endif %}
+        {% if tag.assigned %}{{ tag.label }}{% else %}<strong>{{ t("tag.free") }}</strong>{% endif %}
+        <span class="muted block">{{ tag.uid }}{% if tag.assigned %} &middot; {{ t("picker.replaced") }}{% endif %}</span>
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+  <p class="muted picker-none" hidden>{{ t("picker.none") }}</p>
+  {% else %}
+  <p class="muted mt-0">{{ t(empty) }}</p>
+  {% endif %}
+</div>
+{%- endmacro %}

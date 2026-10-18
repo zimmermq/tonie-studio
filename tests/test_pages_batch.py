@@ -114,7 +114,7 @@ class TestSeveralFolders:
         response = run_batch(client, runner, ids, series="Serie")
 
         page = client.get(response.headers["location"]).text
-        assert page.count('class="album" data-job=') == 2
+        assert page.count('class="item" data-job=') == 2
 
     def test_an_encoded_album_without_a_sticker_only_gets_one(self, client, runner, teddycloud):
         # No free sticker, so the first round leaves tafs and no tonies - the

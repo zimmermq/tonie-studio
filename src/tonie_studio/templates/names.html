@@ -16,13 +16,13 @@
 {% else %}
 <div class="list">
   {% for kind in kinds if counts[kind] %}
-  <div class="album">
+  <div class="item">
     <span class="grow">{{ t("names.kind." ~ kind) }}</span>
     <strong>{{ counts[kind] }}</strong>
   </div>
   {% endfor %}
   {% if plan.retired %}
-  <div class="album">
+  <div class="item">
     <span class="grow">{{ t("names.retired") }}</span>
     <strong>{{ plan.retired | length }}</strong>
   </div>
@@ -38,7 +38,7 @@
 <h2>{{ t("names.changes") }}</h2>
 <div class="list">
   {% for step in steps %}
-  <div class="album">
+  <div class="item">
     <span class="grow truncate">
       <strong class="truncate">
         {%- if step.name %}{{ step.name.series }} - {{ step.name.episode }}{% else %}{{ step.label or step.path or step.ruid }}{% endif -%}
@@ -58,7 +58,7 @@
 <h2>{{ t("names.skipped") }}</h2>
 <div class="list">
   {% for path, why in plan.skipped %}
-  <div class="album">
+  <div class="item">
     <span class="grow truncate">
       <strong class="truncate">{{ path }}</strong>
       <span class="muted truncate">{{ t("names.not_in_library", source=why) }}</span>

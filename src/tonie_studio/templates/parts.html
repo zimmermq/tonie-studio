@@ -17,7 +17,7 @@
 
 <div class="list">
 {% for job in jobs %}
-  <div class="album" data-job="{{ job.id }}">
+  <div class="item" data-job="{{ job.id }}">
     <span class="grow truncate">
       {%- set result = job.result if job.state.value == 'done' and job.result else none %}
       <strong class="truncate">{{ result.episode if result else job.label }}</strong>

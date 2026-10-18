@@ -9,6 +9,12 @@ from web_helpers import finish_job, list_tags_of, publish_album, ruid_to_uid
 from tonie_studio.web import create_app
 
 
+def row(page, ruid):
+    start = page.rindex("<div", 0, page.index(f'id="heard-{ruid}"'))
+    end = page.find('<div class="listing-row', start + 10)
+    return page[start:end if end != -1 else len(page)]
+
+
 class TestListeningPage:
     """The box's events end up in the log and on the page, with names."""
 
@@ -20,18 +26,27 @@ class TestListeningPage:
         box.handle("TagValid", uid)
         box.handle("playback", "started")
 
-        page = client.get("/listening?period=7").text
-        heard = page.split("Am meisten gehört", 1)[1].split("Lange nicht", 1)[0]
-        assert "Lichterkinder" in heard
-        assert "einmal aufgelegt" in heard
+        heard = row(client.get("/listening?period=7").text, ruid)
+        assert 'data-tags="heard"' in heard
+        assert "Lichterkinder" in heard and "einmal aufgelegt" in heard
 
     def test_a_recorded_tonie_never_put_on_is_listed_as_quiet(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        ruid = next(tag.ruid for tag in list_tags_of(teddycloud) if tag.model)
+
+        quiet = row(client.get("/listening").text, ruid)
+
+        assert 'data-tags="quiet"' in quiet and ">nie</span>" in quiet
+        # Ordered by when it was last placed, never comes before any day.
+        assert 'data-last="0"' in quiet
+
+    def test_the_list_can_be_searched_filtered_and_ordered(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 
         page = client.get("/listening").text
 
-        assert "Lange nicht gehört" in page
-        assert "nie aufgelegt" in page
+        assert 'id="search"' in page and 'data-filter="quiet"' in page
+        assert 'data-sort="played"' in page and 'data-sort="last"' in page
 
     def test_says_since_when_it_has_been_listening(self, client, runner, teddycloud, box):
         # Numbers without their start date read as all-time totals.

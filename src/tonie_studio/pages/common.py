@@ -13,11 +13,12 @@ import hashlib
 import logging
 import os
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Type
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
@@ -157,6 +158,20 @@ class Refused(Problem):
     def __init__(self, status: int, key: str, **params):
         super().__init__(key, **params)
         self.status = status
+
+
+@contextmanager
+def refusing(*kinds: Type[BaseException]) -> Iterator[None]:
+    """Answer what the services raise as one of ``kinds`` with a refusal the page shows.
+
+    For the errors a person can act on - teddyCloud saying no, a sticker that
+    is taken - which the page then names: "That did not work: ...". Anything
+    else is a fault and stays one.
+    """
+    try:
+        yield
+    except kinds as error:
+        raise Refused(400, "error.failed", detail=error) from error
 
 
 def refused(problem: Problem, status: int = 400) -> Refused:

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import sticker_picker with context %}
 {% set page_title = tag.label %}
 {#- The page opens with the tonie's picture beside its name instead. #}
 {% set page_heading = "" %}
@@ -110,18 +111,13 @@
       {{ t("tonie.copy_hint") }} {{ t("tonie.move_hint") }}
     </p>
     {% if others %}
-    <form method="post" action="/tonies/{{ tag.ruid }}/copy" class="row wrap gap-10">
-      <select name="target" required>
-        {% for other in others %}
-        <option value="{{ other.ruid }}"
-                {% if other.assigned %}data-confirm="{{ t('assign.confirm_replace', label=other.label) }}"{% endif %}>
-          {% if other.assigned %}{{ t("tag.replaced", label=other.label) }}{% else %}{{ t("tag.free_uid", uid=other.uid) }}{% endif %}
-        </option>
-        {% endfor %}
-      </select>
-      <button type="submit">{{ t("tonie.copy") }}</button>
-      <button type="submit" name="move" value="1"
-              data-confirm="{{ t('tonie.confirm_move', label=tag.label, uid=tag.uid) }}">{{ t("tonie.move") }}</button>
+    <form method="post" action="/tonies/{{ tag.ruid }}/copy">
+      {{ sticker_picker(others, "target", "tonie.no_other") }}
+      <p class="row wrap gap-10 mb-0">
+        <button type="submit">{{ t("tonie.copy") }}</button>
+        <button type="submit" name="move" value="1"
+                data-confirm="{{ t('tonie.confirm_move', label=tag.label, uid=tag.uid) }}">{{ t("tonie.move") }}</button>
+      </p>
     </form>
     {% else %}
     <p class="muted mb-0">{{ t("tonie.no_other") }}</p>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb, sticker_picker with context %}
 {% set page_title = t("radio.title") %}
 
 {% block intro %}{{ t("radio.intro") }}{% endblock %}
@@ -12,10 +13,8 @@
 <h2>{{ t("radio.existing") }}</h2>
 <div class="list">
   {% for tag in streams %}
-  <div class="album">
-    {% if tag.picture | cover_url(false) %}
-    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
-    {% else %}<span class="noart" aria-hidden="true"></span>{% endif %}
+  <div class="item">
+    {{ thumb(tag.picture | cover_url(false)) }}
     <span class="grow truncate">
       <strong class="truncate">{{ tag.label }}</strong>
       <span class="muted truncate">{{ tag.source }}</span>
@@ -28,18 +27,10 @@
 <h2>{{ t("radio.set_up") }}</h2>
 <form method="post" action="/radio" enctype="multipart/form-data">
   <div class="card">
-    <label class="field">
+    <div class="field">
       <span>{{ t("radio.which_tag") }}</span>
-      <select class="wide" name="ruid" required>
-        {% for tag in tags %}
-        <option value="{{ tag.ruid }}"
-                {% if tag.assigned %}data-confirm="{{ t('assign.confirm_replace', label=tag.label) }}"{% endif %}>
-          {% if tag.assigned %}{{ t("tag.replaced", label=tag.label ~ " (" ~ tag.uid ~ ")") }}
-          {%- else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
+      {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+    </div>
 
     <label class="field">
       <span>{{ t("radio.stream") }}</span>
@@ -49,7 +40,7 @@
         {% for name, url in stations %}<option value="{{ url }}" label="{{ name }}">{% endfor %}
       </datalist>
     </label>
-    <p class="muted" style="margin-top: -6px; font-size: 13px">
+    <p class="muted small-text field-hint">
       {{ t("radio.suggestions") }}
     </p>
 

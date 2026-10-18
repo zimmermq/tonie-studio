@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import requests
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..listening import summarise
+from ..listening import TonieListening, summarise
+from ..listing import Column
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, Subscription, add_subscription,
                        load_subscriptions, parse_feed, remove_subscription)
 from ..runtimes import playing_times
-from ..tags import find_tag, list_tags
+from ..tags import TonieTag, find_tag, list_tags
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -56,26 +60,20 @@ def register(app: FastAPI, ctx: Context) -> None:
         content = {tag.ruid: timedelta(seconds=times[tag.model])
                    for tag in tags if tag.model in times}
         summary = summarise(events, now=now, since=since, content=content)
-        heard, quiet = [], []
+        rows = []
         for tag in tags:
             if not tag.assigned:
                 continue
             entry = summary.get(tag.ruid)
-            if entry is not None and (entry.placed or entry.on_box):
-                heard.append((tag, entry))
-            else:
-                quiet.append((tag, entry))
-
-        heard.sort(key=lambda pair: (pair[1].played, pair[1].on_box, pair[1].placed),
-                   reverse=True)
-        # Never heard first, then the longest silence: the top of the list is
-        # what has been forgotten longest.
-        quiet.sort(key=lambda pair: (pair[1] is not None and pair[1].last_placed is not None,
-                                     pair[1].last_placed if pair[1] and pair[1].last_placed
-                                     else now))
+            heard = entry is not None and bool(entry.placed or entry.on_box)
+            rows.append(Heard(tag, entry, HEARD if heard else QUIET))
+        rows.sort(key=lambda row: row.tag.label.casefold())
+        counts = Counter(row.kind for row in rows)
         return templates.TemplateResponse(request, "listening.html", {
-            "heard": heard,
-            "quiet": quiet,
+            "rows": rows,
+            "counts": counts,
+            "filters": [kind for kind in (HEARD, QUIET) if counts[kind]],
+            "columns": LISTENING_COLUMNS,
             "period": period,
             "days": days,
             "recorded_since": events[0].at if events else None,
@@ -127,3 +125,39 @@ def register(app: FastAPI, ctx: Context) -> None:
         """Stop updating. The sticker keeps playing the episodes it has."""
         remove_subscription(settings.data_dir, subscription_id)
         return RedirectResponse("/podcasts", 303)
+
+
+# Heard in the period asked for, or quiet in it; the page filters by it.
+HEARD, QUIET = "heard", "quiet"
+
+# The listening list's columns, in the order the rows show them. It starts
+# with what was played most; ordered by when a tonie was last placed, one
+# never placed comes first, as the one forgotten longest.
+LISTENING_COLUMNS = (
+    Column("name", "listening.col_name"),
+    Column("played", "listening.col_played", number=True, desc=True),
+    Column("placed", "listening.col_placed", number=True, desc=True),
+    Column("last", "listening.col_last", number=True),
+)
+
+
+@dataclass
+class Heard:
+    """A tonie as the listening list shows it: its sticker and what the box told of it."""
+
+    tag: TonieTag
+    entry: Optional[TonieListening]
+    kind: str
+
+    @property
+    def placed(self) -> int:
+        return self.entry.placed if self.entry else 0
+
+    @property
+    def played(self) -> int:
+        """Seconds it played in the period."""
+        return int(self.entry.played.total_seconds()) if self.entry else 0
+
+    @property
+    def last(self) -> Optional[datetime]:
+        return self.entry.last_placed if self.entry else None

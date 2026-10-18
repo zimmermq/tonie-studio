@@ -20,8 +20,8 @@
 
 <div class="list">
 {% for step in steps %}
-  <div class="album">
-    <span class="muted" style="width: 6em">{{ t("restore.what." ~ step.what) }}</span>
+  <div class="item">
+    <span class="muted restore-what">{{ t("restore.what." ~ step.what) }}</span>
     <span class="grow truncate">
       <strong class="truncate">{{ step.name }}</strong>
       {% if step.note %}<span class="muted detail">{{ t(step.note) }}{% if step.detail %} {{ step.detail }}{% endif %}</span>{% endif %}

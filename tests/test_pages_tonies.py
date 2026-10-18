@@ -236,6 +236,15 @@ class TestLibraryPage:
 
         assert 'data-tags="box"' in shown and "/library/delete" not in shown
 
+    def test_a_file_teddycloud_cannot_name_is_named_after_its_sticker(self, client, teddycloud):
+        path = self.imported(teddycloud, "1678897164.taf", info={"model": ""})
+        teddycloud.custom_models.append({"model": "TS-0099", "series": "Fantasia"})
+        teddycloud.tag_entries["11dfc517500304e0"]["tonie_model"] = "TS-0099"
+
+        shown = self.row(client.get("/library").text, path)
+
+        assert "<strong>Fantasia</strong>" in shown
+
     def test_is_in_the_main_navigation(self, client):
         page = client.get("/").text
 
@@ -358,7 +367,8 @@ class TestCopyTonie:
 
         page = client.get(f"/tonies/{played}").text
 
-        assert "Auf einen weiteren Sticker" in page and "frei - " in page
+        assert "Auf einen weiteren Sticker" in page
+        assert 'name="target" value="deb4ed0e500304e0" required' in page
 
 
 class TestDeletingASharedModel:
@@ -466,3 +476,26 @@ class TestMoveOntoAnotherSticker:
         client.post("/tonies/7ab4ed0e500304e0/copy", data={"target": "deb4ed0e500304e0"})
 
         assert {"7ab4ed0e500304e0", "deb4ed0e500304e0"} <= set(teddycloud.tag_entries)
+
+
+class TestStickerPicker:
+    """Radio, podcasts, a tonie's copy and the walkthrough choose a sticker the same way."""
+
+    def test_every_page_that_chooses_a_sticker_can_search_for_it(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        for path in ("/radio", "/podcasts", "/tonies/7ab4ed0e500304e0"):
+            assert 'class="picker-find"' in client.get(path).text, path
+
+    def test_finds_a_sticker_by_its_uid_with_or_without_colons(self, client):
+        page = client.get("/radio").text
+
+        assert "e0:04:03:50:0e:ed:b4:7a e00403500eedb47a" in page
+
+    def test_the_first_free_sticker_is_chosen(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Andere/Folge.taf"
+
+        page = client.get("/radio").text
+
+        chosen = page[page.index(" checked>") - 200:page.index(" checked>")]
+        assert 'value="deb4ed0e500304e0"' in chosen

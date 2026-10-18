@@ -23,7 +23,7 @@ from ..runtimes import forget
 from ..settings import Settings
 from ..tags import TonieError, find_tag
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from .common import Context, Refused
+from .common import Context, Refused, refusing
 
 # The repairs the checkup page offers for all findings at once.
 BULK_FIXES = frozenset({"nocloud"})
@@ -72,10 +72,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         if current is None:
             return RedirectResponse("/checkup?stale=1", 303)
 
-        try:
+        with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
             _apply_fix(connection, settings, fix, target)
-        except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
         log.info("checkup: %s applied to %s", fix, target)
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
@@ -93,11 +91,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         targets = [finding.target for finding in examine(connection, **work_in_progress())
                    if finding.fix == fix]
-        try:
+        with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
             for target in targets:
                 _apply_fix(connection, settings, fix, target)
-        except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
         log.info("checkup: %s applied to %d sticker(s)", fix, len(targets))
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
@@ -129,10 +125,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         # Read at most one byte past the limit: enough to know it is too big
         # without holding all of it.
         data = file.file.read(LARGEST_BACKUP + 1)
-        try:
+        with refusing(BackupError):
             backup = read_backup(data)
-        except BackupError as error:
-            raise Refused(400, "error.failed", detail=error) from error
 
         token = uuid.uuid4().hex
         _restore_dir(settings).mkdir(parents=True, exist_ok=True)
@@ -153,10 +147,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not parked.is_file():
             raise Refused(404, "error.restore_gone")
         try:
-            backup = read_backup(parked.read_bytes())
-            steps = apply_restore(client(), backup, settings.data_dir)
-        except BackupError as error:
-            raise Refused(400, "error.failed", detail=error) from error
+            with refusing(BackupError):
+                backup = read_backup(parked.read_bytes())
+                steps = apply_restore(client(), backup, settings.data_dir)
         finally:
             parked.unlink(missing_ok=True)
         return templates.TemplateResponse(request, "restore.html", {

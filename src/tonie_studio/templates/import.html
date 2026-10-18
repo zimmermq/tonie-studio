@@ -6,17 +6,17 @@
     <label class="field m-0">
       <span>{{ t("import.per_hour") }}</span>
       <input type="number" name="per_hour" value="{{ '%g' % pace.per_hour }}"
-             min="0.1" max="120" step="any" style="width: 6em" required>
+             min="0.1" max="120" step="any" class="input-short" required>
     </label>
     <label class="field m-0">
       <span>{{ t("import.jitter") }}</span>
       <input type="number" name="jitter" value="{{ (pace.jitter * 100) | round | int }}"
-             min="0" max="99" step="1" style="width: 6em" required>
+             min="0" max="99" step="1" class="input-short" required>
     </label>
     <label class="field m-0">
       <span>{{ t("import.max_failures") }}</span>
       <input type="number" name="max_failures" value="{{ pace.max_failures }}"
-             min="1" max="100" step="1" style="width: 6em" required>
+             min="1" max="100" step="1" class="input-short" required>
     </label>
   </div>
 {% endmacro %}
@@ -43,7 +43,7 @@
   {% endif %}
   <div class="list">
   {% for state in states %}
-    <div class="album">
+    <div class="item">
       <span class="grow">{{ t("import.state." ~ state) }}</span>
       <strong id="count-{{ state }}">{{ counts[state] }}</strong>
     </div>
@@ -71,7 +71,7 @@
 <h2>{{ t("import.recent") }}</h2>
 <div class="list">
   {% for item, when in recent %}
-  <div class="album">
+  <div class="item">
     <span class="grow truncate">{{ item.path }}</span>
     <span class="muted truncate">{{ t("import.state." ~ item.state) }}{% if when %} &middot; {{ t.when(when) }}{% endif %}</span>
   </div>
@@ -83,7 +83,7 @@
 <h2>{{ t("import.problems") }}</h2>
 <div class="list">
   {% for item, when in failed %}
-  <div class="album">
+  <div class="item">
     <span class="grow truncate">
       <strong class="truncate">{{ item.path }}</strong>
       <span class="state-failed detail">

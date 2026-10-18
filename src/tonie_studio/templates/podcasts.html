@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "_parts.html" import sticker_picker with context %}
 {% set page_title = t("nav.podcasts") %}
 
 {% block intro %}{{ t("podcasts.intro") }}{% endblock %}
 {% block body %}
 <div class="list">
 {% for entry in subscriptions %}
-  <div class="album">
+  <div class="item">
     <span class="grow truncate">
       <strong class="truncate">{{ entry.title or entry.feed }}</strong>
       <span class="muted truncate">
@@ -26,7 +27,7 @@
     </form>
   </div>
 {% else %}
-  <div class="album muted">{{ t("podcasts.none") }}</div>
+  <div class="item muted">{{ t("podcasts.none") }}</div>
 {% endfor %}
 </div>
 
@@ -36,21 +37,14 @@
     <span>{{ t("podcasts.feed") }}</span>
     <input type="url" name="feed" required placeholder="https://...">
   </label>
+  <div class="field">
+    <span>{{ t("podcasts.which_sticker") }}</span>
+    {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+  </div>
   <div class="row stackable wrap gap-12 items-end">
-    <label class="field grow m-0">
-      <span>{{ t("podcasts.which_sticker") }}</span>
-      <select class="wide" name="ruid" required>
-        {% for tag in tags %}
-        <option value="{{ tag.ruid }}"
-                {% if tag.assigned %}data-confirm="{{ t('assign.confirm_replace', label=tag.label) }}"{% endif %}>
-          {% if tag.assigned %}{{ t("tag.replaced", label=tag.label) }}{% else %}{{ t("tag.free_uid", uid=tag.uid) }}{% endif %}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
     <label class="field m-0">
       <span>{{ t("podcasts.episodes") }}</span>
-      <input type="number" name="keep" value="{{ keep }}" min="1" max="20" style="width: 5em">
+      <input type="number" name="keep" value="{{ keep }}" min="1" max="20" class="input-short">
     </label>
     <button class="primary" type="submit">{{ t("podcasts.subscribe") }}</button>
   </div>

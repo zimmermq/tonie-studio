@@ -32,7 +32,7 @@ from ..tags import TonieError, TonieTag, list_tags
 from ..tags import label as tag_label
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..tonie import copy_tag, move_tag, plan_removal, publish_stream, remove_tonie
-from .common import Context, Refused
+from .common import Context, Refused, refusing
 
 log = logging.getLogger(__name__)
 
@@ -168,13 +168,11 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.post("/tonies/{ruid}/copy")
     def copy_tonie(ruid: str, target: str = Form(...), move: str = Form("")):
         """Make another sticker play this tonie; with ``move``, this sticker is then forgotten."""
-        try:
+        with refusing(TonieError, TeddyCloudError):
             if move:
                 move_tag(client(), ruid, target)
             else:
                 copy_tag(client(), ruid, target)
-        except (TonieError, TeddyCloudError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse(f"/tonies/{target}" if move else "/tonies", 303)
 
 
@@ -195,21 +193,17 @@ def register(app: FastAPI, ctx: Context) -> None:
 
         picture, suffix = _uploaded_cover(cover)
 
-        try:
+        with refusing(TonieError):
             update_model(connection, tag.model, series=series, episode=episode,
                          category=category, cover=picture, cover_name=suffix)
-        except TonieError as error:
-            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
 
     @app.post("/tonies/{ruid}/delete")
     def delete_tonie(ruid: str):
         """Free the sticker and delete what only it used: model, taf, its podcast."""
-        try:
+        with refusing(TonieError, EncodeError):
             removal = remove_tonie(client(), ruid)
-        except (TonieError, EncodeError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
         if removal.model:
             forget(settings.data_dir, removal.model)
             forget_model(settings.data_dir, removal.model)
@@ -329,11 +323,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         cover: Optional[UploadFile] = File(None),
     ):
         picture, suffix = _uploaded_cover(cover)
-        try:
+        with refusing(TonieError):
             publish_stream(client(), ruid, url, series=series, episode=episode,
                            cover=picture, cover_name=suffix, category=category)
-        except TonieError as error:
-            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/tonies", 303)
 
 
@@ -360,10 +352,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/library/delete")
     def library_delete(path: str = Form(...)):
-        try:
+        with refusing(EncodeError, TeddyCloudError):
             delete_taf(client(), path)
-        except (EncodeError, TeddyCloudError) as error:
-            raise Refused(400, "error.failed", detail=error) from error
         return RedirectResponse("/library", 303)
 
 
@@ -554,8 +544,14 @@ class Shelved:
 
     @property
     def label(self) -> str:
-        """The tonie teddyCloud knows the audio as, or else the file's name."""
-        return tag_label(self.taf.series, self.taf.episode) or self.taf.name
+        """The tonie teddyCloud knows the audio as, else the sticker that plays it, else the file.
+
+        teddyCloud names a file it fetched after its audio id, a bare number,
+        and knows no name for audio no catalogue lists; the sticker playing
+        it usually has one.
+        """
+        return (tag_label(self.taf.series, self.taf.episode)
+                or (self.played_by[0].label if self.played_by else "") or self.taf.name)
 
     @property
     def added(self) -> Optional[datetime]:

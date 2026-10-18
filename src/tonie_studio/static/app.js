@@ -51,6 +51,27 @@ document.addEventListener('submit', event => {
   if (question && !window.confirm(question)) event.preventDefault();
 });
 
+// A sticker picker's search: by name, or by the UID printed on the chip,
+// which chips show with or without colons. Every word has to fit.
+document.addEventListener('input', event => {
+  const find = event.target;
+  if (!find.classList || !find.classList.contains('picker-find')) return;
+  const picker = find.closest('[data-picker]');
+  const words = find.value.toLowerCase().split(/\s+/).map(word => word.replace(/:/g, '')).filter(Boolean);
+  let shown = 0;
+  for (const row of picker.querySelectorAll('[data-search]')) {
+    row.hidden = !words.every(word => row.dataset.search.includes(word));
+    if (!row.hidden) shown += 1;
+  }
+  picker.querySelector('.picker-none').hidden = shown > 0;
+});
+// Enter in a picker's search would send its form before a sticker was chosen.
+document.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && event.target.classList && event.target.classList.contains('picker-find')) {
+    event.preventDefault();
+  }
+});
+
 // One menu open at a time, and a click anywhere else closes it: a details
 // element on its own stays open until its own summary is clicked again.
 document.addEventListener('click', event => {
@@ -86,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       // The circle only, not the whole row: ticking a row is done with the
       // pointer on it, and a picture jumping out at every tick is noise.
-      const circle = target.closest('.list .album[data-src] .preview');
+      const circle = target.closest('.list .item[data-src] .preview');
       if (!circle) return null;
       // Each circle stands for one way of meeting the rim, so the large
       // picture has to be that one - pointing at "ganzes Cover" and being

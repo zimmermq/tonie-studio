@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import thumb with context %}
 {% from "_list.html" import toolbar, chips, head with context %}
 {% set page_title = t("nav.tonies") %}
 
@@ -41,11 +42,7 @@
      data-added="{{ row.added.timestamp() | int if row.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
      data-category="{{ row.category | lower }}" data-age="{{ row.age if row.age is not none else '' }}"
      data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ row.category) | lower }}">
-    {% if picture %}
-    <img src="{{ picture }}" alt="" loading="lazy">
-    {% else %}
-    <span class="noart" aria-hidden="true"></span>
-    {% endif %}
+    {{ thumb(picture) }}
     <span class="t-name"><strong>{{ tag.episode or tag.label }}</strong>
       <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>
     <span class="t-series muted">{% if tag.episode and tag.series != tag.episode %}{{ tag.series }}{% endif %}</span>
