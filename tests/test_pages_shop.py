@@ -1,6 +1,7 @@
 """Tests for what the tonie page shows and takes over from the tonies.com shop."""
 
 import pytest
+from markupsafe import escape
 from fastapi.testclient import TestClient
 from web_helpers import jpeg_bytes, publish_album
 
@@ -149,3 +150,23 @@ class TestAModelOfThisApp:
         publish_album(site, runner, teddycloud)
 
         assert site.post(f"/tonies/{RUID}/shop", data={"sales_id": "99"}).status_code == 404
+
+
+class TestTheLayout:
+    def test_an_official_tonie_is_named_by_a_badge_that_keeps_the_reason(self, site, teddycloud):
+        TestAnOfficialTonie.official(teddycloud)
+
+        page = site.get(f"/tonies/{RUID}").text
+
+        assert say("tonie.badge_official") in page
+        assert str(escape(say("tonie.official", model="10001924"))) in page
+        assert 'name="series"' not in page
+
+    def test_the_form_to_edit_a_model_of_this_app_is_folded_away(self, site, runner, teddycloud):
+        publish_album(site, runner, teddycloud)
+
+        page = site.get(f"/tonies/{RUID}").text
+
+        folded = page.index('<details class="section">')
+        assert say("tonie.badge_own", model="TS-0001") in page
+        assert folded < page.index('name="series"') < page.index("</details>", folded)

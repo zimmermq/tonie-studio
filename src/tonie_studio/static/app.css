@@ -292,7 +292,24 @@ label.button > input[type=file] {
 }
 label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* On a phone a two column card leaves both columns too narrow to use. */
+/* A tonie's page: what it is first, then what can be done with it. */
+.hero { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+.cover.large { width: 180px; height: 180px; flex: none; }
+.cover.empty { display: flex; align-items: center; justify-content: center; border-radius: 8px;
+               border: 1px dashed var(--line); color: var(--muted); font-size: 14px; }
+.columns { display: flex; gap: 28px; align-items: flex-start; }
+.columns .tracklist { flex: 0 0 300px; }
+.columns .tracklist ol { padding-left: 1.4em; }
+details.section { margin-top: 18px; }
+details.section > summary { cursor: pointer; font-size: 17px; font-weight: 600; padding: 4px 0; }
+details.section[open] > summary { margin-bottom: 10px; }
+p.technical { margin-top: 28px; overflow-wrap: anywhere; }
+.card.danger { border-left: 4px solid var(--bad); }
+button.danger { color: var(--bad); border-color: var(--bad); }
+
 @media (max-width: 640px) {
+  .hero, .columns { flex-direction: column; }
+  .columns .tracklist { flex: none; }
   .stackable { flex-direction: column; align-items: stretch !important; }
   .stackable > div { width: auto !important; }
   header { flex-wrap: wrap; gap: 10px; row-gap: 4px; }
