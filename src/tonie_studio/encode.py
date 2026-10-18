@@ -92,6 +92,8 @@ class Taf:
     chapters: int = 0
     # False for a file teddyCloud could not read a taf header from.
     valid: bool = False
+    # The model teddyCloud matched the audio to, or "" when it knows none.
+    model: str = ""
 
     @property
     def name(self) -> str:
@@ -153,6 +155,7 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
                 audio_id=header.get("audioId"),
                 chapters=len(header.get("trackSeconds") or []),
                 valid=bool(header.get("valid")),
+                model=(entry.get("tonieInfo") or {}).get("model") or "",
             ))
     return sorted(found, key=lambda taf: taf.path.lower())
 

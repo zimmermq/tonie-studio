@@ -10,8 +10,9 @@ puts a tonie on and nothing happens.
   back with its umlaut mangled.
 - A name stored mangled the same way shows up mangled in teddyCloud, on the
   box's announcements and on every printed sticker.
-- A library tag without ``nocloud`` can make the box ask the real Tonies cloud
-  for content it will never have.
+- A library tag without ``nocloud`` lets teddyCloud ask the real Tonies cloud
+  about it: for a homemade tonie about content the cloud does not have, for an
+  imported one about audio teddyCloud already keeps.
 - What nothing points at any more - a taf no tag plays, a model no tag names -
   costs space and makes every list longer than it needs to be.
 
@@ -33,6 +34,11 @@ from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
+
+# teddyCloud's catalogue names the box's own sounds - its startup jingle and
+# the like - after the box: "box-en-us-02-00000000". teddyCloud caches them
+# from the cloud like any audio; the box plays them, never a sticker.
+BOX_SOUND_PREFIX = "box-"
 
 ERROR = "error"
 WARNING = "warning"
@@ -211,6 +217,8 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
     for taf in tafs or []:
         path = _same(taf.path)
         if _same(taf.source) in playing or path in busy or path.startswith(busy_folders):
+            continue
+        if taf.model.lower().startswith(BOX_SOUND_PREFIX):
             continue
         findings.append(Finding(
             kind="orphan_taf", severity=NOTE, subject=taf.name, target=taf.path,

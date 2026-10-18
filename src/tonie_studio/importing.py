@@ -196,6 +196,23 @@ def lookup(client: TeddyCloudClient, ruid: str) -> Tuple[Dict[str, Any], str]:
     return entry, ""
 
 
+def cloud_off(client: TeddyCloudClient, ruid: str, entry: Dict[str, Any]) -> None:
+    """Keep teddyCloud from asking the Tonies cloud about a tonie whose audio it now has.
+
+    The cloud is needed once, to fetch the audio. After that teddyCloud plays
+    what it keeps, and every further question to the cloud is contact the box
+    does not need. Only switched off once the audio is there, never before:
+    a download that failed has to be able to try again. A refusal here is
+    logged and left, since the tonie plays either way.
+    """
+    if entry.get("nocloud"):
+        return
+    try:
+        client.set_tag(ruid, nocloud=True)
+    except TeddyCloudError as error:
+        log.warning("could not switch the cloud off for %s: %s", ruid, error)
+
+
 def import_one(client: TeddyCloudClient, ruid: str, auth: str,
                sleep: Callable[[float], None] = time.sleep,
                entry: Optional[Dict[str, Any]] = None) -> str:
@@ -228,6 +245,7 @@ def import_one(client: TeddyCloudClient, ruid: str, auth: str,
     for waited in range(SETTLE_SECONDS):
         where = cached_at(client, ruid)
         if where and (not where.startswith(BESIDE) or waited >= BESIDE_GRACE_SECONDS):
+            cloud_off(client, ruid, {})
             return where
         sleep(1)
     raise ImportProblem("import.not_cached")
@@ -435,7 +453,9 @@ class Importer:
         for index, item in enumerate(run.items):
             if item.state != NEW:
                 continue
-            where = cached_at(client, item.ruid)
+            entry, where = lookup(client, item.ruid)
+            if where:
+                cloud_off(client, item.ruid, entry)
             checked[index] = (CACHED, where) if where else (PENDING, "")
             if len(checked) == CHECKS_PER_WRITE:
                 break
@@ -462,6 +482,7 @@ class Importer:
         # Settled meanwhile by the box or another run: no download, no wait.
         entry, where = lookup(client, item.ruid)
         if where:
+            cloud_off(client, item.ruid, entry)
             settled = self.clock()
             self._record(run.id,
                          lambda current: _settle_item(current.items[index], CACHED, where, settled))

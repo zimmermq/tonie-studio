@@ -25,6 +25,9 @@ from ..tags import TonieError, find_tag
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from .common import Context, Refused
 
+# The repairs the checkup page offers for all findings at once.
+BULK_FIXES = frozenset({"nocloud"})
+
 log = logging.getLogger(__name__)
 
 
@@ -74,6 +77,28 @@ def register(app: FastAPI, ctx: Context) -> None:
         except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
             raise Refused(400, "error.failed", detail=error) from error
         log.info("checkup: %s applied to %s", fix, target)
+        return RedirectResponse(f"/checkup?done={fix}", 303)
+
+
+    @app.post("/checkup/fix_all")
+    def checkup_fix_all(fix: str = Form(...)):
+        """Apply one harmless repair to every sticker the checks find it for, now.
+
+        Only a repair that flips a flag is offered for all at once: switching
+        the cloud off for hundreds of imported tonies one click at a time helps
+        nobody. Deleting and emptying stay one at a time, each shown first.
+        """
+        if fix not in BULK_FIXES:
+            raise Refused(400, "checkup.not_for_all")
+        connection = client()
+        targets = [finding.target for finding in examine(connection, **work_in_progress())
+                   if finding.fix == fix]
+        try:
+            for target in targets:
+                _apply_fix(connection, settings, fix, target)
+        except (TonieError, EncodeError, TeddyCloudError, ValueError) as error:
+            raise Refused(400, "error.failed", detail=error) from error
+        log.info("checkup: %s applied to %d sticker(s)", fix, len(targets))
         return RedirectResponse(f"/checkup?done={fix}", 303)
 
 

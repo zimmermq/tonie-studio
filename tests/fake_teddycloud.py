@@ -40,6 +40,8 @@ class FakeTeddyCloud:
         self.dirs: Set[str] = {"/"}
         self.files: Dict[str, bytes] = {}
         self.taf_headers: Dict[str, dict] = {}
+        # What teddyCloud says a taf is, from its header's audio id: tonieInfo.
+        self.taf_info: Dict[str, dict] = {}
         # When a file was written, as teddyCloud lists it; 0 when not given.
         self.file_dates: Dict[str, int] = {}
         # Every encode that ran, as (target, sources), for order assertions.
@@ -103,6 +105,8 @@ class FakeTeddyCloud:
                 }
                 if file in self.taf_headers:
                     entry["tafHeader"] = self.taf_headers[file]
+                if file in self.taf_info:
+                    entry["tonieInfo"] = self.taf_info[file]
                 entries.append(entry)
         return entries
 
@@ -193,11 +197,19 @@ class FakeTeddyCloud:
         return index
 
     def set_tag(self, ruid: str, **fields) -> None:
-        if ruid not in self.tag_entries:
+        # teddyCloud keeps one content JSON per tonie: a tag the box has read
+        # and a tonie only an import wrote are changed the same way.
+        stored = f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json"
+        if ruid not in self.tag_entries and stored not in self.files:
             raise TeddyCloudError(f"no such tag: {ruid}")
         if not fields:
             raise ValueError("set_tag needs at least one field to change")
-        self.tag_entries[ruid].update(fields)
+        if ruid in self.tag_entries:
+            self.tag_entries[ruid].update(fields)
+        if stored in self.files:
+            entry = json.loads(self.files[stored])
+            entry.update(fields)
+            self.files[stored] = json.dumps(entry).encode()
 
     def custom_tonies(self) -> List[dict]:
         return [dict(model) for model in self.custom_models]

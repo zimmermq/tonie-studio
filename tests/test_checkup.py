@@ -124,6 +124,20 @@ class TestCloudFallback:
         assert "cloud_fallback" not in kinds(examine(cloud))
 
 
+class TestBoxSounds:
+    def test_the_box_s_own_sounds_are_no_leftovers(self, cloud):
+        # teddyCloud caches the box's startup jingle and the like from the
+        # cloud; no sticker plays them, the box does.
+        cloud.create_dir("/by")
+        cloud.create_dir("/by/audioID")
+        cloud.files["/by/audioID/1580745093.taf"] = b"x" * 512
+        cloud.taf_headers["/by/audioID/1580745093.taf"] = {"valid": True}
+        cloud.taf_info["/by/audioID/1580745093.taf"] = {"model": "box-en-us-02-00000000",
+                                                         "series": "System sounds en-us"}
+
+        assert "orphan_taf" not in kinds(examine(cloud))
+
+
 class TestGarbledNames:
     def test_a_garbled_model_name_is_an_error_with_its_repair(self, cloud):
         cloud.custom_models[0]["series"] = "Bobo SiebenschlÃ¤fer"

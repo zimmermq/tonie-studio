@@ -26,6 +26,13 @@
 {% set group = findings | selectattr("severity", "equalto", severity) | list %}
 {% if group %}
 <h2>{{ t("checkup.severity." ~ severity) }} <span class="muted">({{ group | length }})</span></h2>
+{%- set cloud = group | selectattr("fix", "equalto", "nocloud") | list %}
+{% if cloud | length > 1 %}
+<form method="post" action="/checkup/fix_all" class="mb-8">
+  <input type="hidden" name="fix" value="nocloud">
+  <button type="submit">{{ t("checkup.nocloud_all", count=cloud | length) }}</button>
+</form>
+{% endif %}
 <div class="list">
   {% for finding in group %}
   <div class="album checkup {{ severity }}">

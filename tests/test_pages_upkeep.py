@@ -38,6 +38,26 @@ class TestCheckupPage:
 
         assert teddycloud.tag_entries[ruid]["nocloud"] is True
 
+    def test_switches_off_the_cloud_for_every_sticker_at_once(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        teddycloud.add_tag("11dfc517500304e0", source="lib://by/audioID/1.taf", nocloud=False)
+        for entry in teddycloud.tag_entries.values():
+            entry["nocloud"] = False
+
+        page = client.get("/checkup").text
+        response = client.post("/checkup/fix_all", data={"fix": "nocloud"},
+                               follow_redirects=False)
+
+        assert 'action="/checkup/fix_all"' in page
+        assert response.status_code == 303
+        assert all(entry["nocloud"] for entry in teddycloud.tag_entries.values()
+                   if entry["source"])
+
+    def test_only_a_harmless_repair_is_made_all_at_once(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        assert client.post("/checkup/fix_all", data={"fix": "delete_taf"}).status_code == 400
+
     def test_refuses_a_repair_that_is_no_longer_due(self, client, runner, teddycloud):
         # A page left open must not act on what it showed an hour ago.
         publish_album(client, runner, teddycloud)

@@ -154,6 +154,48 @@ class TestImportOne:
         assert import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None) == "content/11DFC517/500304E0"
 
 
+class TestCloudOffOnceThere:
+    """The cloud is needed once, to fetch a tonie's audio; after that it is not asked again."""
+
+    @staticmethod
+    def nocloud(teddycloud, ruid):
+        return json.loads(teddycloud.files[f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json"])["nocloud"]
+
+    def test_an_imported_tonie_no_longer_asks_the_cloud(self, teddycloud):
+        import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None)
+
+        assert self.nocloud(teddycloud, WOLF_RUID) is True
+
+    def test_a_failed_download_leaves_the_cloud_on_for_the_next_try(self, teddycloud):
+        teddycloud.settings["cloud.cacheContent"] = "false"
+
+        with pytest.raises(ImportProblem):
+            import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None)
+
+        assert self.nocloud(teddycloud, WOLF_RUID) is False
+
+    def test_a_tonie_teddycloud_already_had_is_switched_off_too(self, importer, teddycloud):
+        teddycloud.add_content(FEST_RUID, source="lib://by/audioID/9.taf", cloud_auth=AUTH,
+                               nocloud=False)
+
+        importer.begin([FEST], STEADY, "test")
+        importer.step()
+
+        assert self.nocloud(teddycloud, FEST_RUID) is True
+
+    def test_one_that_turned_up_by_its_turn_is_switched_off_too(self, importer, teddycloud,
+                                                               clock):
+        importer.begin([WOLF, FEST], STEADY, "test")
+        run_until_idle(importer, clock)
+        teddycloud.add_content(FEST_RUID, source="lib://by/audioID/5.taf", cloud_auth=AUTH,
+                               nocloud=False)
+
+        clock.now += 360
+        run_until_idle(importer, clock)
+
+        assert self.nocloud(teddycloud, FEST_RUID) is True
+
+
 class TestPlanning:
     def test_sorts_dumps_into_pending_cached_duplicate_and_unreadable(self, importer, teddycloud):
         teddycloud.add_content(FEST_RUID, source="lib://by/audioID/9.taf", cloud_auth=AUTH)
