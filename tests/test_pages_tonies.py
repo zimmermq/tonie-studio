@@ -386,3 +386,33 @@ class TestBoxSaysWhyItIsDisconnected:
 
         assert client.get("/api/box").json()["silent"] is False
 
+
+
+class TestMoveOntoAnotherSticker:
+    def test_the_page_offers_to_move_with_its_own_question(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        button = page[page.index('name="move"'):page.index("</button>", page.index('name="move"'))]
+        assert "data-confirm=" in button
+
+    def test_moving_leaves_the_tonie_on_the_new_sticker_only(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        played = teddycloud.tag_entries["7ab4ed0e500304e0"]["source"]
+
+        response = client.post("/tonies/7ab4ed0e500304e0/copy",
+                               data={"target": "deb4ed0e500304e0", "move": "1"},
+                               follow_redirects=False)
+
+        assert response.headers["location"] == "/tonies/deb4ed0e500304e0"
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == played
+        assert "7ab4ed0e500304e0" not in teddycloud.tag_entries
+        assert 'id="tag-7ab4ed0e500304e0"' not in client.get("/tonies").text
+
+    def test_copying_still_keeps_both(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        client.post("/tonies/7ab4ed0e500304e0/copy", data={"target": "deb4ed0e500304e0"})
+
+        assert {"7ab4ed0e500304e0", "deb4ed0e500304e0"} <= set(teddycloud.tag_entries)

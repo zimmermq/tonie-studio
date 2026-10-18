@@ -105,7 +105,7 @@
   <summary>{{ t("tonie.copy_title") }}</summary>
   <div class="card">
     <p class="muted mt-0">
-      {{ t("tonie.copy_hint") }}
+      {{ t("tonie.copy_hint") }} {{ t("tonie.move_hint") }}
     </p>
     {% if others %}
     <form method="post" action="/tonies/{{ tag.ruid }}/copy" class="row wrap gap-10">
@@ -118,6 +118,8 @@
         {% endfor %}
       </select>
       <button type="submit">{{ t("tonie.copy") }}</button>
+      <button type="submit" name="move" value="1"
+              data-confirm="{{ t('tonie.confirm_move', label=tag.label, uid=tag.uid) }}">{{ t("tonie.move") }}</button>
     </form>
     {% else %}
     <p class="muted mb-0">{{ t("tonie.no_other") }}</p>

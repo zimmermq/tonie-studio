@@ -87,11 +87,16 @@ class FakeTeddyCloud:
                 {"name": name, "size": len(data), "isDir": False}
                 for name, data in sorted(self.images.items())
             ]
-        if path not in self.dirs:
+        stickers = self._stickers_in(path)
+        if path not in self.dirs and not stickers:
             raise TeddyCloudError(f"no such directory: {path}")
 
         # teddyCloud lists the link to the parent as an ordinary entry.
         entries = [{"name": "..", "date": 0, "size": 4096, "isDir": True}]
+        # A sticker the box has read is a JSON in the content folder too.
+        entries += [{"name": f"{ruid[8:].upper()}.json", "date": 0, "size": 1, "isDir": False}
+                    for ruid in stickers
+                    if f"{path}/{ruid[8:].upper()}.json" not in self.files]
         for directory in sorted(self.dirs):
             if directory != "/" and _parent(directory) == path:
                 entries.append({"name": _name(directory), "date": 0, "size": 0, "isDir": True})
@@ -238,7 +243,17 @@ class FakeTeddyCloud:
         wanted = {model.lower() for model in models}
         self.custom_models = [m for m in self.custom_models if m["model"].lower() not in wanted]
 
+    def _stickers_in(self, folder: str) -> List[str]:
+        """The tags the box has read whose content JSON sits in ``folder``."""
+        return [ruid for ruid in self.tag_entries if f"/{ruid[:8].upper()}" == folder]
+
     def delete(self, path: str, special: Optional[str] = None) -> None:
+        sticker = next((ruid for ruid in self.tag_entries
+                        if path == f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json"), None)
+        if special is None and sticker:
+            del self.tag_entries[sticker]
+            self.files.pop(path, None)
+            return
         if special == "custom_img":
             self.images.pop(path.lstrip("/"), None)
             return

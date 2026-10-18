@@ -174,6 +174,36 @@ def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     log.info("tag %s now plays what %s plays", to_ruid, from_ruid)
 
 
+def forget_tag(client: TeddyCloudClient, ruid: str) -> None:
+    """Remove a sticker from teddyCloud altogether, as if the box had never read it.
+
+    teddyCloud lists every sticker it finds a file of in its content folder,
+    under the first half of the sticker's id and named after the second
+    half, and reads that folder afresh for every list. Deleting this
+    sticker's files - its content JSON and any audio cached beside it -
+    therefore takes it off every list; a single file left would bring it
+    back. Other stickers can share the folder, so the folder itself is left.
+    The audio in the library and the model are not touched. Should the box
+    read the sticker again, teddyCloud lists it afresh, empty.
+    """
+    folder, name = f"/{ruid[:8].upper()}", ruid[8:].upper()
+    for entry in client.list_dir(folder):
+        if not entry.get("isDir") and str(entry.get("name", "")).upper().startswith(name):
+            client.delete(f"{folder}/{entry['name']}")
+    log.info("tag %s forgotten", ruid)
+
+
+def move_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
+    """Make another sticker play what this one plays, then forget this one.
+
+    Copied first and forgotten only once the copy stands: should anything
+    fail in between, two stickers play the tonie rather than none.
+    """
+    with _WRITING:
+        copy_tag(client, from_ruid, to_ruid)
+        forget_tag(client, from_ruid)
+
+
 @dataclass
 class Removal:
     """What removing a tonie takes with it besides emptying its sticker.

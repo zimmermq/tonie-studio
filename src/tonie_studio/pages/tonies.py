@@ -28,7 +28,7 @@ from ..shop import Shop
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, TonieTag, list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
-from ..tonie import copy_tag, plan_removal, publish_stream, remove_tonie
+from ..tonie import copy_tag, move_tag, plan_removal, publish_stream, remove_tonie
 from .common import Context, Refused
 
 log = logging.getLogger(__name__)
@@ -162,12 +162,16 @@ def register(app: FastAPI, ctx: Context) -> None:
         return tag, model
 
     @app.post("/tonies/{ruid}/copy")
-    def copy_tonie(ruid: str, target: str = Form(...)):
+    def copy_tonie(ruid: str, target: str = Form(...), move: str = Form("")):
+        """Make another sticker play this tonie; with ``move``, this sticker is then forgotten."""
         try:
-            copy_tag(client(), ruid, target)
-        except TonieError as error:
+            if move:
+                move_tag(client(), ruid, target)
+            else:
+                copy_tag(client(), ruid, target)
+        except (TonieError, TeddyCloudError) as error:
             raise Refused(400, "error.failed", detail=error) from error
-        return RedirectResponse("/tonies", 303)
+        return RedirectResponse(f"/tonies/{target}" if move else "/tonies", 303)
 
 
     @app.post("/tonies/{ruid}")

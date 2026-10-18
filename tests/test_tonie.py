@@ -7,7 +7,7 @@ from tonie_studio.encode import EncodeResult
 from tonie_studio.models import (MODEL_PREFIX, find_model, find_model_by_audio, next_model_id,
                                  remove_model, update_model)
 from tonie_studio.tags import TonieError, list_tags
-from tonie_studio.tonie import copy_tag, publish, publish_stream
+from tonie_studio.tonie import copy_tag, move_tag, publish, publish_stream
 
 
 @pytest.fixture
@@ -609,3 +609,53 @@ class TestTrackNamesKeepTheirChapters:
                 tracks=["Eins", "", "Drei"])
 
         assert teddycloud.custom_tonies()[0]["tracks"] == ["Eins", "", "Drei"]
+
+
+class TestMoveTag:
+    """A tonie moved onto another sticker: the new one plays it, the old one is gone."""
+
+    @pytest.fixture
+    def published(self, teddycloud, encoded):
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="Lichterkinder",
+                episode="Halloween", tracks=["Eins"])
+        return teddycloud
+
+    def test_the_new_sticker_plays_it_and_the_old_one_is_gone(self, published):
+        played = published.tag_entries["7ab4ed0e500304e0"]["source"]
+
+        move_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert published.tag_entries["deb4ed0e500304e0"]["source"] == played
+        assert "7ab4ed0e500304e0" not in [tag.ruid for tag in list_tags(published)]
+
+    def test_the_audio_and_the_model_stay(self, published):
+        model = published.tag_entries["7ab4ed0e500304e0"]["tonie_model"]
+
+        move_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert "/Lichterkinder/Halloween.taf" in published.files
+        assert find_model(published, model) is not None
+
+    def test_a_sticker_sharing_its_folder_stays(self, published):
+        # teddyCloud files stickers under the first half of their id, so two
+        # can share a folder; only the moved one's files go.
+        published.add_tag("7ab4ed0e11111111", source="lib://x.taf")
+
+        move_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert "7ab4ed0e11111111" in [tag.ruid for tag in list_tags(published)]
+
+    def test_audio_cached_beside_the_old_entry_goes_too(self, published):
+        # teddyCloud lists a sticker for any file of it, so a leftover would
+        # bring it back.
+        published.files["/7AB4ED0E/500304E0"] = b"cached audio"
+
+        move_tag(published, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert "/7AB4ED0E/500304E0" not in published.files
+
+    def test_nothing_is_removed_when_there_is_nothing_to_move(self, teddycloud):
+        with pytest.raises(TonieError):
+            move_tag(teddycloud, "7ab4ed0e500304e0", "deb4ed0e500304e0")
+
+        assert "7ab4ed0e500304e0" in [tag.ruid for tag in list_tags(teddycloud)]
