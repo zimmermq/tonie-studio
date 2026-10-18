@@ -34,7 +34,7 @@
   <div class="item checkup {{ severity }}">
     <span class="grow">
       {%- if finding.kind in tag_kinds %}
-      <a class="truncate" href="/tonies/{{ finding.target | urlencode }}"><strong>{{ finding.subject }}</strong></a>
+      <a class="block" href="/tonies/{{ finding.target | urlencode }}"><strong class="truncate">{{ finding.subject }}</strong></a>
       {%- else %}
       <strong class="truncate">{{ finding.subject }}</strong>
       {%- endif %}

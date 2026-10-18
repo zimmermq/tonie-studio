@@ -236,6 +236,7 @@
  "error.no_job": "Diesen Auftrag gibt es nicht mehr, vermutlich wurde die App neu gestartet. Fertiges Audio liegt in der Library unter \"Unbenutzt\".",
  "error.no_language": "Diese Sprache gibt es hier nicht.",
  "error.no_model": "Dieser Sticker hat kein Modell.",
+ "error.no_page": "Diese Seite gibt es nicht. Vielleicht war der Link alt oder vertippt.",
  "error.no_parts": "Mindestens ein Teil.",
  "error.no_taf_yet": "Dieser Auftrag ist noch nicht fertig, es gibt noch kein Taf.",
  "error.no_tag": "teddyCloud kennt diesen Sticker nicht.",

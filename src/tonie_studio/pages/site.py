@@ -7,6 +7,7 @@ from typing import Dict
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import catalogs
@@ -75,6 +76,18 @@ def register(app: FastAPI, ctx: Context) -> None:
             "next_href": onward[0] if onward else "",
             "next_label": onward[1] if onward else "",
         }, status_code=error.status)
+
+    @app.exception_handler(StarletteHTTPException)
+    def no_such_page(request: Request, error: StarletteHTTPException):
+        """An address no route knows is a page too, unless a script asked.
+
+        Every other answer keeps what the framework would have sent; only a
+        404 outside /api/ becomes the refusal page with a way back.
+        """
+        if error.status_code == 404 and not request.url.path.startswith("/api/"):
+            return refused(request, Refused(404, "error.no_page"))
+        return JSONResponse({"detail": error.detail}, status_code=error.status_code,
+                            headers=getattr(error, "headers", None))
 
     @app.middleware("http")
     async def same_site_only(request: Request, call_next):

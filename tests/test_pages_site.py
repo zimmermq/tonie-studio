@@ -150,6 +150,22 @@ class TestRefusals:
         assert response.status_code == 404
         assert "That job is not known any more" in response.text and "<html" in response.text
 
+    def test_an_address_that_is_nowhere_is_a_page_too(self, client):
+        # A mistyped or outdated link must not end on a line of raw JSON.
+        response = client.get("/tonie/nope")
+
+        assert response.status_code == 404
+        assert "<html" in response.text and "Diese Seite gibt es nicht" in response.text
+        assert response.text.count("Zu den Alben") == 1
+
+    def test_an_api_address_that_is_nowhere_stays_json(self, client):
+        response = client.get("/api/nowhere")
+
+        assert response.status_code == 404 and "detail" in response.json()
+
+    def test_a_method_that_is_not_offered_keeps_its_answer(self, client):
+        assert client.delete("/tonies").status_code == 405
+
     def test_german_is_the_default(self, client):
         assert "Diesen Auftrag gibt es nicht mehr" in client.get("/job/nope").text
 
