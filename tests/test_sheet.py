@@ -331,3 +331,23 @@ class TestPicturesFetchedOnTheWay:
                               tmp_path / "sheet.pdf")
 
         assert skipped == ["gone"]
+
+
+class TestTransparentPictures:
+    def test_a_transparent_background_prints_as_paper_white(self):
+        # Shop pictures are PNGs whose transparent pixels often store black;
+        # dropping the transparency straight away printed them as black discs.
+        import io
+
+        picture = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+        picture.paste(Image.new("RGBA", (100, 100), (200, 30, 30, 255)), (150, 150))
+        buffer = io.BytesIO()
+        picture.save(buffer, format="PNG")
+
+        from tonie_studio.sheet import render_square
+
+        rendered = Image.open(io.BytesIO(render_square(buffer.getvalue(), size=200)))
+
+        assert min(rendered.getpixel((5, 5))) > 245
+        red, green, blue = rendered.getpixel((100, 100))
+        assert red > 150 and green < 80

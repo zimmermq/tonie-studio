@@ -37,7 +37,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
-from .pictures import centre_square, inset
+from .pictures import centre_square, inset, on_white
 
 log = logging.getLogger(__name__)
 
@@ -322,7 +322,7 @@ def render_square(source: Union[bytes, Path], mode: str = FILL,
     handle = io.BytesIO(source) if isinstance(source, bytes) else source
     with Image.open(handle) as image:
         image.load()
-        picture = image.convert("RGB")
+        picture = on_white(image)
 
     picture = centre_square(picture, size)
     if mode == FIT:

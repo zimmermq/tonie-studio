@@ -98,7 +98,7 @@ def crop(
     try:
         with Image.open(path) as image:
             image.load()
-            picture = image.convert("RGB")
+            picture = on_white(image)
     except (OSError, UnidentifiedImageError, ValueError) as error:
         log.debug("cannot read cover %s: %s", path, error)
         return None
@@ -143,6 +143,21 @@ def _clamp(value: float) -> float:
     return max(-1.0, min(float(value), 1.0))
 
 
+def on_white(image: Image.Image) -> Image.Image:
+    """``image`` as a plain RGB picture, with whatever is transparent laid on white.
+
+    Converting straight to RGB keeps the colour a transparent pixel happens to
+    store, which in the shop's PNGs is often black: the figure then sits on a
+    black disc. White is the paper it is printed on.
+    """
+    if image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info:
+        picture = image.convert("RGBA")
+        paper = Image.new("RGBA", picture.size, (255, 255, 255, 255))
+        paper.alpha_composite(picture)
+        return paper.convert("RGB")
+    return image.convert("RGB")
+
+
 def centre_square(picture: Image.Image, size: int) -> Image.Image:
     """The largest centred square of ``picture``, scaled to ``size`` pixels."""
     edge = min(picture.size)
@@ -154,7 +169,7 @@ def centre_square(picture: Image.Image, size: int) -> Image.Image:
 def _render(path: Path, size: int) -> bytes:
     with Image.open(path) as image:
         image.load()
-        picture = image.convert("RGB")
+        picture = on_white(image)
 
     buffer = io.BytesIO()
     centre_square(picture, size).save(buffer, format="JPEG", quality=82)
