@@ -2,7 +2,7 @@
 
 import gzip
 
-import brotli
+import brotlicffi
 import pytest
 
 
@@ -57,7 +57,7 @@ class TestTheCodecsThemselves:
 
         body = b"<p>Hallo</p>" * 500
 
-        assert brotli.decompress(encode(body, "br")) == body
+        assert brotlicffi.decompress(encode(body, "br")) == body
         assert gzip.decompress(encode(body, "gzip")) == body
 
     @pytest.mark.parametrize("header, coding", [

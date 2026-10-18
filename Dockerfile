@@ -20,8 +20,11 @@ WORKDIR /app
 
 # requirements.txt is the lock compiled from requirements.in, every package
 # with its hashes: what is installed is exactly what was locked, or nothing.
+# Wheels only: the slim image has no compiler, and a package without a wheel
+# for this Python on amd64 and arm64 should fail here by name, not half way
+# through building it.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements.txt
 
 COPY src/ ./src/
 

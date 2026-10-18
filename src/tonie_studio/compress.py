@@ -12,7 +12,7 @@ from __future__ import annotations
 import gzip
 from typing import List, Optional
 
-import brotli
+import brotlicffi
 
 # What is worth compressing, by the start of its media type.
 COMPRESSIBLE = ("text/", "application/json", "application/javascript", "image/svg+xml")
@@ -29,7 +29,7 @@ GZIP_LEVEL = 6
 def encode(body: bytes, coding: str) -> bytes:
     """``body`` in ``coding``, "br" or "gzip"."""
     if coding == "br":
-        return brotli.compress(body, quality=BROTLI_QUALITY)
+        return brotlicffi.compress(body, quality=BROTLI_QUALITY)
     return gzip.compress(body, compresslevel=GZIP_LEVEL)
 
 
