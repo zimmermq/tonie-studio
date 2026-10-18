@@ -43,9 +43,9 @@
     </span>
   </div>
   {% else %}
-  <div class="card muted">
+  <p class="empty">
     {% if days %}{{ t("listening.nothing_in", count=days) }}{% else %}{{ t("listening.nothing") }}{% endif %}
-  </div>
+  </p>
   {% endfor %}
 </div>
 <p class="muted" id="nohits" hidden>{{ t("listening.no_match") }}</p>

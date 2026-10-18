@@ -25,7 +25,7 @@
 {% if images_cached == false %}
 <div class="warn">{{ t("covers.cache_off") }}</div>
 {% endif %}
-{% if first_print %}<div class="warn">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
+{% if first_print %}<div class="info">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
 
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
   {% if rows %}
@@ -33,8 +33,8 @@
   <div class="toolbar">
     <input type="search" id="find" value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}"
            autocomplete="off" aria-label="{{ t('sheet.search') }}">
-    <button type="button" id="tickshown">{{ t("sheet.tick_shown") }}</button>
-    <button type="button" id="untick">{{ t("sheet.untick") }}</button>
+    <button type="button" id="tickshown">{{ t("list.tick_shown") }}</button>
+    <button type="button" id="untick">{{ t("list.untick") }}</button>
     <label class="row gap-8 clickable"><input type="checkbox" id="onlyticked">
       <span>{{ t("sheet.only_ticked") }}</span></label>
     <span class="muted" id="shown"></span>
@@ -88,9 +88,7 @@
              value="{{ 1 if row.ticked else 0 }}:{{ fill }}:{{ model.id }}">
     </div>
     {% else %}
-    <div class="item muted">
-      {{ t("sheet.none") }}
-    </div>
+    <p class="empty">{{ t("sheet.none") }}</p>
     {% endfor %}
   </div>
   <p class="muted" id="nohits" hidden>{{ t("sheet.no_match") }}</p>
@@ -148,8 +146,7 @@
     </div>
   </div>
 
-  <p><button class="primary" type="submit">{{ t("sheet.make_pdf") }}</button>
-     <a class="ml-12" href="/tonies">{{ t("common.to_tonies") }}</a></p>
+  <p><button class="primary" type="submit">{{ t("sheet.make_pdf") }}</button></p>
 </form>
 
 <h2 id="printer">{{ t("calibration.title") }}</h2>

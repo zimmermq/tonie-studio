@@ -55,7 +55,7 @@
   {% endfor %}
 </div>
 {% if not tonies and not free %}
-<div class="card muted">{{ t("tonies.none") }}</div>
+<p class="empty">{{ t("tonies.none") }}</p>
 {% endif %}
 <p class="muted" id="nohits" hidden>{{ t("tonies.no_match") }}</p>
 

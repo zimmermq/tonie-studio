@@ -58,6 +58,11 @@ a { color: var(--accent); }
 .picker-row[hidden] { display: none; }
 .picker-row:has(input:checked) { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .picker-none { margin: 8px 0 0; }
+/* Nothing to show: the same calm box on every page. Inside a list's own
+   frame it is a line of that list rather than a box within a box. */
+.empty { color: var(--muted); font-size: 14px; padding: 14px 16px; margin: 0 0 14px;
+         border: 1px dashed var(--line); border-radius: 10px; }
+.list > .empty, .listing > .empty { border: 0; margin: 0; }
 /* Number fields hold a few digits; full width would read as a text box. */
 .input-short { width: 6em; }
 .input-medium { width: 9em; }
@@ -125,10 +130,12 @@ ol.tracks li {
   padding: 6px 0; border-bottom: 1px solid var(--line);
 }
 ol.tracks li:last-child { border-bottom: 0; }
-.warn {
-  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
-  border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px;
-}
+/* Orange is kept for what needs doing or went wrong; what a person only
+   ought to know - how the box behaves, what to do next - is .info. */
+.warn, .info { border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
+.warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+.info { background: color-mix(in srgb, var(--accent) 5%, var(--card)); border: 1px solid var(--line);
+        color: var(--ink); }
 .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 .state-done { color: var(--ok); }
@@ -452,6 +459,7 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
     --line: #35302a; --accent: #fb923c;
   }
   button.primary, .button.primary { color: #17150f; }
+  .warn { background: #2b1a10; border-color: #7c2d12; color: #fdba74; }
   input[type=text], input[type=url], input[type=search], input[type=number],
   input[type=password], select {
     background: #17150f;

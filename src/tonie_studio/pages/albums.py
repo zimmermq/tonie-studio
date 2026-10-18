@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -20,6 +21,7 @@ from ..batch import episode_order
 from ..encode import taf_exists
 from ..i18n import Problem
 from ..library import same
+from ..listing import Column
 from ..models import is_cover_name
 from ..parts import MOST_CHAPTERS
 from ..pictures import DEFAULT_SIZE, crop, thumbnail
@@ -54,6 +56,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         now = datetime.now(timezone.utc)
         sightings = first_sightings(settings.data_dir, [row[0] for row in albums], now)
         done = albums_with_tonies(settings.data_dir, albums, ctx.models.get())
+        new = {identifier for identifier, when in sightings.items() if is_new(when, now)}
+        in_library = _in_library(albums, done, ctx.library.get(),
+                                 settings.archive_dir, settings.upload_dir)
+        tags = {identifier: _album_tags(identifier, done, new, in_library)
+                for identifier, _album, _origin in albums}
+        counts = Counter(tag for value in tags.values() for tag in value.split())
         return templates.TemplateResponse(request, "index.html", {
             "albums": albums,
             "archive": [row for row in albums if row[2] == "archive"],
@@ -61,10 +69,13 @@ def register(app: FastAPI, ctx: Context) -> None:
             "jobs": jobs.all()[:10],
             "thumb_size": DEFAULT_SIZE,
             "slow_pick": SLOW_PICK,
-            "new": {identifier for identifier, when in sightings.items() if is_new(when, now)},
+            "new": new,
             "done": done,
-            "in_library": _in_library(albums, done, ctx.library.get(),
-                                      settings.archive_dir, settings.upload_dir),
+            "in_library": in_library,
+            "tags": tags,
+            "counts": counts,
+            "filters": [tag for tag in (NO_TONIE, NOT_IN_LIBRARY, NEW) if counts[tag]],
+            "columns": ALBUM_COLUMNS,
         })
 
 
@@ -335,3 +346,27 @@ class AlbumForm:
                    cover_x=cover_x, cover_y=cover_y)
 
 
+
+
+# The album list's orders: by title, by artist, newest year first.
+ALBUM_COLUMNS = (
+    Column("name", "albums.col_title"),
+    Column("artist", "albums.col_artist"),
+    Column("year", "albums.col_year", number=True, desc=True),
+)
+
+# What the album list's filters match. Each is what is still to do: an album
+# without a tonie, one not encoded yet, one that arrived lately.
+NO_TONIE, NOT_IN_LIBRARY, NEW = "notonie", "notinlibrary", "new"
+
+
+def _album_tags(identifier: str, done: Dict, new: Set[str],
+                in_library: Optional[Set[str]]) -> str:
+    """The filters an album answers to. Without a copy of the library nothing
+    is claimed to be missing from it."""
+    tags = [] if identifier in done else [NO_TONIE]
+    if in_library is not None and identifier not in in_library:
+        tags.append(NOT_IN_LIBRARY)
+    if identifier in new:
+        tags.append(NEW)
+    return " ".join(tags)

@@ -80,7 +80,7 @@ class TestCheckupPage:
         page = client.get("/checkup").text
         client.post("/checkup/fix", data={"fix": "empty_sticker", "target": ruid})
 
-        assert 'value="empty_sticker"' in page and "leeren" in page
+        assert 'value="empty_sticker"' in page and "Leeren" in page
         assert teddycloud.tag_entries[ruid]["source"] == ""
         assert teddycloud.tag_entries[ruid]["tonie_model"] == ""
         assert ruid in [tag.ruid for tag in list_tags(teddycloud) if not tag.assigned]

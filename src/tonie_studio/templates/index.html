@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% from "_parts.html" import thumb with context %}
 {% from "_steps.html" import steps with context %}
+{% from "_list.html" import toolbar, chips with context %}
 {% set page_title = t("albums.title") %}
 
 {% macro album_row(id, album) -%}
 <div class="pickrow" data-search="{{ (album.title ~ ' ' ~ (album.artist or '') ~ ' ' ~ (album.year or '') ~ ' ' ~ album.name) | lower }}"
+     data-tags="{{ tags[id] }}" data-name="{{ (album.title or album.name) | lower }}"
+     data-artist="{{ (album.artist or '') | lower }}" data-year="{{ album.year or '' }}"
      data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}"
      data-library="{{ 'unknown' if in_library is none else ('yes' if id in in_library else 'no') }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label') }}">
@@ -42,23 +45,20 @@
 {% endfor %}
 {% endif %}
 
-<div class="searchbar">
-  <input type="search" id="search" placeholder="{{ t('albums.search') }}"
-         autocomplete="off" aria-label="{{ t('albums.search_label') }}">
-  <span class="muted" id="count">{{ t("albums.count", count=albums | length) }}</span>
-</div>
+{% if albums %}
+{{ toolbar(columns, "albums.search", "albums.search_label") }}
+{{ chips(albums | length, filters, counts, "albums.filter.") }}
+{% endif %}
 {% if albums | length > 1 %}
-<p class="row wrap gap-8 mt-0" id="quickpick">
-  <span class="muted">{{ t("albums.pick_label") }}</span>
-  <button type="button" class="small" data-pick="all">{{ t("common.all") }}</button>
-  <button type="button" class="small" data-pick="without">{{ t("albums.pick_without") }}</button>
-  <button type="button" class="small" data-pick="library">{{ t("albums.pick_not_in_library") }}</button>
-  <button type="button" class="small" data-pick="new">{{ t("albums.pick_new") }}</button>
-  <button type="button" class="small" data-pick="none">{{ t("common.none") }}</button>
+{#- Ticking gathers albums for one batch; like on the print page, it acts on
+    what the search and the chips leave in view. #}
+<p class="row wrap gap-8 mt-0" id="ticks">
+  <button type="button" id="tickshown">{{ t("list.tick_shown") }}</button>
+  <button type="button" id="untick">{{ t("list.untick") }}</button>
 </p>
 {% endif %}
 
-<div class="list" id="albums">
+<div class="list" id="albums" data-list>
   {% for id, album, origin in uploads %}{{ album_row(id, album) }}{% endfor %}
   {% for id, album, origin in archive %}{{ album_row(id, album) }}{% endfor %}
 </div>
@@ -92,6 +92,7 @@
   </form>
 </div>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("albums.count", "albums.shown_of", "upload.picked", "batch.picked", "albums.pick_slow"), "slowPick": slow_pick} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of", "upload.picked", "batch.picked", "albums.pick_slow"), "slowPick": slow_pick, "first": "name", "orders": columns | orders} | tojson }}</script>
+<script src="{{ asset('list.js') }}"></script>
 <script src="{{ asset('index.js') }}"></script>
 {% endblock %}

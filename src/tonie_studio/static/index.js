@@ -1,29 +1,9 @@
 // The script of the index page; see templates/index.html.
 const data = JSON.parse(document.getElementById('page-data').textContent);
 
-// Filtering happens over the rendered rows. At sixteen albums a round trip
-// per keystroke would be slower than the browser is; if the archive ever
-// grows to hundreds, this becomes a server-side filter.
+// Search, filter and order are the shared list's (list.js).
 const words = data.words;
-const search = document.getElementById('search');
 const rows = [...document.querySelectorAll('#albums .pickrow')];
-const count = document.getElementById('count');
-const nohits = document.getElementById('nohits');
-
-search.addEventListener('input', () => {
-  const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
-  let shown = 0;
-  for (const row of rows) {
-    const hit = terms.every(term => row.dataset.search.includes(term));
-    row.hidden = !hit;
-    if (hit) shown++;
-  }
-  count.textContent = shown === rows.length
-    ? say(words['albums.count'], {count: rows.length})
-    : say(words['albums.shown_of'], {shown, count: rows.length});
-  nohits.hidden = shown > 0;
-  refreshPicks();
-});
 
 // Checking an album reads every track's tags, over a network share a
 // second or more per album; without a word the click looks ignored.
@@ -54,36 +34,20 @@ function updatePick() {
 }
 document.getElementById('albums').addEventListener('change', updatePick);
 
-// The quick picks act on the rows the search left visible, so a search for
-// a series followed by "without tonie" picks what is still missing of it.
-// A pick sets those rows to exactly what it matches: "all" and then "without
-// tonie" leaves the albums without one. Hidden rows keep their tick, so two
-// searches can be combined; "none" clears every row.
-const picks = [...document.querySelectorAll('[data-pick]')];
-const matches = {
-  all: () => true,
-  without: row => row.dataset.tonie !== 'yes',
-  // "unknown" until the server has a copy of the library: then nothing is picked.
-  library: row => row.dataset.library === 'no',
-  new: row => row.dataset.new === 'yes',
-};
-const visible = () => rows.filter(row => !row.hidden);
-
-// A pick that would find nothing is greyed out rather than silently idle.
-function refreshPicks() {
-  for (const button of picks) {
-    const match = matches[button.dataset.pick];
-    if (match) button.disabled = !visible().some(match);
-  }
-}
-for (const button of picks) {
-  button.addEventListener('click', () => {
-    const match = matches[button.dataset.pick];
-    for (const row of match ? visible() : rows) boxOf(row).checked = Boolean(match && match(row));
+// Like on the print page, ticking acts on what the search and the chips
+// leave in view, and a tick stays when the view changes: a series searched
+// for, "without a tonie" chosen, all of those ticked, then the next series.
+const tickshown = document.getElementById('tickshown');
+if (tickshown) {
+  tickshown.addEventListener('click', () => {
+    for (const row of rows) if (!row.hidden) boxOf(row).checked = true;
+    updatePick();
+  });
+  document.getElementById('untick').addEventListener('click', () => {
+    for (const row of rows) boxOf(row).checked = false;
     updatePick();
   });
 }
-refreshPicks();
 
 // Shift-click ticks or clears the visible rows between the last click and
 // this one, as file managers do: episodes 3 to 9 in two clicks.

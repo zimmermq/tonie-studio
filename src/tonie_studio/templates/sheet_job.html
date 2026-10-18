@@ -12,7 +12,7 @@
 <p id="ready" hidden>
   <a class="button primary" id="download" href="/sheet/print/{{ job.id }}/pdf">{{ t("sheet.download") }}</a>
 </p>
-<p><a href="/sheet">{{ t("sheet.back_to_sheet") }}</a></p>
+<p><a class="button" href="/sheet">{{ t("sheet.back_to_sheet") }}</a></p>
 
 <script type="application/json" id="page-data">{{ {"id": job.id, "words": t.strings("sheet.job_waiting", "sheet.job_pictures", "sheet.job_pdf", "sheet.job_done", "sheet.skipped")} | tojson }}</script>
 <script src="{{ asset('sheet_job.js') }}"></script>

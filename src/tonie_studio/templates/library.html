@@ -51,12 +51,10 @@
     </span>
   </div>
   {% else %}
-  <div class="item muted">{{ t("library.empty") }}</div>
+  <p class="empty">{{ t("library.empty") }}</p>
   {% endfor %}
 </div>
 <p class="muted" id="nohits" hidden>{{ t("library.no_match") }}</p>
-
-<p><a class="button" href="/tonies">{{ t("common.to_tonies") }}</a></p>
 
 <script type="application/json" id="page-data">{{ {"words": t.strings("list.shown_of"), "first": "name", "orders": columns | orders} | tojson }}</script>
 <script src="{{ asset('list.js') }}"></script>

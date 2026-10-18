@@ -755,19 +755,19 @@ class TestCoverIndexOutOfRange:
         assert client.get(f"/album/{identifier}/crop", params={"index": -5}).status_code == 404
 
 
-class TestQuickPicks:
-    """Buttons that tick several albums at once; the page script does the ticking."""
+class TestTickingAndFilters:
+    """Albums are ticked for a batch over what the search and the filters leave in view."""
 
-    def test_one_album_needs_no_quick_picks(self, client):
-        assert 'data-pick="without"' not in client.get("/").text
+    def test_one_album_needs_no_ticking_all(self, client):
+        assert 'id="tickshown"' not in client.get("/").text
 
-    def test_several_albums_offer_all_without_new_and_none(self, client):
+    def test_several_albums_can_be_ticked_and_filtered(self, client):
         upload_series(client, episodes=2)
 
         page = client.get("/").text
 
-        for pick in ("all", "without", "new", "none"):
-            assert f'data-pick="{pick}"' in page
+        assert 'id="tickshown"' in page and 'id="untick"' in page
+        assert 'data-filter="notonie"' in page
 
     def test_each_row_says_whether_it_has_a_tonie_and_is_new(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
@@ -778,6 +778,7 @@ class TestQuickPicks:
         assert page.count('data-tonie="yes"') == 1
         assert page.count('data-tonie="no"') == 2
         assert 'data-new="' in page
+        assert page.count('data-tags="notonie') == 2
 
     def test_the_page_says_from_how_many_albums_setting_up_is_slow(self, client):
         from tonie_studio.pages.albums import SLOW_PICK
@@ -862,8 +863,9 @@ class TestNotInTheLibrary:
         app = create_app(settings, client_factory=lambda: teddycloud, runner=runner, watcher=box)
         with TestClient(app) as client:
             assert set(self._rows(client).values()) == {"unknown"}
+            assert "notinlibrary" not in client.get("/").text
 
-    def test_offers_the_pick(self, client):
+    def test_offers_the_filter(self, client):
         upload_series(client, episodes=2)
 
-        assert 'data-pick="library"' in client.get("/").text
+        assert 'data-filter="notinlibrary"' in client.get("/").text

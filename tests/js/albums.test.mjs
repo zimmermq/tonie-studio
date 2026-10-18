@@ -1,108 +1,62 @@
-// The album list: selecting several albums at once, over what the search shows.
+// The album list: ticking several albums at once for a batch, over what the
+// search and the chips leave in view. Search, chips and order are list.js's.
 import assert from 'node:assert/strict';
 import { element, runPage } from './page.mjs';
 
-function row(tonie, isNew = false, library = 'no') {
+function row() {
   const box = element('');
-  return element('', '', {
-    dataset: { search: 'x', tonie: tonie ? 'yes' : 'no', new: isNew ? 'yes' : 'no', library },
-    children: { 'input[name=ids]': box },
-  });
+  return element('', '', { dataset: { search: 'x' }, children: { 'input[name=ids]': box } });
 }
-const button = pick => element('', '', { dataset: { pick } });
 
 async function page(rows) {
-  const buttons = ['all', 'without', 'library', 'new', 'none'].map(button);
   const elements = await runPage(['app.js', 'index.js'], {
-    ids: ['search', 'count', 'nohits', 'loading', 'pick', 'pickcount', 'albums', 'upload',
-          'picked', 'send'],
+    ids: ['loading', 'pick', 'pickcount', 'albums', 'upload', 'picked', 'send', 'tickshown',
+          'untick'],
     pageData: { words: { 'batch.picked': { one: '{count} album', other: '{count} albums' },
-                         'albums.pick_slow': 'slow', 'albums.count': '', 'albums.shown_of': '' },
+                         'albums.pick_slow': 'slow' },
                 slowPick: 3 },
-    queries: { '#albums .pickrow': rows, '[data-pick]': buttons },
+    queries: { '#albums .pickrow': rows },
   });
-  const press = pick => buttons.find(b => b.dataset.pick === pick).fire('click');
   const ticked = () => rows.map(r => r.querySelector('input[name=ids]').checked);
-  return { elements, buttons, press, ticked };
+  return { elements, ticked };
 }
 
-// "Without tonie" leaves the albums that have one alone.
+// "Tick all shown" ticks what is in view and leaves the rest as it was.
 {
-  const rows = [row(false), row(true), row(false)];
-  const { press, ticked, elements } = await page(rows);
-  press('without');
+  const rows = [row(), row(), row()];
+  rows[1].hidden = true;
+  const { elements, ticked } = await page(rows);
+  elements.tickshown.fire('click');
   assert.deepEqual(ticked(), [true, false, true]);
   assert.equal(elements.pick.hidden, false);
   assert.equal(elements.pickcount.textContent, '2 albums');
 }
 
-// Only what the search left visible is picked.
+// A tick stays when the view changes, so two searches can be combined.
 {
-  const rows = [row(false), row(false), row(false)];
+  const rows = [row(), row()];
+  const { elements, ticked } = await page(rows);
   rows[1].hidden = true;
-  const { press, ticked } = await page(rows);
-  press('all');
-  assert.deepEqual(ticked(), [true, false, true]);
-}
-
-// A pick sets the selection of the visible rows rather than adding to it:
-// "all" and then "without a tonie" leaves only the albums without one.
-{
-  const rows = [row(false), row(true), row(false, true)];
-  const { press, ticked, elements } = await page(rows);
-  press('all');
-  press('without');
-  assert.deepEqual(ticked(), [true, false, true]);
-  assert.equal(elements.pickcount.textContent, '2 albums');
-  press('new');
-  assert.deepEqual(ticked(), [false, false, true]);
-}
-
-// Rows the search hides keep their tick, so two searches can be combined.
-{
-  const rows = [row(true), row(false)];
-  const { press, ticked } = await page(rows);
-  rows[0].querySelector('input[name=ids]').checked = true;
+  elements.tickshown.fire('click');
+  rows[1].hidden = false;
   rows[0].hidden = true;
-  press('without');
+  elements.tickshown.fire('click');
   assert.deepEqual(ticked(), [true, true]);
 }
 
-// "Not in the library" picks what is not encoded yet; without a copy of the
-// library ("unknown") there is nothing it could pick.
+// "Untick all" clears every row and hides the bar.
 {
-  const rows = [row(false, false, 'no'), row(false, false, 'yes'), row(true, false, 'yes')];
-  const { press, ticked } = await page(rows);
-  press('library');
-  assert.deepEqual(ticked(), [true, false, false]);
-}
-{
-  const { buttons } = await page([row(false, false, 'unknown'), row(false, false, 'unknown')]);
-  assert.equal(buttons.find(b => b.dataset.pick === 'library').disabled, true);
-}
-
-// "New" picks the new ones; "none" clears everything.
-{
-  const rows = [row(false, true), row(false), row(true, true)];
-  const { press, ticked, elements } = await page(rows);
-  press('new');
-  assert.deepEqual(ticked(), [true, false, true]);
-  press('none');
-  assert.deepEqual(ticked(), [false, false, false]);
+  const rows = [row(), row()];
+  const { elements, ticked } = await page(rows);
+  elements.tickshown.fire('click');
+  elements.untick.fire('click');
+  assert.deepEqual(ticked(), [false, false]);
   assert.equal(elements.pick.hidden, true);
-}
-
-// A button with nothing to pick is greyed out instead of doing nothing.
-{
-  const { buttons } = await page([row(true), row(true)]);
-  assert.equal(buttons.find(b => b.dataset.pick === 'without').disabled, true);
-  assert.equal(buttons.find(b => b.dataset.pick === 'new').disabled, true);
-  assert.equal(buttons.find(b => b.dataset.pick === 'all').disabled, false);
 }
 
 // Shift-click ticks the range from the last click, skipping hidden rows.
 {
-  const rows = [row(false), row(false), row(false), row(false), row(false)];
+  const rows = [row(), row(), row(), row(), row()];
   rows[2].hidden = true;
   const { ticked } = await page(rows);
   const box = index => rows[index].querySelector('input[name=ids]');
@@ -115,9 +69,9 @@ async function page(rows) {
 
 // From the slow threshold on, the bar says that setting up takes a while.
 {
-  const rows = [row(false), row(false), row(false)];
-  const { press, elements } = await page(rows);
-  press('all');
+  const rows = [row(), row(), row()];
+  const { elements } = await page(rows);
+  elements.tickshown.fire('click');
   assert.match(elements.pickcount.textContent, /slow/);
 }
 console.log('albums.test: ok');

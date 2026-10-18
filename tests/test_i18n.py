@@ -20,7 +20,8 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
            "sheet.layout.", "sheet.intro.", "tonies.col_",
            "library.origin.", "library.col_",
-           "listening.filter.", "listening.col_")
+           "listening.filter.", "listening.col_",
+           "albums.filter.")
 
 
 def placeholders(text):
@@ -116,6 +117,10 @@ class TestCatalogs:
         assert {f"listening.filter.{kind}" for kind in (HEARD, QUIET)} <= keys
         assert {column.heading for column in LISTENING_COLUMNS} <= keys
 
+        from tonie_studio.pages.albums import NEW, NO_TONIE, NOT_IN_LIBRARY
+
+        assert {f"albums.filter.{tag}" for tag in (NO_TONIE, NOT_IN_LIBRARY, NEW)} <= keys
+
         from tonie_studio.sheet import LAYOUTS
 
         assert {f"sheet.{part}.{key}" for key in LAYOUTS for part in ("layout", "intro")} <= keys
@@ -179,3 +184,20 @@ class TestNegotiation:
 
     def test_a_forged_cookie_is_ignored(self):
         assert negotiate(cookie="../../etc", accept_language="") == DEFAULT
+
+
+class TestButtons:
+    def test_every_button_label_starts_with_a_capital(self):
+        # One way of writing them, on every page and in both languages.
+        import re
+
+        labels = set()
+        for path in TEMPLATES.glob("*.html"):
+            text = path.read_text(encoding="utf-8")
+            for found in re.finditer(r'<button[^>]*>(.*?)</button>|<a class="button[^"]*"[^>]*>(.*?)</a>',
+                                     text, re.S):
+                labels |= set(re.findall(r't\("([^"]+)"', found.group(1) or found.group(2)))
+        for language, catalog in catalogs().items():
+            small = [key for key in labels
+                     if isinstance(catalog.get(key), str) and catalog[key][:1].islower()]
+            assert not small, (language, sorted(small))
