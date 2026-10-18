@@ -367,6 +367,8 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
    other text and shows itself under the pointer. */
 .listing-row a, .list .item a { color: inherit; text-decoration: none; }
 .listing-row a:hover, .list .item a:hover { text-decoration: underline; }
+/* A finding names what it is about; that name leads to the tonie. */
+.list .item.checkup a.block { color: var(--accent); }
 
 .listing[data-view=grid] { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
 .listing[data-view=grid] .listing-head,
@@ -463,10 +465,18 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
   .columns .tracklist { flex: none; }
   .stackable { flex-direction: column; align-items: stretch !important; }
   .stackable > div { width: auto !important; }
-  header { flex-wrap: wrap; gap: 10px; row-gap: 4px; }
-  header a.brand { width: 100%; }
-  .mainnav { gap: 12px; }
-  .boxnow { text-align: left; }
+  /* Two lines: the name with the version and the languages, then the
+     navigation alone, tight enough that all six entries fit one line on a
+     390 px phone in German, the longer of the two languages. */
+  header { flex-wrap: wrap; gap: 10px; row-gap: 6px; padding: 10px 16px; }
+  header a.brand { flex: 1; }
+  .mainnav { order: 1; width: 100%; gap: 8px; font-size: 14px; position: relative; }
+  .boxnow { order: 2; width: 100%; text-align: left; }
+  /* A menu opens under the navigation at its right edge, not under its own
+     word: that word can sit at either end of a line, and a list hanging
+     from it would run off the screen on one side or the other. */
+  .menu { position: static; }
+  .menulist { left: auto; right: 0; }
 
   /* A fixed column beside a flexible one squeezes the flexible one to
      nothing on a narrow screen: the sticker rows lost their names entirely
