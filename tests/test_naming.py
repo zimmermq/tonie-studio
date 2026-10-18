@@ -148,6 +148,27 @@ class TestPromotions:
         assert self.by_audio[("1642145178", "821CD801")] == "10000581"
         assert self.by_audio[("555", "ABCDEF")] == "10000999"
 
+    def test_audio_nobody_lists_is_no_match(self):
+        assert self.by_audio.get(("555", "OTHER")) is None
+        assert self.by_audio.get(("999", "ABCDEF")) is None
+
+    def test_where_two_entries_list_the_same_audio_the_later_one_names_it(self):
+        twice = [{"model": "10000001", "audio_id": ["7"], "hash": ["aa"]},
+                 {"model": "10000002", "audio_id": ["7", "8"], "hash": ["bb", "aa"]}]
+
+        assert official_by_audio(twice).get(("7", "AA")) == "10000002"
+
+    def test_a_podcast_of_a_thousand_episodes_is_matched_by_each_of_them(self):
+        # The catalogue lists such podcasts as one entry with an id and a hash
+        # per episode; pairing every id with every hash made a million keys.
+        podcast = [{"model": "11000782", "audio_id": [str(n) for n in range(1000)],
+                    "hash": [f"{n:040x}" for n in range(1000)]}]
+
+        index = official_by_audio(podcast)
+
+        assert index.get(("0", f"{999:040X}")) == "11000782"
+        assert index.get(("999", f"{0:040X}")) == "11000782"
+
     def test_a_custom_model_whose_audio_became_official_is_promoted(self):
         custom = [model("TS-0020", 555, "ABCDEF"), model("TS-0021", 555, "OTHER"),
                   model("NFC-0003", 555, "abcdef")]

@@ -159,23 +159,47 @@ class Catalog:
                     entry.get("category") or "", entry.get("pic") or "")
 
 
-def official_by_audio(entries: Iterable[Mapping[str, Any]]) -> Dict[Tuple[str, str], str]:
-    """``{(audio id, HASH): model}`` over the catalogue.
+class AudioIndex:
+    """Which catalogue model an audio id and hash belong to.
 
     teddyCloud accepts any of an entry's audio ids together with any of its
-    hashes, so every pair is a key.
+    hashes. Every such pair as a key of its own grows with the square of an
+    entry's length: the catalogue lists a daily podcast as one entry with a
+    thousand ids and hashes, a million pairs and some 400 MB. Each id points
+    to the entries listing it instead, with their hashes as a set. Where two
+    entries list the same audio, the later one names it.
     """
-    index = {}
-    for entry in entries:
-        if not entry.get("model"):
-            continue
-        for audio_id in entry.get("audio_id") or []:
-            for sha1 in entry.get("hash") or []:
-                index[(str(audio_id), str(sha1).upper())] = entry["model"]
-    return index
+
+    def __init__(self, entries: Iterable[Mapping[str, Any]]):
+        self._by_id: Dict[str, List[Tuple[frozenset, str]]] = {}
+        for entry in entries:
+            if not entry.get("model"):
+                continue
+            hashes = frozenset(str(sha1).upper() for sha1 in entry.get("hash") or [])
+            for audio_id in entry.get("audio_id") or []:
+                self._by_id.setdefault(str(audio_id), []).append((hashes, entry["model"]))
+
+    def get(self, key: Tuple[str, str], default: Optional[str] = None) -> Optional[str]:
+        """The model for ``(audio id, HASH)``, or ``default``; the hash in capitals."""
+        audio_id, sha1 = key
+        for hashes, model in reversed(self._by_id.get(audio_id, [])):
+            if sha1 in hashes:
+                return model
+        return default
+
+    def __getitem__(self, key: Tuple[str, str]) -> str:
+        model = self.get(key)
+        if model is None:
+            raise KeyError(key)
+        return model
 
 
-def promotions(models: Iterable[Model], by_audio: Mapping[Tuple[str, str], str],
+def official_by_audio(entries: Iterable[Mapping[str, Any]]) -> AudioIndex:
+    """The catalogue's models by ``(audio id, HASH)``; see AudioIndex."""
+    return AudioIndex(entries)
+
+
+def promotions(models: Iterable[Model], by_audio: AudioIndex,
                unsuitable: Callable[[str], bool]) -> Dict[str, str]:
     """``{custom model: official model}`` for the custom models the catalogue now covers.
 
@@ -229,7 +253,7 @@ def fingerprint(todo: Plan) -> str:
 
 
 def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
-         by_audio: Mapping[Tuple[str, str], str], models: List[Model],
+         by_audio: AudioIndex, models: List[Model],
          headers: Mapping[str, Mapping[str, Any]], migrate: bool = False,
          relink: bool = True, retitle: bool = False) -> Plan:
     """What naming the tonies in ``dumps`` (``{ruid: dump path}``) takes.
@@ -327,7 +351,7 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
 
 
 def _retitles(by_ruid: Mapping[str, TonieTag], dumps: Mapping[str, str], handled: set,
-              catalog: Catalog, by_audio: Mapping[Tuple[str, str], str], models: List[Model],
+              catalog: Catalog, by_audio: AudioIndex, models: List[Model],
               headers: Mapping[str, Mapping[str, Any]]) -> List[Step]:
     """Better names for this app's models of imported tonies.
 
@@ -412,10 +436,10 @@ class Namer:
         self.client = client
         self.dumps = dumps
         self.clock = clock
-        self._catalog: Optional[Tuple[float, Catalog, Dict[Tuple[str, str], str]]] = None
+        self._catalog: Optional[Tuple[float, Catalog, AudioIndex]] = None
         self._lock = threading.Lock()
 
-    def catalog(self) -> Tuple[Catalog, Dict[Tuple[str, str], str]]:
+    def catalog(self) -> Tuple[Catalog, AudioIndex]:
         if self._catalog is None or self.clock() - self._catalog[0] > CATALOG_TTL:
             entries = self.client().tonies_json()
             self._catalog = (self.clock(), Catalog(entries), official_by_audio(entries))
