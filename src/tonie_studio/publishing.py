@@ -144,6 +144,7 @@ def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome
         year=outcome.details.year,
         require_free=require_free,
         model_id=model_id,
+        data_dir=data_dir,
     )
     outcome.model, outcome.ruid = model_id, ruid
     remember(data_dir, model_id, outcome.seconds)

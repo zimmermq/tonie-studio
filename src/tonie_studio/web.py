@@ -26,6 +26,7 @@ from .backup import clear_parked
 from .boxstate import BoxWatcher
 from .cache import BackgroundCache
 from .catalogue import Catalogue
+from .compress import CompressMiddleware
 from .encode import list_tafs, remove_orphaned_staging
 from .importing import Importer
 from .naming import Namer
@@ -111,7 +112,7 @@ def create_app(
         name="library", ttl=LIBRARY_TTL)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
     importer = importer or Importer(client, settings.data_dir)
-    namer = Namer(client, importer.dumps)
+    namer = Namer(client, importer.dumps, data_dir=settings.data_dir)
     shop = shop or Shop(settings.data_dir)
     # Whoever built the importer decides what follows an import, unless they
     # left it open: then each imported tonie is named straight away.
@@ -151,6 +152,7 @@ def create_app(
             stopping.set()
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
+    app.add_middleware(CompressMiddleware)
     app.mount("/static", VersionedStatic(directory=str(STATIC)), name="static")
     app.state.settings = settings
     app.state.catalogue = catalogue

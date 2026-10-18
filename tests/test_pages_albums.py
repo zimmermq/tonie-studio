@@ -16,6 +16,35 @@ from tonie_studio.teddycloud import TeddyCloudError
 from tonie_studio.web import create_app
 
 
+class TestAnAlbumWithATonie:
+    # The batch page would only say the album is skipped; what one wants from
+    # such a row is the tonie.
+    def test_its_row_leads_to_the_tonie(self, client, settings):
+        from tonie_studio.albumnotes import remember_made
+
+        identifier = first_album_id(client)
+        remember_made(settings.data_dir, identifier, "TS-0012")
+
+        page = client.get("/").text
+
+        assert 'href="/model/TS-0012"' in page
+        assert f'href="/batch?ids={identifier}"' not in page
+
+    def test_the_tonie_is_the_sticker_it_is_on(self, client, teddycloud):
+        teddycloud.add_tag("e00403500e1234ab", source="lib://a.taf", tonie_model="TS-0012")
+
+        response = client.get("/model/TS-0012", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/tonies/e00403500e1234ab"
+
+    def test_without_a_sticker_its_cover_is_offered(self, client):
+        response = client.get("/model/TS-0012", follow_redirects=False)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/sheet?model=TS-0012"
+
+
 class TestIndex:
     def test_shows_the_readable_title_not_the_scene_folder(self, client):
         page = client.get("/").text
@@ -363,6 +392,27 @@ class TestUpload:
         response = client.post("/upload", files=[("files", ("01.mp3", b"x", "audio/mpeg"))])
 
         assert response.status_code == 507
+
+    def test_an_upload_larger_than_the_free_space_is_refused_before_it_is_read(
+            self, client, monkeypatch):
+        import shutil
+        from collections import namedtuple
+
+        usage = namedtuple("usage", "total used free")
+        monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(10**9, 10**9 - 10, 10))
+
+        response = client.post("/upload", files=[("files", ("01.mp3", b"x" * 4096, "audio/mpeg"))])
+
+        assert response.status_code == 507
+
+    def test_files_are_held_in_memory_only_briefly(self):
+        # Up to MOST_UPLOAD_PARTS files, each held in memory up to this size
+        # before it goes to disk: the default of a megabyte would be gigabytes.
+        from starlette.formparsers import MultiPartParser
+
+        import tonie_studio.pages.common  # noqa: F401 - setting it is its import
+
+        assert MultiPartParser.spool_max_size <= 64 * 1024
 
     def test_a_broken_form_is_not_called_too_many_files(self, client):
         from tonie_studio.i18n import Translator

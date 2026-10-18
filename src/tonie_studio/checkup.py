@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .encode import Taf, aside_of, delete_taf, list_tafs
-from .library import is_library, played, same
-from .models import MODEL_PREFIX, Model, find_model, list_models, update_model
+from .library import is_library, path_of, played, same, source_of
+from .models import MODEL_PREFIX, WRITING, Model, find_model, list_models, update_model
 from .tags import TonieError, TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .tonie import delete_model
@@ -38,6 +38,9 @@ from .tonie import delete_model
 # The repairs offered for every finding at once. Only one that flips a flag
 # belongs here: deleting and emptying stay one at a time, each shown first.
 BULK_FIXES = frozenset({"nocloud"})
+
+# Findings whose target is a sticker's ruid, so the page can lead to its tonie.
+TAG_KINDS = frozenset({"missing_taf", "cloud_fallback", "nameless"})
 
 log = logging.getLogger(__name__)
 
@@ -113,9 +116,10 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
         tafs = None
 
     findings: List[Finding] = []
-    findings += _tag_findings(tags, tafs)
+    spared = {same(path) for path in busy}
+    findings += _tag_findings(tags, tafs, spared)
     findings += _model_findings(models)
-    findings += _leftovers(tags, models, tafs, {same(path) for path in busy},
+    findings += _leftovers(tags, models, tafs, spared,
                            tuple(same(folder).rstrip("/") + "/" for folder in busy_folders))
     if tafs is None:
         findings.append(Finding(
@@ -128,7 +132,7 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     return sorted(findings, key=lambda finding: SEVERITIES.index(finding.severity))
 
 
-def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Finding]:
+def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]], busy: set) -> List[Finding]:
     findings = []
     present = played(taf.source for taf in tafs) if tafs is not None else None
 
@@ -138,7 +142,10 @@ def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Findi
             continue
         ruid, name = tag.ruid, tag.label
 
-        if present is not None and same(source) not in present:
+        # Audio an encode is about to write - a rebuild of this very tonie,
+        # say - is on its way rather than missing.
+        missing = present is not None and same(source) not in present
+        if missing and same(path_of(source)) not in busy:
             fixed = repaired(source)
             if fixed and same(fixed) in present:
                 findings.append(Finding(
@@ -149,7 +156,7 @@ def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Findi
             else:
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
-                    detail="checkup.missing_taf", params={"source": source},
+                    detail="checkup.missing_taf", params={"source": source, "model": tag.model},
                     fix="empty_sticker", preview_key="checkup.empties_sticker",
                 ))
 
@@ -252,31 +259,40 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
 def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -> None:
     """Make one repair a finding offered.
 
-    Nothing here checks whether the finding still holds: the caller runs the
-    checks again first, or a repair could undo something done in the meantime.
+    The caller runs the checks again first, or a repair could undo something
+    done in the meantime. The deletions check once more under the lock every
+    model and tag write shares, right before deleting: a sticker given that
+    taf or model since must not lose it.
     """
-    if fix == "nocloud":
-        client.set_tag(target, nocloud=True)
-    elif fix == "repair_source":
-        tag = find_tag(client, target)
-        fixed = repaired(tag.source if tag else None)
-        if not fixed:
-            raise TonieError("checkup.nothing_to_repair", target=target)
-        client.set_tag(target, source=fixed)
-    elif fix == "repair_model":
-        model = find_model(client, target)
-        if model is None:
-            raise TonieError("tonie.model_missing", model=target)
-        changes = model_repairs(model)
-        update_model(client, target, series=changes.get("series"),
-                     episode=changes.get("episode"), tracks=changes.get("tracks"))
-    elif fix == "empty_sticker":
-        # The model goes too: without it, the empty sticker would still carry
-        # the old name and cover in teddyCloud.
-        client.set_tag(target, source="", tonie_model="")
-    elif fix == "delete_taf":
-        delete_taf(client, target)
-    elif fix == "delete_model":
-        delete_model(client, target, data_dir)
-    else:
-        raise ValueError(f"unknown repair {fix!r}")
+    with WRITING:
+        if fix == "nocloud":
+            client.set_tag(target, nocloud=True)
+        elif fix == "repair_source":
+            tag = find_tag(client, target)
+            fixed = repaired(tag.source if tag else None)
+            if not fixed:
+                raise TonieError("checkup.nothing_to_repair", target=target)
+            client.set_tag(target, source=fixed)
+        elif fix == "repair_model":
+            model = find_model(client, target)
+            if model is None:
+                raise TonieError("tonie.model_missing", model=target)
+            changes = model_repairs(model)
+            update_model(client, target, series=changes.get("series"),
+                         episode=changes.get("episode"), tracks=changes.get("tracks"))
+        elif fix == "empty_sticker":
+            # The link to the model goes too: without it, the empty sticker
+            # would still carry the old name and cover in teddyCloud. That
+            # link is also what a rebuild finds the sticker by, so the page
+            # offers making the tonie again before this.
+            client.set_tag(target, source="", tonie_model="")
+        elif fix == "delete_taf":
+            if any(same(tag.source) == same(source_of(target)) for tag in list_tags(client)):
+                raise TonieError("checkup.now_used", target=target)
+            delete_taf(client, target)
+        elif fix == "delete_model":
+            if any((tag.model or "").lower() == target.lower() for tag in list_tags(client)):
+                raise TonieError("checkup.now_used", target=target)
+            delete_model(client, target, data_dir)
+        else:
+            raise ValueError(f"unknown repair {fix!r}")

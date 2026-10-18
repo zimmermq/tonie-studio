@@ -42,10 +42,16 @@ function show(job) {
   return true;
 }
 
+// A missed answer is asked again, but a job the server no longer knows - it
+// restarted, and jobs live only in memory - is gone for good.
 if (data.running) {
   every(1000, async () => {
     const response = await ask(`/api/job/${id}`);
-    // A job that is gone stays gone; there is nothing left to watch.
-    return response.ok ? show(await response.json()) : false;
+    if (response.status === 404) {
+      detail.textContent = '';
+      ended(words['job.gone'], true);
+      return false;
+    }
+    return response.ok ? show(await response.json()) : true;
   });
 }

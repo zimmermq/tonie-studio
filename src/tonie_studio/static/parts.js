@@ -22,8 +22,13 @@ function moveTo(step) {
 const group = data.group;
 every(3000, async () => {
   const response = await ask(`/api/group/${group}`);
-  // A group that is gone stays gone; there is nothing left to watch.
-  if (!response.ok) return false;
+  // A missed answer is asked again, but a group the server no longer knows -
+  // it restarted, and jobs live only in memory - is gone for good.
+  if (response.status === 404) {
+    document.getElementById('gone').hidden = false;
+    return false;
+  }
+  if (!response.ok) return true;
   const answer = await response.json();
   let running = false;
   let waitingForSticker = false;
@@ -65,6 +70,7 @@ let lastSticker = null;
 // One sticker at a time: a box report arriving while the last placement is
 // still being answered waits for the next one.
 let asking = false;
+const PLACE_MS = 30000;
 document.addEventListener('box', async event => {
   if (asking) return;
   asking = true;
@@ -75,7 +81,8 @@ document.addEventListener('box', async event => {
     if (ruid && ruid !== lastSticker) {
       const body = new FormData();
       body.append('ruid', ruid);
-      const response = await fetch(`/api/batch/${group}/place`, {method: 'POST', body});
+      // Placing writes to teddyCloud, which can take a while, but not for ever.
+      const response = await ask(`/api/batch/${group}/place`, {method: 'POST', body}, PLACE_MS);
       const answer = await response.json();
       if (!response.ok) {
         // Said where the person is looking; lifting the sticker asks again.

@@ -199,6 +199,13 @@ def _get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
     return response.json()
 
 
+# How long the shop is left alone after it did not answer, in seconds. Every
+# view of the tonie list asks it; while it is away, each would wait for the
+# timeout once per batch. Kept in memory only: the shop being away says
+# nothing about the tonies.
+AWAY_FOR = 10 * 60
+
+
 class Shop:
     """Asks the shop about tonies and keeps what it said."""
 
@@ -209,6 +216,8 @@ class Shop:
         # test can keep the real shop out by replacing _get.
         self.fetch = fetch or _get
         self.clock = clock
+        # Until when the shop is taken to be away; see AWAY_FOR.
+        self._away_until = 0.0
 
     def lookup(self, sales_id: str, language: str = LANGUAGE) -> Optional[ShopInfo]:
         """What the shop says about the product with article number ``sales_id``."""
@@ -237,15 +246,18 @@ class Shop:
                 ask.append(sales_id)
 
         answers: Dict[str, Optional[ShopInfo]] = {}
+        if self.clock() < self._away_until:
+            ask = []
         for start in range(0, len(ask), BATCH):
             batch = ask[start:start + BATCH]
             try:
                 answer = self.fetch(API, {"shopLocale": SHOP_LOCALE, "salesId": ",".join(batch),
                                           "limit": str(len(batch))})
             except (OSError, ValueError, requests.RequestException) as error:
-                log.warning("tonies.com could not be asked about %d product(s): %s",
-                            len(batch), error)
-                continue
+                log.warning("tonies.com could not be asked about %d product(s), not again "
+                            "for %d minutes: %s", len(batch), AWAY_FOR // 60, error)
+                self._away_until = self.clock() + AWAY_FOR
+                break
             infos = {info.sales_id: info
                      for info in map(info_from, answer.get("documents") or [])}
             answers.update({sales_id: infos.get(sales_id) for sales_id in batch})

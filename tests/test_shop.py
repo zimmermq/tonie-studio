@@ -88,6 +88,24 @@ class TestLookup:
         assert Shop(tmp_path, fetch=broken).lookup("10001924") is None
         assert Shop(tmp_path, fetch=api).lookup("10001924") is not None
 
+    def test_while_away_it_is_not_asked_again_for_a_while(self, tmp_path):
+        # Every view of the tonie list would otherwise wait for the shop's
+        # timeout, batch after batch.
+        calls, clock = [], [1000.0]
+
+        def broken(url, params):
+            calls.append(params)
+            raise OSError("no route")
+
+        shop = Shop(tmp_path, fetch=broken, clock=lambda: clock[0])
+        shop.lookup_many(["10001924", "11003868"])
+        shop.lookup_many(["10001924"])
+        assert len(calls) == 1
+
+        clock[0] += 11 * 60
+        shop.lookup_many(["10001924"])
+        assert len(calls) == 2
+
     def test_only_the_german_shop_is_asked(self, tmp_path):
         api = Api([MADAGASCAR])
 

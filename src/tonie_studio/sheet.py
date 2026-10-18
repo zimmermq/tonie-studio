@@ -32,14 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 from .i18n import DEFAULT, Translator
-from .pictures import around_figure, centre_square, inset, on_white
+from .pictures import PICTURE_ERRORS, around_figure, centre_square, inset, on_white
 
 log = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ def build_sheet(stickers: Sequence[Sticker], target: Path,
                 square.write_bytes(render_square(source, sticker.mode,
                                                  fade=BACK_FADE if sticker.back else 0.0,
                                                  layout=layout))
-            except (OSError, UnidentifiedImageError, ValueError) as error:
+            except PICTURE_ERRORS as error:
                 log.warning("skipping cover %r: %s", sticker.label, error)
                 skipped.append(sticker.label or "unnamed")
                 continue

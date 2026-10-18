@@ -537,6 +537,43 @@ class TestPublishingIntoAnExistingModel:
         assert find_model(teddycloud, model_id).tracks == ["Folge 9", "Folge 8"]
 
 
+class TestModelIdsAreNeverHandedOutTwice:
+    def test_the_id_of_a_deleted_model_is_not_given_to_the_next_one(self, teddycloud, encoded,
+                                                                     tmp_path):
+        # Kept by id elsewhere - a backup, a podcast subscription, the album
+        # records - a reused id would make those write into a different tonie.
+        from tonie_studio.models import remove_model
+
+        first = publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="A",
+                        tracks=[], data_dir=tmp_path)
+        remove_model(teddycloud, first)
+
+        second = publish(teddycloud, "deb4ed0e500304e0", encoded, series="S", episode="B",
+                         tracks=[], data_dir=tmp_path)
+
+        assert second != first
+
+    def test_naming_continues_above_them_too(self, teddycloud, tmp_path):
+        from tonie_studio.models import highest_id_used, note_id_used, next_model_id
+
+        note_id_used(tmp_path, "TS-0041")
+
+        assert next_model_id(teddycloud, tmp_path) == "TS-0042"
+        assert highest_id_used(tmp_path) == 42
+
+
+class TestCopyingTakesTheWritersLock:
+    def test_a_copy_waits_for_other_writes(self, teddycloud, encoded):
+        # Read and written while a cleanup checks whether the audio is still
+        # played, a copy could end up pointing at audio that was just deleted.
+        from web_helpers import waits_for_writing
+
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=[])
+
+        assert waits_for_writing(lambda: copy_tag(teddycloud, "7ab4ed0e500304e0",
+                                                  "deb4ed0e500304e0"))
+
+
 class TestPublishingAtOnce:
     def test_two_publishes_at_the_same_time_make_two_models(self, teddycloud, encoded, cover):
         teddycloud.unique_audio = True

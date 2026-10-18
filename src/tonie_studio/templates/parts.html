@@ -16,6 +16,8 @@
 </div>
 {% endif %}
 
+<p class="card state-failed" id="gone" role="status" hidden>{{ t("parts.gone") }}</p>
+
 <div class="list">
 {% for job in jobs %}
   <div class="item" data-job="{{ job.id }}">

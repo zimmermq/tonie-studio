@@ -15,7 +15,7 @@ from .. import backup as backup_module
 from ..albumnotes import made
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
                       drop_parked, park, plan_restore, read_backup, read_parked)
-from ..checkup import BULK_FIXES, apply_fix, examine
+from ..checkup import BULK_FIXES, TAG_KINDS, apply_fix, examine
 from ..encode import EncodeError, list_tafs
 from ..library import is_library, played, same
 from ..podcast import SERIES as PODCAST_SERIES
@@ -49,8 +49,13 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/checkup", response_class=HTMLResponse)
     def checkup_page(request: Request, done: str = "", stale: str = ""):
         findings = examine(client(), **work_in_progress())
+        # A silent tonie made from an album here can be encoded again from it.
+        album_of = {model: album for album, models in made(settings.data_dir).items()
+                    for model in models}
         return templates.TemplateResponse(request, "checkup.html", {
             "findings": findings,
+            "album_of": album_of,
+            "tag_kinds": TAG_KINDS,
             "done": done,
             "stale": stale,
         })

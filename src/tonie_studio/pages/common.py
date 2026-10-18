@@ -12,15 +12,18 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import shutil
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Iterator, Optional, Set, Tuple, Type
+from typing import AsyncIterator, Callable, Dict, Iterable, Iterator, Optional, Set, Tuple, Type
 
 from fastapi import Request, UploadFile
 from starlette.datastructures import FormData
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.formparsers import MultiPartParser
 from fastapi.templating import Jinja2Templates
 
 from .. import encode
@@ -51,6 +54,16 @@ MOST_UPLOAD_PARTS = 20000
 # The largest picture an upload may be, in bytes: covers are a few hundred
 # kilobytes, a large photo some ten megabytes.
 LARGEST_PICTURE = 20 * 1024 * 1024
+
+# The largest text field a form may carry; the forms here send names and
+# numbers. Files are not fields and are not bound by it.
+LARGEST_FIELD = 64 * 1024
+
+# An uploaded file is held in memory up to this many bytes before it goes to
+# disk. Starlette's own megabyte, with up to MOST_UPLOAD_PARTS files in one
+# upload, would be gigabytes of memory before a single check could run. Set on
+# the parser class: Starlette offers no other way, and every form is the same.
+MultiPartParser.spool_max_size = 64 * 1024
 
 # Below this many seconds of audio an encode is done before minutes would mean
 # anything, so its progress is not counted in them.
@@ -112,16 +125,25 @@ def refusing(*kinds: Type[BaseException], status: int = 400) -> Iterator[None]:
         raise Refused(status, "error.failed", detail=error) from error
 
 
-async def upload_form(request: Request) -> FormData:
+async def upload_form(request: Request) -> AsyncIterator[FormData]:
     """The request's form, read with room for a whole folder of files.
 
     A dependency, ``Depends(upload_form)``, for routes that declare no form
     parameters of their own: FastAPI would otherwise read the form first,
     with the parser's defaults. Being async, only the reading happens on the
-    event loop; the route itself still runs in the thread pool.
+    event loop; the route itself still runs in the thread pool. The form is
+    closed once the route is done, which lets its files go.
+
+    An upload is buffered on the disk as it arrives and then copied into its
+    folder, so it needs twice its size; one that cannot fit is refused before
+    a byte of it is read rather than half way.
     """
+    size = int(request.headers.get("content-length") or 0)
+    if size and 2 * size > _free_space(Path(tempfile.gettempdir())):
+        raise Refused(507, "upload.no_space")
     try:
-        return await request.form(max_files=MOST_UPLOAD_PARTS, max_fields=MOST_UPLOAD_PARTS)
+        form = await request.form(max_files=MOST_UPLOAD_PARTS, max_fields=MOST_UPLOAD_PARTS,
+                                  max_part_size=LARGEST_FIELD)
     except StarletteHTTPException as error:
         if str(error.detail).startswith("Too many"):
             raise Refused(400, "error.upload_too_many", most=MOST_UPLOAD_PARTS) from error
@@ -131,6 +153,18 @@ async def upload_form(request: Request) -> FormData:
         if error.errno == errno.ENOSPC:
             raise Refused(507, "upload.no_space") from error
         raise
+    try:
+        yield form
+    finally:
+        await form.close()
+
+
+def _free_space(folder: Path) -> int:
+    """Bytes free where ``folder`` is; plenty when that cannot be told."""
+    try:
+        return shutil.disk_usage(folder).free
+    except OSError:
+        return 2 ** 62
 
 
 def album_or_404(catalogue: Catalogue, identifier: str) -> Path:

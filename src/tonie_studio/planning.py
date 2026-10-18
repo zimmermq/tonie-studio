@@ -17,7 +17,7 @@ from .albumnotes import match_by_tracks
 from .batch import allocate, episode_order
 from .encode import existing_taf, library_path, taf_exists
 from .i18n import Problem
-from .library import is_library, path_of, played, same, source_of
+from .library import is_library, path_of, played, safe_library_path, same, source_of
 from .models import Model
 from .parts import MOST_CHAPTERS, fewest_parts, part_name, split
 from .publishing import free_tags
@@ -216,6 +216,7 @@ def _plan_rebuild(client: TeddyCloudClient, row: BatchRow, tags: Sequence) -> No
         return
     for tag in tags:
         if (tag.model and tag.model.lower() == row.tonie.lower() and is_library(tag.source)
+                and safe_library_path(path_of(tag.source))
                 and not taf_exists(client, path_of(tag.source))):
             row.parts[0] = replace(row.parts[0], target=path_of(tag.source))
             row.occupied = row.reusable = False

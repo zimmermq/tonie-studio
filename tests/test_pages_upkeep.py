@@ -2,7 +2,7 @@
 
 
 
-from web_helpers import encode_and_assign_page, publish_album
+from web_helpers import encode_and_assign_page, first_album_id, publish_album
 
 from tonie_studio.tags import list_tags
 
@@ -84,6 +84,26 @@ class TestCheckupPage:
         assert teddycloud.tag_entries[ruid]["source"] == ""
         assert teddycloud.tag_entries[ruid]["tonie_model"] == ""
         assert ruid in [tag.ruid for tag in list_tags(teddycloud) if not tag.assigned]
+
+    def test_offers_to_make_a_silent_tonie_again_first(self, client, runner, teddycloud):
+        # Emptying loses the tonie; its album is still here to encode again.
+        publish_album(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        teddycloud.tag_entries[ruid].update(source="lib://Weg/Weg.taf", nocloud=True)
+        album = first_album_id(client)
+
+        page = client.get("/checkup").text
+
+        rebuild = f'href="/batch?ids={album}"'
+        assert rebuild in page
+        assert page.index(rebuild) < page.index('value="empty_sticker"')
+
+    def test_a_finding_about_a_sticker_leads_to_its_tonie(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        ruid = next(r for r, e in teddycloud.tag_entries.items() if e["source"])
+        teddycloud.tag_entries[ruid].update(source="lib://Weg/Weg.taf", nocloud=True)
+
+        assert f'href="/tonies/{ruid}"' in client.get("/checkup").text
 
     def test_asks_before_emptying_a_sticker(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

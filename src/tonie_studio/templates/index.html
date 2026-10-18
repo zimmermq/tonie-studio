@@ -17,7 +17,7 @@
      data-tonie="{{ 'yes' if id in done else 'no' }}" data-new="{{ 'yes' if id in new else 'no' }}"
      data-library="{{ 'unknown' if in_library is none else ('yes' if id in in_library else 'no') }}">
 <input type="checkbox" name="ids" value="{{ id }}" form="pick" aria-label="{{ t('batch.pick_label', name=album.title or album.name) }}">
-<a class="item" href="/batch?ids={{ id }}">
+<a class="item" href="{{ '/model/' ~ (done[id] | urlencode) if id in done else '/batch?ids=' ~ id }}">
   {{ thumb("/album/" ~ id ~ "/cover?size=" ~ thumb_size if album.has_cover) }}
   <span class="grow truncate">
     <strong class="truncate">{{ album.title or album.name }}

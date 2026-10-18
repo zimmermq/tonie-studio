@@ -171,6 +171,47 @@ class TestRefresh:
         assert not any(path.is_file() for path in (tmp_path / "podcasts").rglob("*"))
 
 
+class TestRecovering:
+    def test_episodes_whose_audio_is_gone_are_made_again(self, cloud, subscription, tmp_path):
+        # After a restore or a delete in the library: nothing new in the feed
+        # must not mean the sticker stays silent until the next episode.
+        refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
+        source = cloud.tag_entries[RUID]["source"]
+        cloud.files.pop("/" + source[len("lib://"):])
+
+        changed = refresh(cloud, subscription, tmp_path, now=NOW.replace(day=2), fetch=FakeWeb())
+
+        playing = cloud.tag_entries[RUID]["source"]
+        assert changed and "/" + playing[len("lib://"):] in cloud.files
+
+    def test_audio_put_on_the_sticker_before_a_crash_is_taken_as_its_own(self, cloud,
+                                                                           subscription,
+                                                                           tmp_path):
+        # Published, then the process died before the subscription was saved:
+        # the sticker plays this podcast's newer taf, which is no stranger's.
+        refresh(cloud, subscription, tmp_path, now=NOW, fetch=FakeWeb())
+        saved_source = subscription.source
+        newer = FEED.replace(b"<guid>ep-3</guid>", b"<guid>ep-4</guid>")
+        refresh(cloud, subscription, tmp_path, now=NOW.replace(day=10), fetch=FakeWeb(newer))
+        subscription.source = saved_source          # what the lost save left behind
+        subscription.guids = []
+
+        refresh(cloud, subscription, tmp_path, now=NOW.replace(day=11), fetch=FakeWeb(newer))
+
+        assert subscription.error_key == ""
+
+
+class TestMovingTheSticker:
+    def test_the_subscription_follows_it(self, tmp_path, subscription):
+        from tonie_studio.podcast import add_subscription, move_subscriptions
+
+        add_subscription(tmp_path, subscription)
+
+        move_subscriptions(tmp_path, RUID, "e00403500000ffff")
+
+        assert [entry.ruid for entry in load_subscriptions(tmp_path)] == ["e00403500000ffff"]
+
+
 class TestStore:
     def test_subscriptions_survive_a_restart(self, tmp_path, subscription):
         add_subscription(tmp_path, subscription)

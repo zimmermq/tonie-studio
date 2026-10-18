@@ -29,10 +29,12 @@ class TtlCache(Generic[K, T]):
     """The answer of ``load`` for each key, reused for ``ttl`` seconds.
 
     A missing or stale answer is loaded while the caller waits; a load that
-    raises is passed on and not kept, so the next call tries again. Two
-    callers missing at once may both load, which costs time, never a wrong
-    answer. An answer whose load began before a ``forget`` is handed to its
-    caller but not kept. ``clock`` is for tests.
+    raises is passed on and not kept, so the next call tries again. Callers
+    missing the same key at once share one load: the first loads, the others
+    wait for its answer - twenty cover requests arriving together would
+    otherwise walk the archive twenty times. An answer whose load began
+    before a ``forget`` is handed to its caller but not kept. ``clock`` is
+    for tests.
     """
 
     def __init__(self, load: Callable[[K], T], ttl: float,
@@ -44,19 +46,33 @@ class TtlCache(Generic[K, T]):
         # Counts forgets, so a load can tell one happened while it ran.
         self._generation = 0
         self._lock = threading.Lock()
+        # One per key being loaded, held for the load.
+        self._loading: Dict[K, threading.Lock] = {}
 
-    def get(self, key: K) -> T:
-        now = self.clock()
+    def _fresh(self, key: K) -> Optional[Tuple[float, T]]:
         with self._lock:
             kept = self._answers.get(key)
-            generation = self._generation
-        if kept and now - kept[0] < self.ttl:
+        return kept if kept and self.clock() - kept[0] < self.ttl else None
+
+    def get(self, key: K) -> T:
+        kept = self._fresh(key)
+        if kept:
             return kept[1]
-        value = self.load(key)
         with self._lock:
-            if generation == self._generation:
-                self._answers[key] = (now, value)
-        return value
+            loading = self._loading.setdefault(key, threading.Lock())
+        with loading:
+            # Another caller may have loaded it while this one waited.
+            kept = self._fresh(key)
+            if kept:
+                return kept[1]
+            now = self.clock()
+            with self._lock:
+                generation = self._generation
+            value = self.load(key)
+            with self._lock:
+                if generation == self._generation:
+                    self._answers[key] = (now, value)
+            return value
 
     def forget(self) -> None:
         """Drop every answer, for a change that has to show on the next call."""

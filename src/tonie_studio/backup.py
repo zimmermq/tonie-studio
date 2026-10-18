@@ -35,9 +35,9 @@ from .albumnotes import MADE_FILE, add_made
 from .calibration import FILE_NAME as CALIBRATION_FILE
 from .encode import list_tafs
 from .i18n import Problem
-from .library import is_library, played, same
+from .library import is_library, path_of, played, safe_library_path, same
 from .listening import FILE_NAME as LISTENING_FILE
-from .models import WRITING, Model, fetch_cover, is_cover_name
+from .models import WRITING, Model, fetch_cover, is_cover_name, note_id_used
 from .podcast import FILE_NAME as PODCASTS_FILE
 from .podcast import Subscription, add_subscription, is_subscription_id, load_subscriptions
 from .runtimes import FILE_NAME as TIMES_FILE
@@ -314,14 +314,22 @@ def apply_restore(client: TeddyCloudClient, backup: Backup, data_dir: Path) -> L
 def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bool) -> List[Step]:
     steps: List[Step] = []
 
+    # Models the backup has, this box does not, and that could not be written.
+    missing_models: set = set()
     with WRITING if write else nullcontext():
         current_models = {str(model.get("model", "")).lower(): model
                           for model in client.custom_tonies()}
         for model in backup.models:
             existing = current_models.get(str(model["model"]).lower())
             action = NEW if existing is None else (SAME if existing == model else CHANGES)
-            steps.append(_attempt(write and action != SAME, MODEL, _model_label(model), action,
-                                  lambda model=model: client.upsert_custom_tonie(model)))
+            step = _attempt(write and action != SAME, MODEL, _model_label(model), action,
+                            lambda model=model: client.upsert_custom_tonie(model))
+            if step.action == FAILED and existing is None:
+                missing_models.add(str(model["model"]).lower())
+            elif write:
+                # Back in teddyCloud: its number is taken, and stays so.
+                note_id_used(data_dir, str(model["model"]))
+            steps.append(step)
 
     for name, data in sorted(backup.covers.items()):
         try:
@@ -346,8 +354,19 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
 
         wanted = _restorable(record)
         current = _tag_record(tag)
-        changed = {field: value for field, value in wanted.items() if current.get(field) != value}
         note = _missing_note(record.get("source") or "", present)
+        if (note == "restore.note.taf_missing" and is_library(tag.source)
+                and present is not None and same(tag.source) in present):
+            # The sticker plays other audio that is there, given to it since
+            # the backup was made; pointing it back would silence it.
+            wanted.pop("source", None)
+            wanted.pop("live", None)
+            note = "restore.note.kept_playing"
+        if str(wanted.get("tonie_model", "")).lower() in missing_models:
+            # Named after a model that is not there, the sticker would show
+            # as unknown; the failed model step says why.
+            wanted.pop("tonie_model")
+        changed = {field: value for field, value in wanted.items() if current.get(field) != value}
         steps.append(_attempt(write and bool(changed), TAG, label,
                               CHANGES if changed else SAME,
                               lambda ruid=ruid, changed=changed: _set_tag(client, ruid, changed),
@@ -395,8 +414,16 @@ def _restorable(record: Dict) -> Dict:
     again - a restore causing the very loss it is meant to undo.
     """
     wanted: Dict = {}
-    if record.get("source"):
-        wanted["source"] = record["source"]
+    # A backup is a file anyone could have edited: a library source that
+    # leads out of the library, or a source that is neither a taf nor an
+    # http(s) stream, is no source to give a sticker.
+    source = str(record.get("source") or "")
+    if is_library(source):
+        source = source if safe_library_path(path_of(source)) else ""
+    elif not source.lower().startswith(("http://", "https://")):
+        source = ""
+    if source:
+        wanted["source"] = source
         wanted["live"] = bool(record.get("live"))
     if record.get("tonie_model"):
         wanted["tonie_model"] = record["tonie_model"]

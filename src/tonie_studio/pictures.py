@@ -24,6 +24,16 @@ from PIL import Image, ImageFilter, UnidentifiedImageError
 
 log = logging.getLogger(__name__)
 
+# Pillow refuses to decode more pixels than this, raising DecompressionBombError
+# (and warns from half of it). Its default of 89 million decodes to some 270 MB
+# per picture in a request thread; a cover of 6000 x 6000 is still well inside.
+# Pictures come from feeds, the shop and uploads, none of them this app's own.
+Image.MAX_IMAGE_PIXELS = 40_000_000
+
+# What decoding a picture raises when it cannot or must not be read; every
+# caller treats it as a picture it has to do without.
+PICTURE_ERRORS = (OSError, UnidentifiedImageError, ValueError, Image.DecompressionBombError)
+
 # Rendered at twice the display size so the list stays sharp on a retina screen.
 DEFAULT_SIZE = 128
 
@@ -84,7 +94,7 @@ def thumbnail(path: Path, size: int = DEFAULT_SIZE) -> Optional[bytes]:
 
     try:
         rendered = _render(path, size)
-    except (OSError, UnidentifiedImageError, ValueError) as error:
+    except PICTURE_ERRORS as error:
         log.debug("cannot read cover %s: %s", path, error)
         return None
 
@@ -120,7 +130,7 @@ def crop(
         with Image.open(path) as image:
             image.load()
             picture = on_white(image)
-    except (OSError, UnidentifiedImageError, ValueError) as error:
+    except PICTURE_ERRORS as error:
         log.debug("cannot read cover %s: %s", path, error)
         return None
 

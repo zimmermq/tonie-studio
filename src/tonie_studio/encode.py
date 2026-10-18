@@ -27,6 +27,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .i18n import Problem
 from .library import same, source_of
+from .models import WRITING
 from .tags import list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -298,10 +299,11 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     aside = f"{target[:-len(TAF_SUFFIX)]}{ASIDE_MARK}{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
     _encode(client, staged, aside, progress, total_seconds)
 
-    playing = [tag.ruid for tag in list_tags(client)
-               if same(tag.source) == same(source_of(target))]
-    for ruid in playing:
-        client.set_tag(ruid, source=source_of(aside))
+    with WRITING:
+        playing = [tag.ruid for tag in list_tags(client)
+                   if same(tag.source) == same(source_of(target))]
+        for ruid in playing:
+            client.set_tag(ruid, source=source_of(aside))
 
     log.info("replacing the taf at %s", target)
     client.delete(target, special="library")
@@ -309,8 +311,9 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
         client.encode(target, staged, special="library")
     except TeddyCloudError as error:
         raise EncodeError("encode.replace_kept", target=target, kept=aside) from error
-    for ruid in playing:
-        client.set_tag(ruid, source=source_of(target))
+    with WRITING:
+        for ruid in playing:
+            client.set_tag(ruid, source=source_of(target))
     _delete(client, aside)
 
 

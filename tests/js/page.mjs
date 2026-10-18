@@ -78,7 +78,8 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     document, console, JSON, Math, Promise, URLSearchParams, FormData, CustomEvent,
     setTimeout: step => timers.push(step),
     fetch: async (url, options = {}) => {
-      fetched.push({ url, method: options.method || 'GET', body: options.body });
+      fetched.push({ url, method: options.method || 'GET', body: options.body,
+                     signal: options.signal });
       const answer = answers[url];
       if (answer instanceof Error) throw answer;
       const code = !(url in answers) ? 404 : answer && answer[STATUS] ? answer[STATUS] : 200;

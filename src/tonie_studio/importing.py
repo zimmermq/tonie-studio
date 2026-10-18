@@ -42,6 +42,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from . import github
 from .github import Repo, RepoError
 from .i18n import Problem
+from .models import WRITING
 from .nfc import DumpError, parse_dump
 from .store import LOCK, from_record, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -208,7 +209,8 @@ def cloud_off(client: TeddyCloudClient, ruid: str, entry: Dict[str, Any]) -> Non
     if entry.get("nocloud"):
         return
     try:
-        client.set_tag(ruid, nocloud=True)
+        with WRITING:
+            client.set_tag(ruid, nocloud=True)
     except TeddyCloudError as error:
         log.warning("could not switch the cloud off for %s: %s", ruid, error)
 

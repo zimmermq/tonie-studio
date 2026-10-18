@@ -34,6 +34,27 @@ class TestReadJson:
         assert (tmp_path / "record.json").stat().st_mode & 0o777 == 0o600
 
 
+class TestADamagedRecordIsKept:
+    @pytest.mark.parametrize("content", ['{"half": ', "[1, 2]"])
+    def test_it_is_set_aside_before_anything_is_written_over_it(self, tmp_path, content):
+        # One bad byte must not cost every podcast subscription for good.
+        path = tmp_path / "podcasts.json"
+        path.write_text(content, encoding="utf-8")
+
+        with changing_json(path, {}) as record:
+            record["a"] = 1
+
+        kept = list(tmp_path.glob("podcasts.json.broken-*"))
+        assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == content
+        assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+
+    def test_a_missing_file_is_nothing_to_keep(self, tmp_path):
+        with changing_json(tmp_path / "new.json", {}) as record:
+            record["a"] = 1
+
+        assert not list(tmp_path.glob("*.broken-*"))
+
+
 class TestChangingJson:
     def test_a_change_is_written(self, tmp_path):
         path = tmp_path / "record.json"

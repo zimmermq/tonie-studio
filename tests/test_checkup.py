@@ -80,6 +80,23 @@ class TestMissingTaf:
 
         assert found.fix == "empty_sticker"
 
+    def test_names_the_model_a_rebuild_would_start_from(self, cloud):
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", tonie_model="TS-0002",
+                      nocloud=True)
+
+        found = next(f for f in examine(cloud) if f.kind == "missing_taf")
+
+        assert found.params["model"] == "TS-0002"
+
+    def test_audio_an_encode_is_making_is_not_missing(self, cloud):
+        # A rebuild under way writes exactly the path the sticker expects;
+        # offering to empty that sticker meanwhile would undo the rebuild.
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", nocloud=True)
+
+        found = examine(cloud, busy={"/Markus_Osterwald/Weg.taf"})
+
+        assert "missing_taf" not in kinds(found)
+
     def test_offers_the_repair_when_the_path_is_only_garbled(self, cloud):
         # The exact shape of that incident: the taf is there, the path naming
         # it had its umlaut mangled.
@@ -282,3 +299,29 @@ class TestApplyingRepairs:
 
         with pytest.raises(ValueError):
             apply_fix(cloud, tmp_path, "format_disk", TIERE)
+
+    def test_a_taf_given_to_a_sticker_meanwhile_is_not_deleted(self, cloud, tmp_path):
+        # The checks ran a moment ago; a copy onto grandma's sticker since
+        # must not lose its audio to the cleanup.
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        cloud.files["/Lichterkinder/Alt.taf"] = b"x"
+        cloud.add_tag(BOBO, source="lib://Lichterkinder/Alt.taf")
+
+        with pytest.raises(TonieError) as caught:
+            apply_fix(cloud, tmp_path, "delete_taf", "/Lichterkinder/Alt.taf")
+
+        assert caught.value.key == "checkup.now_used"
+        assert "/Lichterkinder/Alt.taf" in cloud.files
+
+    def test_deleting_and_checking_happen_under_the_writers_lock(self, cloud, tmp_path):
+        from web_helpers import waits_for_writing
+
+        from tonie_studio.checkup import apply_fix
+
+        cloud.files["/Lichterkinder/Alt.taf"] = b"x"
+
+        assert waits_for_writing(
+            lambda: apply_fix(cloud, tmp_path, "delete_taf", "/Lichterkinder/Alt.taf"))
+

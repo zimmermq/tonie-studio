@@ -15,6 +15,7 @@ from fake_teddycloud import FakeTeddyCloud
 from tonie_studio.backup import BackupError, apply_restore, create_backup, plan_restore, read_backup
 from tonie_studio.listening import FILE_NAME as LISTENING_FILE
 from tonie_studio.runtimes import FILE_NAME as TIMES_FILE
+from tonie_studio.teddycloud import TeddyCloudError
 
 TIERE = "a9c9ed0e500304e0"
 
@@ -190,6 +191,66 @@ class TestRestoringHoldsTheLockBriefly:
         apply_restore(fresh, backup, tmp_path / "fresh-data")
 
         assert held and not any(held)
+
+
+class TestRestoringDoesNotSilenceWhatPlays:
+    def test_a_sticker_given_new_audio_since_keeps_it(self, cloud, data_dir):
+        # Re-encoded to another path after the backup was made: pointing it
+        # back at the old path would silence a tonie that plays fine.
+        backup = read_backup(create_backup(cloud, data_dir))
+        cloud.files.pop("/Lichterkinder/Tierische Tierlieder.taf")
+        cloud.files["/Lichterkinder/Neu.taf"] = b"taf"
+        cloud.tag_entries[TIERE]["source"] = "lib://Lichterkinder/Neu.taf"
+
+        steps = apply_restore(cloud, backup, data_dir)
+
+        assert cloud.tag_entries[TIERE]["source"] == "lib://Lichterkinder/Neu.taf"
+        (step,) = [step for step in steps if step.what == "tag"]
+        assert step.note == "restore.note.kept_playing"
+
+    def test_a_model_that_could_not_be_restored_is_not_named_on_the_sticker(self, cloud,
+                                                                              data_dir):
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+
+        def refuse(model):
+            raise TeddyCloudError("teddyCloud answered 400 for upsert", status=400)
+
+        fresh.upsert_custom_tonie = refuse
+
+        apply_restore(fresh, backup, data_dir)
+
+        assert not fresh.tag_entries[TIERE].get("tonie_model")
+
+
+class TestRestoredIdsStayTaken:
+    def test_a_new_tonie_after_a_restore_gets_an_id_above_the_restored_ones(self, cloud,
+                                                                            data_dir, tmp_path):
+        from tonie_studio.models import next_model_id
+
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh, target = wiped(cloud), tmp_path / "fresh-data"
+
+        apply_restore(fresh, backup, target)
+        fresh.custom_models.clear()
+
+        assert next_model_id(fresh, target) == "TS-0002"
+
+
+class TestRestoringOnlyPlainSources:
+    @pytest.mark.parametrize("source", ["lib://../../etc/passwd.taf", "file:///etc/passwd",
+                                        "lib://a/../b.taf"])
+    def test_a_source_that_leads_elsewhere_is_skipped(self, cloud, data_dir, source):
+        import io
+
+        backup_bytes = io.BytesIO(create_backup(cloud, data_dir))
+        backup = read_backup(backup_bytes.getvalue())
+        backup.tags[0]["source"] = source
+        before = cloud.tag_entries[TIERE]["source"]
+
+        apply_restore(cloud, backup, data_dir)
+
+        assert cloud.tag_entries[TIERE]["source"] == before
 
 
 class TestRestoring:

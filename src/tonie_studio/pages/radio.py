@@ -54,5 +54,6 @@ def register(app: FastAPI, ctx: Context) -> None:
         picture, suffix = uploaded_cover(cover)
         with refusing(TonieError):
             publish_stream(client(), ruid, url, series=series, episode=episode,
-                           cover=picture, cover_name=suffix, category=category)
+                           cover=picture, cover_name=suffix, category=category,
+                           data_dir=ctx.settings.data_dir)
         return RedirectResponse("/tonies", 303)

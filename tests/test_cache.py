@@ -121,3 +121,31 @@ class TestTtlCache:
         assert cache.get("a") == "before"
         assert cache.get("a") == "after"
 
+
+    def test_callers_missing_at_once_share_one_load(self):
+        # Twenty cover requests arriving together would each walk the share.
+        import threading
+        import time
+
+        loads = []
+
+        def slow(key):
+            loads.append(key)
+            time.sleep(0.05)
+            return key.upper()
+
+        cache = TtlCache(slow, ttl=10)
+        start = threading.Barrier(10, timeout=5)
+        answers = []
+
+        def ask():
+            start.wait()
+            answers.append(cache.get("a"))
+
+        threads = [threading.Thread(target=ask) for _ in range(10)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+
+        assert loads == ["a"] and answers == ["A"] * 10

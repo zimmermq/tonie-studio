@@ -33,6 +33,20 @@ def is_library(source: str) -> bool:
     return (source or "").startswith(SCHEME)
 
 
+def safe_library_path(path: str) -> bool:
+    """Whether ``path`` names a place inside the library and nothing besides.
+
+    For paths that come from outside this app - a backup, a sticker's source,
+    a form - before anything is written or encoded there: no "..", ".", empty
+    part, backslash or control character, which could lead out of the
+    library or name something other than what is shown.
+    """
+    if not path.startswith("/") or "\\" in path:
+        return False
+    parts = path[1:].split("/")
+    return all(part not in ("", ".", "..") and part.isprintable() for part in parts)
+
+
 def same(name: str) -> str:
     """A path, source or file name in the one spelling two of them compare in."""
     return unicodedata.normalize("NFC", name or "")

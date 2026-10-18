@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
 from ..models import CACHE, COVER_TYPES, cache_name, fetch_cover, is_cover_name
-from ..pictures import MAX_SIZE, shrink
+from ..pictures import MAX_SIZE, PICTURE_ERRORS, shrink
 from ..sheet import FILL, FIT, PIXELS, render_square
 from .common import Context, Refused
 
@@ -103,7 +103,7 @@ def _render(data: bytes, name: str, mode: str, size: int, etag: str) -> Tuple[by
     try:
         made = ((render_square(data, mode, size=size), "image/jpeg") if mode
                 else shrink(data, size))
-    except (OSError, ValueError) as error:
+    except PICTURE_ERRORS as error:
         # A cover teddyCloud holds but Pillow cannot read still has to
         # reach the page; the untouched bytes may well render there.
         log.debug("cannot render %s: %s", name, error)

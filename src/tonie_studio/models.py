@@ -21,6 +21,7 @@ from urllib.parse import quote, urlparse
 from .cache import BackgroundCache
 from .tags import TonieError, label
 from .teddycloud import TeddyCloudClient, TeddyCloudError
+from .store import changing_json, read_json
 from .times import from_seconds
 
 log = logging.getLogger(__name__)
@@ -147,13 +148,17 @@ def cover_name(picture: Optional[str]) -> Optional[str]:
 
 
 # Held by everything that writes models or tags in teddyCloud: from picking a
-# model id to writing the model and pointing the tag at it, and around every
-# read-change-write of a model. The id is the next free one and a model is
-# written whole, so two writers at once - a batch encode finishing while a
-# sticker is placed by hand, the naming after an import, a title being saved
-# while a podcast refresh publishes new audio - would otherwise take the same
-# id, or write back what the other just changed. Re-entrant, so a writer
-# holding it can call update_model.
+# model id to writing the model and pointing the tag at it, around every
+# read-change-write of a model, and around every check-then-delete of a taf
+# or model ("does any sticker still play it?"). The id is the next free one
+# and a model is written whole, so two writers at once - a batch encode
+# finishing while a sticker is placed by hand, the naming after an import, a
+# title being saved while a podcast refresh publishes new audio - would
+# otherwise take the same id or write back what the other just changed, and a
+# copy onto another sticker could point at audio deleted a moment later.
+# Never held across a download, an encode or a walk of the library: every
+# other write waits that long. Re-entrant, so a writer holding it can call
+# update_model.
 WRITING = threading.RLock()
 
 # Where a model of this app keeps the article number of the shop product it
@@ -261,11 +266,47 @@ class ModelCache(BackgroundCache[List[Model]]):
         super().__init__(lambda: list_models(client()), name="models", ttl=ttl)
 
 
-def next_model_id(client: TeddyCloudClient) -> str:
-    """The lowest unused id in this app's namespace."""
-    used = {int(model.id[len(MODEL_PREFIX):]) for model in list_models(client)
-            if model.id.startswith(MODEL_PREFIX) and model.id[len(MODEL_PREFIX):].isdigit()}
-    return f"{MODEL_PREFIX}{max(used, default=0) + 1:04d}"
+# Where the highest model number ever handed out is kept, on the data volume.
+ID_MARK_FILE = "model-ids.json"
+
+
+def model_number(model_id: str) -> Optional[int]:
+    """The number of an id in this app's namespace, TS-0012 -> 12; None for any other id."""
+    digits = model_id[len(MODEL_PREFIX):] if model_id.startswith(MODEL_PREFIX) else ""
+    return int(digits) if digits.isdigit() else None
+
+
+def highest_id_used(data_dir: Optional[Path]) -> int:
+    """The highest model number this app ever handed out, as far as the volume knows."""
+    if data_dir is None:
+        return 0
+    value = read_json(data_dir / ID_MARK_FILE, {}).get("highest", 0)
+    return value if isinstance(value, int) else 0
+
+
+def note_id_used(data_dir: Optional[Path], model_id: str) -> None:
+    """Record ``model_id`` as handed out, so it is never handed out again."""
+    number = model_number(model_id)
+    if data_dir is None or number is None:
+        return
+    with changing_json(data_dir / ID_MARK_FILE, {}) as mark:
+        current = mark.get("highest", 0) if isinstance(mark.get("highest"), int) else 0
+        mark["highest"] = max(current, number)
+
+
+def next_model_id(client: TeddyCloudClient, data_dir: Optional[Path] = None) -> str:
+    """An id in this app's namespace above every one in teddyCloud and ever handed out.
+
+    Ids are kept elsewhere - in backups, podcast subscriptions, the album
+    records - so the id of a deleted model given to a new one would have those
+    write into a different tonie. With ``data_dir`` the highest number is
+    remembered there; without, only teddyCloud's models count.
+    """
+    used = [number for number in (model_number(model.id) for model in list_models(client))
+            if number is not None]
+    model_id = f"{MODEL_PREFIX}{max(used + [highest_id_used(data_dir)]) + 1:04d}"
+    note_id_used(data_dir, model_id)
+    return model_id
 
 
 def find_model_by_audio(

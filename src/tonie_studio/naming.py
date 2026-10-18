@@ -38,12 +38,13 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .cache import TtlCache
 from .encode import list_folder
-from .models import CATEGORIES, MODEL_PREFIX, WRITING, Model, list_models
+from .models import (CATEGORIES, MODEL_PREFIX, WRITING, Model, highest_id_used, list_models,
+                     note_id_used)
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -257,7 +258,7 @@ def fingerprint(todo: Plan) -> str:
 def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
          by_audio: AudioIndex, models: List[Model],
          headers: Mapping[str, Mapping[str, Any]], migrate: bool = False,
-         relink: bool = True, retitle: bool = False) -> Plan:
+         relink: bool = True, retitle: bool = False, highest: int = 0) -> Plan:
     """What naming the tonies in ``dumps`` (``{ruid: dump path}``) takes.
 
     ``tags`` is teddyCloud's tag index, whose model is the one teddyCloud names
@@ -267,12 +268,13 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
     is moved to the official one; with ``migrate`` the NFC- models move into
     this app's namespace too; with ``retitle`` a model of this app named after
     a dump in ``dumps`` is renamed when the rules now find a better name, such
-    as a set figure's official title.
+    as a set figure's official title. New ids go above ``highest``, the
+    highest number ever handed out.
     """
     tags = list(tags)
     by_ruid = {tag.ruid: tag for tag in tags}
     promoted = promotions(models, by_audio, catalog.unsuitable) if relink else {}
-    ids = _Ids(model.id for model in models)
+    ids = _Ids([model.id for model in models] + [f"{MODEL_PREFIX}{highest:04d}"])
 
     renamed: Dict[str, Model] = {}
     if migrate:
@@ -460,9 +462,12 @@ class Namer:
 
     def __init__(self, client: Callable[[], TeddyCloudClient],
                  dumps: Callable[[], Dict[str, str]],
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 data_dir: Optional[Path] = None):
         self.client = client
         self.dumps = dumps
+        # Where the highest model number handed out is kept; see next_model_id.
+        self.data_dir = data_dir
         self._catalog: TtlCache[None, Tuple[Catalog, AudioIndex]] = TtlCache(
             lambda _key: self._load_catalog(), CATALOG_TTL, clock)
 
@@ -486,7 +491,8 @@ class Namer:
         client = self.client()
         catalog, by_audio = self.catalog()
         return plan(list_tags(client), self.dumps(), catalog, by_audio, list_models(client),
-                    library_headers(client), migrate=migrate, retitle=migrate)
+                    library_headers(client), migrate=migrate, retitle=migrate,
+                    highest=highest_id_used(self.data_dir))
 
     def upkeep(self, migrate: bool = False, expect: Optional[str] = None) -> Plan:
         """Plan and carry out the upkeep in one go, under the lock all model writes share.
@@ -502,6 +508,7 @@ class Namer:
             if expect is not None and fingerprint(todo) != expect:
                 raise PlanChanged()
             if not todo.empty:
+                self._note_ids(todo)
                 apply(self.client(), todo)
             return todo
 
@@ -511,9 +518,17 @@ class Namer:
         with WRITING:
             client = self.client()
             todo = plan(list_tags(client), {ruid: path}, catalog, by_audio, list_models(client),
-                        library_headers(client), relink=False)
+                        library_headers(client), relink=False,
+                        highest=highest_id_used(self.data_dir))
             if not todo.empty:
+                self._note_ids(todo)
                 apply(client, todo)
+
+    def _note_ids(self, todo: Plan) -> None:
+        """Record the ids a plan hands out before they are written."""
+        for step in todo.steps:
+            if step.new_model is not None:
+                note_id_used(self.data_dir, step.new_model.id)
 
     def run(self, stop: threading.Event) -> None:
         """Run the upkeep once a day until ``stop``; never the renaming, which waits for a person."""

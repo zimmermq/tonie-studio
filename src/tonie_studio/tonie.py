@@ -49,6 +49,7 @@ def publish(
     year: Optional[Union[int, str]] = None,
     require_free: bool = False,
     keep_tracks: bool = False,
+    data_dir: Optional[Path] = None,
 ) -> str:
     """Give the tag its audio and its identity, and return the model id used.
 
@@ -67,15 +68,16 @@ def publish(
     # A tag pointing at a path that is not there plays nothing, and nothing
     # says so: teddyCloud stores whatever it is handed, a source string read
     # with the wrong encoding and written straight back included.
-    if is_library(encoded.source) and not taf_exists(client, encoded.target):
-        raise TonieError("tonie.no_taf", target=encoded.target)
-    require_tag(client, ruid)
-
     with WRITING:
+        # Checked under the lock, so a cleanup cannot delete the taf between
+        # the check and the sticker pointing at it.
+        if is_library(encoded.source) and not taf_exists(client, encoded.target):
+            raise TonieError("tonie.no_taf", target=encoded.target)
+        require_tag(client, ruid)
         if require_free and require_tag(client, ruid).assigned:
             raise TonieError("tonie.sticker_taken", ruid=ruid)
         existing = find_model(client, model_id) if model_id else None
-        model_id = model_id or next_model_id(client)
+        model_id = model_id or next_model_id(client, data_dir)
         if existing is not None:
             model = existing
             if not (keep_tracks and len(existing.tracks) == encoded.tracks):
@@ -112,6 +114,7 @@ def publish_stream(
     model_id: Optional[str] = None,
     language: str = DEFAULT_LANGUAGE,
     category: str = DEFAULT_CATEGORY,
+    data_dir: Optional[Path] = None,
 ) -> str:
     """Point a tag at a radio stream instead of at a taf.
 
@@ -137,7 +140,7 @@ def publish_stream(
     require_tag(client, ruid)
 
     with WRITING:
-        model_id = model_id or next_model_id(client)
+        model_id = model_id or next_model_id(client, data_dir)
         model = new_model(model_id, series, episode, (), language, category)
         if cover is not None:
             model.picture = upload_cover(client, model_id, cover, cover_name)
@@ -158,20 +161,23 @@ def copy_tag(client: TeddyCloudClient, from_ruid: str, to_ruid: str) -> None:
     """
     if from_ruid == to_ruid:
         raise TonieError("tonie.copy_onto_itself")
-    original = find_tag(client, from_ruid)
-    if original is None or not original.source:
-        raise TonieError("tonie.nothing_to_copy", ruid=from_ruid)
-    require_tag(client, to_ruid)
+    # Read and written under the lock, so a cleanup checking whether the
+    # audio is still played cannot delete it in between.
+    with WRITING:
+        original = find_tag(client, from_ruid)
+        if original is None or not original.source:
+            raise TonieError("tonie.nothing_to_copy", ruid=from_ruid)
+        require_tag(client, to_ruid)
 
-    client.set_tag(
-        to_ruid,
-        source=original.source,
-        tonie_model=original.model,
-        live=original.live,
-        # A library tag asking the cloud for content it will never have is
-        # the one thing a copy must not inherit.
-        nocloud=True if not original.live else original.nocloud,
-    )
+        client.set_tag(
+            to_ruid,
+            source=original.source,
+            tonie_model=original.model,
+            live=original.live,
+            # A library tag asking the cloud for content it will never have is
+            # the one thing a copy must not inherit.
+            nocloud=True if not original.live else original.nocloud,
+        )
     log.info("tag %s now plays what %s plays", to_ruid, from_ruid)
 
 

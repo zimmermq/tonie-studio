@@ -452,6 +452,18 @@ class TestNamer:
 
         assert held == [False]
 
+    def test_new_models_take_ids_never_handed_out_before(self, tmp_path):
+        from tonie_studio.models import note_id_used
+        from tonie_studio.naming import Namer
+
+        note_id_used(tmp_path, "TS-0007")
+        fake = self.teddycloud_with(1, "11", ruid("00000001"))
+        namer = Namer(lambda: fake, dict, data_dir=tmp_path)
+
+        namer.name_one(ruid("00000001"), "Comics/Fledermaus.nfc")
+
+        assert fake.tag_entries[ruid("00000001")]["tonie_model"] == "TS-0008"
+
     def test_leaves_a_tonie_teddycloud_names_by_itself(self):
         from tonie_studio.naming import Namer
 

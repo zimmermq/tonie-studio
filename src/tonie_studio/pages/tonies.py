@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote, urlencode
 
 import requests
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -16,7 +17,7 @@ from ..library import is_library, path_of
 from ..listing import Column, filters
 from ..models import (CATEGORIES, DEFAULT_CATEGORY, find_model, images_cached, picture_suffix,
                       release_year, update_model)
-from ..podcast import LARGEST_IMAGE, FeedError, unsubscribe
+from ..podcast import LARGEST_IMAGE, FeedError, move_subscriptions, unsubscribe
 from ..tags import TonieError, list_tags
 from ..tonie import copy_tag, move_tag, plan_removal, remove_tonie
 from ..tonielist import FREE, NO_MODEL, NO_PICTURE, OFFICIAL, OWN, list_tonies
@@ -49,6 +50,18 @@ def register(app: FastAPI, ctx: Context) -> None:
             "images_cached": images_cached(connection),
         })
 
+
+    @app.get("/model/{model_id}")
+    def tonie_of_model(model_id: str):
+        """The tonie a model is on, or, on no sticker yet, its cover to print.
+
+        Where a link knows only the model - an album row - it comes here
+        rather than reading every sticker up front for every row.
+        """
+        for tag in list_tags(client()):
+            if tag.model == model_id:
+                return RedirectResponse(f"/tonies/{quote(tag.ruid)}", 303)
+        return RedirectResponse("/sheet?" + urlencode({"model": model_id}), 303)
 
     @app.get("/tonies/{ruid}", response_class=HTMLResponse)
     def tonie_page(request: Request, ruid: str):
@@ -137,6 +150,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         with refusing(TonieError):
             if move:
                 move_tag(client(), ruid, target)
+                # A podcast on it keeps refreshing the sticker it is on now.
+                move_subscriptions(settings.data_dir, ruid, target)
             else:
                 copy_tag(client(), ruid, target)
         return RedirectResponse(f"/tonies/{target}" if move else "/tonies", 303)

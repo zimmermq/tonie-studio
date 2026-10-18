@@ -33,19 +33,36 @@ def read_json(path: Path, default: Any) -> Any:
 
     Unless ``default`` is None, content of another type than it (a list where
     a dict belongs) also reads as ``default``, so callers can rely on the type.
+    A file that is there but damaged is renamed aside first (see _set_aside):
+    the next write would otherwise replace it, and with it every record in it.
     """
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return default
-    except (OSError, ValueError) as error:
+    except ValueError as error:
+        log.warning("cannot read %s, carrying on without it: %s", path, error)
+        _set_aside(path)
+        return default
+    except OSError as error:
         log.warning("cannot read %s, carrying on without it: %s", path, error)
         return default
     if default is not None and not isinstance(value, type(default)):
         log.warning("%s holds a %s, not a %s; carrying on without it",
                     path, type(value).__name__, type(default).__name__)
+        _set_aside(path)
         return default
     return value
+
+
+def _set_aside(path: Path) -> None:
+    """Keep a damaged record as ``<name>.broken-<time>``, for someone to look at."""
+    kept = path.with_name(f"{path.name}.broken-{time.strftime('%Y%m%d-%H%M%S')}")
+    try:
+        path.replace(kept)
+        log.warning("kept the unreadable %s as %s", path.name, kept.name)
+    except OSError as error:
+        log.warning("cannot keep the unreadable %s aside: %s", path, error)
 
 
 @contextmanager

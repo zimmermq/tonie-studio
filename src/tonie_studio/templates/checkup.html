@@ -33,7 +33,11 @@
   {% for finding in group %}
   <div class="item checkup {{ severity }}">
     <span class="grow">
+      {%- if finding.kind in tag_kinds %}
+      <a class="truncate" href="/tonies/{{ finding.target | urlencode }}"><strong>{{ finding.subject }}</strong></a>
+      {%- else %}
       <strong class="truncate">{{ finding.subject }}</strong>
+      {%- endif %}
       {%- set params = dict(finding.params) %}
       {%- if "size" in params %}{% set _ = params.update(size=t.size(params["size"])) %}{% endif %}
       {%- set preview = t(finding.preview_key, **params) if finding.preview_key else finding.preview %}
@@ -42,7 +46,13 @@
       <code class="preview-text">{{ preview }}</code>
       {% endif %}
     </span>
-    {% if finding.kind == "orphan_taf" %}
+    {%- set album = album_of.get(finding.params.get("model")) if finding.kind == "missing_taf" else none %}
+    {% if album %}
+    {#- Emptying the sticker loses the tonie; encoding its album again to
+        the path the sticker expects brings it back. #}
+    <a class="button small primary" href="/batch?ids={{ album | urlencode }}">{{ t("checkup.rebuild") }}</a>
+    {% endif %}
+        {% if finding.kind == "orphan_taf" %}
     {#- Audio nobody plays may well be wanted: it can go on a sticker too. #}
     <a class="button small" href="/library/assign?path={{ finding.target | urlencode }}">{{ t("library.assign") }}</a>
     {% endif %}

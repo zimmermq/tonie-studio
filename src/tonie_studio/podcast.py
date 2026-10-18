@@ -44,7 +44,7 @@ import requests
 
 from .album import AUDIO_EXTENSIONS
 from .encode import (EncodeError, EncodeResult, cut_to_bytes, delete_taf, encode_files,
-                     library_path)
+                     library_path, taf_exists)
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import is_library, path_of, played, same
@@ -307,7 +307,7 @@ def refresh(
     subscription.title = feed.title
     _check_sticker(client, subscription)
     guids = [episode.guid for episode in chosen]
-    if guids == subscription.guids and subscription.source:
+    if guids == subscription.guids and subscription.source and _audio_there(client, subscription):
         # Nothing new, but the feed answered: whatever went wrong last time
         # is over, and the page must stop saying it.
         subscription.error, subscription.error_key, subscription.error_params = "", "", {}
@@ -316,7 +316,7 @@ def refresh(
     seconds = sum(episode.seconds or 0 for episode in chosen) or None
     encoded = _encode_episodes(client, data_dir / WORK_FOLDER / subscription.id, feed, chosen,
                                now, fetch, seconds)
-    model_id = _put_on_sticker(client, subscription, feed, chosen, encoded, fetch)
+    model_id = _put_on_sticker(client, subscription, feed, chosen, encoded, fetch, data_dir)
     remember(data_dir, model_id, seconds)
 
     old = subscription.source
@@ -325,8 +325,12 @@ def refresh(
     subscription.guids = guids
     subscription.updated = now.isoformat()
     subscription.error, subscription.error_key, subscription.error_params = "", "", {}
-    if old and old != encoded.source and is_library(old) and not _still_played(client, old):
-        _delete_quietly(client, path_of(old), subscription.id)
+    if old and old != encoded.source and is_library(old):
+        # Checked and deleted under the lock tag writes share: a copy of the
+        # old episodes onto another sticker must not lose them in between.
+        with WRITING:
+            if not _still_played(client, old):
+                _delete_quietly(client, path_of(old), subscription.id)
     log.info("podcast %s now plays %d episodes from %s", subscription.id, len(chosen), feed.title)
     return True
 
@@ -351,15 +355,15 @@ def _encode_episodes(client: TeddyCloudClient, folder: Path, feed: Feed, chosen:
             else:
                 path.write_bytes(fetch(episode.url))
             paths.append(path)
-        title = cut_to_bytes(feed.title[:TITLE_IN_NAME], TITLE_IN_NAME_BYTES).strip()
-        target = library_path(SERIES, f"{title} {now:%Y-%m-%d %H%M%S}")
+        target = library_path(SERIES, f"{_title_in_name(feed.title)} {now:%Y-%m-%d %H%M%S}")
         return encode_files(client, paths, target, total_seconds=seconds)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
 
 def _put_on_sticker(client: TeddyCloudClient, subscription: Subscription, feed: Feed,
-                    chosen: List[Episode], encoded: EncodeResult, fetch: Fetch) -> str:
+                    chosen: List[Episode], encoded: EncodeResult, fetch: Fetch,
+                    data_dir: Path) -> str:
     """Point the sticker and its model at the new taf; returns the model id.
 
     Should that fail, the new taf is deleted: the sticker still plays the old
@@ -376,7 +380,7 @@ def _put_on_sticker(client: TeddyCloudClient, subscription: Subscription, feed: 
                 client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
                 tracks=[episode.title for episode in chosen], cover=cover,
                 cover_name=picture_suffix(feed.image or ""),
-                model_id=subscription.model or None,
+                model_id=subscription.model or None, data_dir=data_dir,
             )
     except Exception:
         _delete_quietly(client, encoded.target, subscription.id)
@@ -392,8 +396,44 @@ def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None
     if expected is None:
         return
     playing = tag.source or ""
-    if same(playing) != same(expected):
-        raise FeedError("feed.sticker_reused", playing=playing or "-")
+    if same(playing) == same(expected):
+        return
+    if _made_by_this_subscription(subscription, tag):
+        # Published, then the process stopped before the subscription was
+        # saved: the sticker plays this podcast's newer taf, no stranger's.
+        log.info("podcast %s takes back %s", subscription.id, playing)
+        subscription.source = playing
+        return
+    raise FeedError("feed.sticker_reused", playing=playing or "-")
+
+
+def _title_in_name(title: str) -> str:
+    """The feed title as the start of a taf's name: short enough for any file system."""
+    return cut_to_bytes(title[:TITLE_IN_NAME], TITLE_IN_NAME_BYTES).strip()
+
+
+def _made_by_this_subscription(subscription: Subscription, tag) -> bool:
+    """Whether the tag plays a taf this subscription would have made, as its model.
+
+    Its tafs are named after the feed, with the time of the refresh; another
+    feed of the same title on the same sticker is the one thing it confuses.
+    """
+    if not is_library(tag.source or "") or not subscription.title:
+        return False
+    if subscription.model and (tag.model or "").lower() != subscription.model.lower():
+        return False
+    stem = library_path(SERIES, _title_in_name(subscription.title))[:-len(".taf")]
+    return same(path_of(tag.source)).startswith(same(stem) + " ")
+
+
+def _audio_there(client: TeddyCloudClient, subscription: Subscription) -> bool:
+    """Whether the taf the sticker plays is still in the library.
+
+    Gone after a restore or a delete in the library, the sticker would stay
+    silent until the feed has a new episode; its episodes are made again.
+    """
+    source = subscription.source
+    return not is_library(source) or taf_exists(client, path_of(source))
 
 
 def _cover(client: TeddyCloudClient, subscription: Subscription, feed: Feed,
@@ -452,6 +492,16 @@ def subscribe(data_dir: Path, feed: str, ruid: str, keep: int, title: str = "",
 def remove_subscription(data_dir: Path, subscription_id: str) -> None:
     with LOCK:
         _write(data_dir, [entry for entry in _read(data_dir) if entry.id != subscription_id])
+
+
+def move_subscriptions(data_dir: Path, from_ruid: str, to_ruid: str) -> None:
+    """Have every subscription of one sticker follow its tonie onto another."""
+    with LOCK:
+        current = _read(data_dir)
+        for entry in current:
+            if entry.ruid == from_ruid:
+                entry.ruid = to_ruid
+        _write(data_dir, current)
 
 
 def unsubscribe(data_dir: Path, ruid: str) -> None:

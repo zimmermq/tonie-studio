@@ -15,12 +15,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
-from PIL import UnidentifiedImageError
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
+from .pictures import PICTURE_ERRORS
 from .i18n import DEFAULT, Translator
 from .sheet import CUT_LINE_GREY, FILL, font_name, render_square, wrap_text
 
@@ -128,7 +128,7 @@ def _cover(sheet: canvas.Canvas, image: Optional[bytes], x: float, y: float, rad
     if image:
         try:
             reader = ImageReader(io.BytesIO(render_square(image, FILL, size=300)))
-        except (OSError, UnidentifiedImageError, ValueError) as error:
+        except PICTURE_ERRORS as error:
             # A cover that cannot be read costs its picture, not the page.
             log.warning("overview: a cover cannot be read: %s", error)
 

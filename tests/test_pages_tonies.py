@@ -379,6 +379,11 @@ class TestLibraryPage:
         assert entry["source"] == "lib://by/audioID/1786524025.taf"
         assert not entry.get("tonie_model") and teddycloud.custom_models == []
 
+    def test_a_path_that_climbs_out_of_the_library_is_refused(self, client):
+        response = client.get("/library/assign", params={"path": "/a/../../b.taf"})
+
+        assert response.status_code == 404
+
     def test_putting_audio_the_library_lacks_on_a_sticker_is_refused(self, client):
         assert client.get("/library/assign", params={"path": "/Weg/Weg.taf"}).status_code == 404
 
@@ -621,6 +626,19 @@ class TestMoveOntoAnotherSticker:
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == played
         assert "7ab4ed0e500304e0" not in teddycloud.tag_entries
         assert 'id="tag-7ab4ed0e500304e0"' not in client.get("/tonies").text
+
+    def test_a_podcast_on_it_moves_along(self, client, runner, teddycloud, settings):
+        from tonie_studio.podcast import Subscription, add_subscription, load_subscriptions
+
+        publish_album(client, runner, teddycloud)
+        add_subscription(settings.data_dir, Subscription(id="p1", feed="https://x.example/f",
+                                                         ruid="7ab4ed0e500304e0"))
+
+        client.post("/tonies/7ab4ed0e500304e0/copy",
+                    data={"target": "deb4ed0e500304e0", "move": "1"}, follow_redirects=False)
+
+        assert [entry.ruid for entry in load_subscriptions(settings.data_dir)] == [
+            "deb4ed0e500304e0"]
 
     def test_copying_still_keeps_both(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

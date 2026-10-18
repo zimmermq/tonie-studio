@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..checkup import BOX_SOUND_PREFIX
 from ..encode import TAF_SUFFIX, EncodeError, Taf, delete_taf, existing_taf, list_tafs
 from ..jobs import JobState
-from ..library import same
+from ..library import safe_library_path, same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
 from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING
@@ -67,7 +67,14 @@ def register(app: FastAPI, ctx: Context) -> None:
         if added:
             raise Refused(409, "library.now_used",
                           used=", ".join(tag.label for tag in added))
-        with refusing(EncodeError):
+        with refusing(EncodeError), WRITING:
+            # Once more right before deleting, under the lock every tag write
+            # shares: the walk above takes seconds, a copy onto it fewer.
+            now = [tag for tag in list_tags(connection) if same(tag.source) == same(item.taf.source)
+                   and tag.ruid not in shown]
+            if now:
+                raise Refused(409, "library.now_used",
+                              used=", ".join(tag.label for tag in now))
             delete_taf(connection, path)
         return RedirectResponse("/library", 303)
 
@@ -79,7 +86,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         job is gone, and the audio would otherwise only be deletable.
         """
         connection = client()
-        encoded = existing_taf(connection, path) if path.endswith(TAF_SUFFIX) else None
+        encoded = (existing_taf(connection, path)
+                   if path.endswith(TAF_SUFFIX) and safe_library_path(path) else None)
         if encoded is None:
             raise Refused(404, "library.gone")
         folder, _slash, name = path.strip("/").rpartition("/")
@@ -97,7 +105,8 @@ def register(app: FastAPI, ctx: Context) -> None:
     def assign(path: str = Form(...), ruid: str = Form(...), series: str = Form(""),
                episode: str = Form(""), category: str = Form(DEFAULT_CATEGORY)):
         connection = client()
-        encoded = existing_taf(connection, path) if path.endswith(TAF_SUFFIX) else None
+        encoded = (existing_taf(connection, path)
+                   if path.endswith(TAF_SUFFIX) and safe_library_path(path) else None)
         if encoded is None:
             raise Refused(404, "library.gone")
         with refusing(TonieError):
@@ -113,7 +122,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                 if not episode.strip():
                     raise Refused(400, "encode.no_name")
                 publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
-                        category=category)
+                        category=category, data_dir=ctx.settings.data_dir)
         return RedirectResponse(f"/tonies/{ruid}", 303)
 
 

@@ -62,6 +62,21 @@ assert.equal(places().at(-1).body.fields.ruid, 'cccc');
 }
 console.log('place.test: ok');
 
+// A placement that hangs is given up on, or the page would ignore every
+// sticker after it.
+{
+  const timed = await runPage(['app.js', 'parts.js'], {
+    ids: ['printnext', 'printlink', 'placemsg'],
+    pageData: { words: WORDS, placing: true, group: 'g1' },
+    answers: { '/api/group/g1': { jobs: [] },
+               '/api/batch/g1/place': { status: 'assigned', message: '', then: '' } },
+    globals: { AbortSignal },
+  });
+  await timed.dispatch('box', { on_box: true, ruid: 'aaaa' });
+  const placed = timed.fetched.find(request => request.url === '/api/batch/g1/place');
+  assert.ok(placed.signal, 'the placement has a timeout');
+}
+
 // While stickers are still missing, leaving the page is asked about first;
 // once every one is placed, it is not.
 const jobRow = () => element('', '', { children: Object.fromEntries(
