@@ -307,7 +307,70 @@ p.technical { margin-top: 28px; overflow-wrap: anywhere; }
 .card.danger { border-left: 4px solid var(--bad); }
 button.danger { color: var(--bad); border-color: var(--bad); }
 
+/* The tonie list: one set of rows, laid out as a grid of covers or as a
+   table, whichever the person picked. The hidden attribute has to win over
+   the display both layouts set, or a filtered row stays on screen. */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 0 0 10px; }
+.toolbar input[type=search] { flex: 1 1 260px; }
+.chips, .freestrip { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.chip { border-radius: 99px; padding: 3px 12px; font-size: 14px; }
+a.chip { border: 1px solid var(--line); background: var(--card); color: inherit; text-decoration: none; }
+.chip span { color: var(--muted); margin-left: 2px; }
+.chip[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--card); }
+.chip[aria-pressed=true] span { color: inherit; opacity: .8; }
+.views { display: inline-flex; gap: 6px; }
+.tonie[hidden] { display: none !important; }
+a.tonie { color: inherit; text-decoration: none; }
+a.tonie:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.tonie img, .tonie .noart { border-radius: 8px; object-fit: contain; }
+.tonie .noart { background: var(--line); }
+.tonie .t-name, .tonie .t-series, .tonie .t-category { overflow: hidden; text-overflow: ellipsis; }
+.tonie .t-name strong { font-weight: 600; }
+
+.tonies[data-view=grid] { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.tonies[data-view=grid] .tonies-head,
+.tonies[data-view=grid] .t-kind,
+.tonies[data-view=grid] .t-category,
+.tonies[data-view=grid] .t-added { display: none; }
+.tonies[data-view=grid] .tonie {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+}
+.tonies[data-view=grid] .tonie img,
+.tonies[data-view=grid] .tonie .noart { width: 100%; aspect-ratio: 1; margin-bottom: 6px; }
+/* Two lines of the name, then cut: long episode titles are common. */
+.tonies[data-view=grid] .t-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tonies[data-view=grid] .t-series,
+.tonies[data-view=grid] .t-chapters { white-space: nowrap; font-size: 13px; }
+
+.tonies[data-view=list] { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.tonies[data-view=list] .tonies-head,
+.tonies[data-view=list] .tonie {
+  display: grid; align-items: center; gap: 12px; padding: 6px 12px;
+  grid-template-columns: 44px minmax(0, 2.2fr) minmax(0, 1.4fr) 100px 90px minmax(0, 1fr) 100px;
+}
+.tonies[data-view=list] .tonies-head { font-size: 13px; border-bottom: 1px solid var(--line); }
+.tonies[data-view=list] .tonie { border-bottom: 1px solid var(--line); }
+.tonies[data-view=list] .tonie:last-child { border-bottom: 0; }
+.tonies[data-view=list] .tonie img,
+.tonies[data-view=list] .tonie .noart { width: 44px; height: 44px; }
+.tonies[data-view=list] .t-name,
+.tonies[data-view=list] .t-series,
+.tonies[data-view=list] .t-category { white-space: nowrap; }
+
 @media (max-width: 640px) {
+  .tonies[data-view=grid] { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+  /* Name and series only on a phone: a seven-column table does not fit. */
+  .tonies[data-view=list] .tonies-head { display: none; }
+  .tonies[data-view=list] .tonie { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .tonies[data-view=list] .t-series { grid-column: 2; grid-row: 2; font-size: 13px; }
+  .tonies[data-view=list] .t-name { grid-row: 1; }
+  .tonies[data-view=list] .t-kind,
+  .tonies[data-view=list] .t-category,
+  .tonies[data-view=list] .t-added { display: none; }
+  .tonies[data-view=list] .tonie img,
+  .tonies[data-view=list] .tonie .noart { grid-row: 1 / span 2; }
+  .tonies[data-view=list] .t-chapters { grid-column: 3; grid-row: 1 / span 2; font-size: 13px; }
   .hero, .columns { flex-direction: column; }
   .columns .tracklist { flex: none; }
   .stackable { flex-direction: column; align-items: stretch !important; }

@@ -12,37 +12,81 @@
 <div class="warn">{{ t("covers.cache_off") }}</div>
 {% endif %}
 
-<div class="list">
-{% for tag in tags %}
-  <div class="album" id="tag-{{ tag.ruid }}">
-    {% if tag.picture | cover_url(false) %}
-    <img src="{{ tag.picture | cover_url(false) }}" alt="" loading="lazy">
+{% if free %}
+{#- Nameless and waiting for something to play: kept apart, where a new traveltonie is looked for. #}
+<div id="free" class="freestrip">
+  <span class="muted">{{ t("tonies.free_title") }}:</span>
+  {% for row in free %}
+  <a class="chip" id="tag-{{ row.tag.ruid }}" href="/tonies/{{ row.tag.ruid }}">
+    {{- t("tag.free_uid", uid=row.tag.uid) }} <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if tonies %}
+<div class="toolbar">
+  <input type="search" id="search" placeholder="{{ t('tonies.search') }}"
+         autocomplete="off" aria-label="{{ t('tonies.search_label') }}">
+  <label class="muted">{{ t("tonies.sort") }}
+    <select id="sort">
+      <option value="name">{{ t("tonies.sort_name") }}</option>
+      <option value="series">{{ t("tonies.sort_series") }}</option>
+      <option value="added">{{ t("tonies.sort_added") }}</option>
+      <option value="chapters">{{ t("tonies.sort_chapters") }}</option>
+    </select>
+  </label>
+  <span class="views" role="group">
+    <button type="button" class="chip" data-view="grid">{{ t("tonies.view_grid") }}</button>
+    <button type="button" class="chip" data-view="list">{{ t("tonies.view_list") }}</button>
+  </span>
+</div>
+<div class="chips">
+  <button type="button" class="chip" data-kind-filter="">{{ t("tonies.kind_all") }} <span>{{ tonies | length }}</span></button>
+  {% for kind in kinds %}
+  <button type="button" class="chip" data-kind-filter="{{ kind }}">{{ t("tonies.kind." ~ kind) }} <span>{{ counts[kind] }}</span></button>
+  {% endfor %}
+  <span class="muted" id="count"></span>
+</div>
+{% endif %}
+
+<div id="tonies" class="tonies" data-view="grid">
+  {% if tonies %}
+  <div class="tonies-head muted" aria-hidden="true">
+    <span></span><span>{{ t("tonies.col_name") }}</span><span>{{ t("tonies.col_series") }}</span>
+    <span>{{ t("tonies.col_kind") }}</span><span>{{ t("tonies.col_chapters") }}</span>
+    <span>{{ t("tonies.col_category") }}</span><span>{{ t("tonies.col_added") }}</span>
+  </div>
+  {% endif %}
+  {% for row in tonies %}
+  {%- set tag = row.tag %}
+  {%- set picture = tag.picture | cover_url(false) %}
+  <a class="tonie" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
+     data-kind="{{ row.kind }}" data-picture="{{ 'yes' if picture else 'no' }}"
+     data-name="{{ row.name }}" data-series="{{ (tag.series ~ ' ' ~ row.name) | trim | lower }}"
+     data-added="{{ row.added.timestamp() | int if row.added else 0 }}" data-chapters="{{ tag.chapters }}"
+     data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ row.category) | lower }}">
+    {% if picture %}
+    <img src="{{ picture }}" alt="" loading="lazy">
     {% else %}
     <span class="noart" aria-hidden="true"></span>
     {% endif %}
-    <a class="grow truncate plain-link" href="/tonies/{{ tag.ruid }}"
-      >
-      <strong class="truncate">
-        {% if tag.assigned %}{{ tag.label }}{% else %}{{ t("tag.free") }}{% endif %}
-        <span class="onbox" hidden>{{ t("tonies.on_box") }}</span>
-      </strong>
-      <span class="muted truncate">
-        {{ tag.uid }}{% if tag.model %} &middot; {{ tag.model }} &middot; {{ t("tonies.edit") }}{% endif %}
-      </span>
-    </a>
-    {% if tag.model %}
-    <a class="button small" href="/sheet?model={{ tag.model | urlencode }}"
-       title="{{ t('tonies.sticker_title') }}">{{ t("tonies.sticker") }}</a>
-    {% endif %}
-  </div>
-{% else %}
-  <div class="album muted">{{ t("tonies.none") }}</div>
-{% endfor %}
+    <span class="t-name"><strong>{{ tag.episode or tag.label }}</strong>
+      <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>
+    <span class="t-series muted">{% if tag.episode and tag.series != tag.episode %}{{ tag.series }}{% endif %}</span>
+    <span class="t-kind"><span class="pill done">{{ t("tonies.kind." ~ row.kind) }}</span></span>
+    <span class="t-chapters muted">{% if tag.chapters %}{{ t("tonies.chapters", count=tag.chapters) }}{% endif %}</span>
+    <span class="t-category muted">{{ row.category }}</span>
+    <span class="t-added muted">{% if row.added %}{{ t.day(row.added) }}{% endif %}</span>
+  </a>
+  {% endfor %}
 </div>
+{% if not tonies and not free %}
+<div class="card muted">{{ t("tonies.none") }}</div>
+{% endif %}
+<p class="muted" id="nohits" hidden>{{ t("tonies.no_match") }}</p>
 
-<p><a class="button" href="/">{{ t("job.back") }}</a>
-   <a class="button ml-8" href="/sheet">{{ t("tonies.print") }}</a></p>
+<p><a class="button" href="/sheet">{{ t("tonies.print") }}</a></p>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing")} | tojson }}</script>
+<script type="application/json" id="page-data">{{ {"words": t.strings("tonies.note_playing", "tonies.note_on_box", "tonies.note_offline", "tonies.note_stale", "tonies.note_nothing", "tonies.shown_of")} | tojson }}</script>
 <script src="{{ asset('tonies.js') }}"></script>
 {% endblock %}

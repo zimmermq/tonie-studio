@@ -122,6 +122,12 @@ class Translator:
             return "-"
         return value.astimezone().strftime(self._date)
 
+    def day(self, value: Optional[datetime]) -> str:
+        """The day of a moment, written the language's way, without the time."""
+        if value is None:
+            return "-"
+        return value.astimezone().strftime(self._date.split(" ")[0])
+
     def duration(self, value) -> str:
         """A listening time as a person says it: 1 h 24 min, 24 min."""
         if not value:

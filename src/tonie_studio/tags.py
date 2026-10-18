@@ -40,6 +40,8 @@ class TonieTag:
     # beside its content JSON, where teddyCloud keeps a real tonie's audio
     # without giving it a source.
     exists: bool = False
+    # How many chapters its audio has; 0 when teddyCloud does not know.
+    chapters: int = 0
 
     @property
     def assigned(self) -> bool:
@@ -106,4 +108,5 @@ def _tag(entry: Dict[str, Any]) -> TonieTag:
         nocloud=bool(entry.get("nocloud")),
         live=bool(entry.get("live")),
         exists=bool(entry.get("exists")),
+        chapters=len(entry.get("trackSeconds") or []),
     )

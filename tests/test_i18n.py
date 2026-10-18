@@ -17,7 +17,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
-           "import.phase.", "import.state.", "names.kind.")
+           "import.phase.", "import.state.", "names.kind.", "tonies.kind.")
 
 
 def placeholders(text):

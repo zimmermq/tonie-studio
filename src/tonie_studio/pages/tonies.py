@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -15,12 +17,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from ..albumnotes import forget_model
 from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
-from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, fetch_cover,
-                      find_model, images_cached, is_cover_name, update_model)
+from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, cover_url,
+                      fetch_cover, find_model, images_cached, is_cover_name, list_models,
+                      update_model)
+from ..naming import LIBRARY_FOLDER, LIBRARY_PREFIX
 from ..podcast import LARGEST_IMAGE, FeedError, load_subscriptions, remove_subscription
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
-from ..tags import TonieError, list_tags
+from ..tags import TonieError, TonieTag, list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..tonie import copy_tag, plan_removal, publish_stream, remove_tonie
 from .common import Context, Refused
@@ -54,8 +58,17 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/tonies", response_class=HTMLResponse)
     def tonies(request: Request):
         connection = client()
+        tags = list_tags(connection)
+        rows = _listed(connection, tags, ctx.namer.catalog()[0].by_model)
+        tonies = sorted((row for row in rows if row.kind != FREE), key=lambda row: row.name)
+        counts = Counter(row.kind for row in tonies)
+        counts[NO_PICTURE] = sum(1 for row in tonies if not cover_url(row.tag.picture, False))
         return templates.TemplateResponse(request, "tonies.html", {
-            "tags": list_tags(connection),
+            "tags": tags,
+            "tonies": tonies,
+            "free": [row for row in rows if row.kind == FREE],
+            "counts": counts,
+            "kinds": [kind for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE) if counts[kind]],
             "box": box.state,
             "images_cached": images_cached(connection),
         })
@@ -396,3 +409,61 @@ def _chapters(client: TeddyCloudClient, source: str) -> Optional[int]:
 def _picture_suffix(url: str) -> str:
     """The cover type of a picture address, ``png`` or ``jpg`` as teddyCloud keeps covers."""
     return "png" if url.split("?", 1)[0].lower().endswith(".png") else "jpg"
+
+
+# What kind of tonie a row of the list is; the filters of the page go by it.
+OFFICIAL, OWN, NO_MODEL, FREE = "official", "own", "none", "free"
+# Not a kind but filtered the same way: a tonie with no picture to show.
+NO_PICTURE = "nopicture"
+
+
+@dataclass
+class Listed:
+    """A tonie as the list shows it: its tag and what is known about it besides."""
+
+    tag: TonieTag
+    kind: str
+    category: str = ""
+    added: Optional[datetime] = None  # when its taf was written into the library
+
+    @property
+    def name(self) -> str:
+        """What the list orders by: the episode, which tells tonies of one series apart."""
+        return (self.tag.episode or self.tag.label).casefold()
+
+
+def _listed(connection: TeddyCloudClient, tags: List[TonieTag],
+            catalogue: Dict[str, Dict]) -> List[Listed]:
+    """Every tag with its kind, category and the day its audio came into the library.
+
+    Two requests besides the tag index, for the custom models and the
+    library, however many tonies there are.
+    """
+    own = {model.id: model for model in list_models(connection)}
+    added = _library_dates(connection)
+    rows = []
+    for tag in tags:
+        if not tag.assigned:
+            rows.append(Listed(tag, FREE))
+        elif tag.model in own:
+            rows.append(Listed(tag, OWN, own[tag.model].category, added.get(tag.source)))
+        elif tag.model:
+            category = (catalogue.get(tag.model) or {}).get("category") or ""
+            rows.append(Listed(tag, OFFICIAL, category, added.get(tag.source)))
+        else:
+            rows.append(Listed(tag, NO_MODEL, "", added.get(tag.source)))
+    return rows
+
+
+def _library_dates(connection: TeddyCloudClient) -> Dict[str, datetime]:
+    """When each taf of the library was written, by the source a tag names it with.
+
+    A tonie teddyCloud keeps in its content tree has no source and so no date;
+    the list then leaves the date empty rather than guess.
+    """
+    try:
+        files = connection.list_dir(LIBRARY_FOLDER, special="library")
+    except TeddyCloudError:
+        return {}
+    return {LIBRARY_PREFIX + entry["name"]: datetime.fromtimestamp(entry["date"], timezone.utc)
+            for entry in files if not entry.get("isDir") and entry.get("date")}

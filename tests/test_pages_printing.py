@@ -186,10 +186,10 @@ class TestSheet:
 
 
 class TestPrintFromTonie:
-    def test_offers_a_sticker_link_per_recorded_tonie(self, client, runner, teddycloud):
+    def test_a_recorded_tonie_s_page_offers_its_sticker(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 
-        assert "/sheet?model=TS-0001" in client.get("/tonies").text
+        assert "/sheet?model=TS-0001" in client.get("/tonies/7ab4ed0e500304e0").text
 
     def test_the_sheet_arrives_with_that_motif_asked_for(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

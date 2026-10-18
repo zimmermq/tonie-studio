@@ -40,6 +40,8 @@ class FakeTeddyCloud:
         self.dirs: Set[str] = {"/"}
         self.files: Dict[str, bytes] = {}
         self.taf_headers: Dict[str, dict] = {}
+        # When a file was written, as teddyCloud lists it; 0 when not given.
+        self.file_dates: Dict[str, int] = {}
         # Every encode that ran, as (target, sources), for order assertions.
         self.encoded: List[tuple] = []
         # Set to raise from the next encode, to test the failure path.
@@ -95,7 +97,7 @@ class FakeTeddyCloud:
             if _parent(file) == path:
                 entry = {
                     "name": _name(file),
-                    "date": 0,
+                    "date": self.file_dates.get(file, 0),
                     "size": len(self.files[file]),
                     "isDir": False,
                 }
@@ -178,6 +180,8 @@ class FakeTeddyCloud:
                 "nocloud": entry["nocloud"],
                 "hide": entry["hide"],
                 "claimed": entry["claimed"],
+                # Where each chapter of its audio starts, in seconds.
+                "trackSeconds": entry.get("track_seconds", []),
                 "tonieInfo": {
                     "model": entry["tonie_model"],
                     "series": model.get("series", ""),
