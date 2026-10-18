@@ -1,5 +1,6 @@
 """Tests for the pages of the listening log and the podcasts."""
 
+import re
 from unittest.mock import patch
 
 import pytest
@@ -112,6 +113,16 @@ class TestPodcastPages:
         assert job.error is None
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"].startswith("lib://Podcasts/")
         assert "Kakadu" in podcasts.get("/podcasts").text
+
+    def test_unsubscribing_asks_first(self, podcasts, runner):
+        response = podcasts.post("/podcasts", data={
+            "feed": "https://example.org/feed.xml", "ruid": "deb4ed0e500304e0",
+        }, follow_redirects=False)
+        finish_job(runner, response)
+
+        page = podcasts.get("/podcasts").text
+
+        assert re.search(r'<form method="post" action="/podcasts/\w+/delete"\s+data-confirm=', page)
 
     def test_a_wrong_address_is_said_on_the_form(self, podcasts, web):
         web.feed = b"<html>kein Feed</html>"

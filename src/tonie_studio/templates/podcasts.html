@@ -22,7 +22,8 @@
     <form method="post" action="/podcasts/{{ entry.id }}/refresh">
       <button type="submit" class="small">{{ t("podcasts.refresh") }}</button>
     </form>
-    <form method="post" action="/podcasts/{{ entry.id }}/delete">
+    <form method="post" action="/podcasts/{{ entry.id }}/delete"
+          data-confirm="{{ t('podcasts.confirm_unsubscribe') }}">
       <button type="submit" class="small">{{ t("podcasts.unsubscribe") }}</button>
     </form>
   </div>

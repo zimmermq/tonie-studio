@@ -15,7 +15,8 @@
 {% block heading %}
 <div class="hero">
   {% if picture %}
-  <img class="cover large" src="{{ picture }}" alt="Cover">
+  {#- Beside the heading that names it: a screen reader gains nothing from it. #}
+  <img class="cover large" src="{{ picture }}" alt="">
   {% else %}
   <div class="cover large empty">{{ t(no_picture) }}</div>
   {% endif %}

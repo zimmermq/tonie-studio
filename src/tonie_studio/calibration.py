@@ -65,6 +65,17 @@ def save_measurement(data_dir: Path, left_mm: float, top_mm: float) -> Tuple[flo
     return right, down
 
 
+def reset(data_dir: Path) -> None:
+    """Store no shift: the printer is taken to print where it should."""
+    with LOCK:
+        write_json(data_dir / FILE_NAME, {"right_mm": 0.0, "down_mm": 0.0})
+
+
+def is_calibrated(data_dir: Path) -> bool:
+    """Whether a measurement or a reset was ever stored for this printer."""
+    return (data_dir / FILE_NAME).exists()
+
+
 def build_calibration(target: Path, shift_mm: Tuple[float, float] = (0.0, 0.0),
                       translate: Optional[Translator] = None) -> None:
     """A sheet with a cross on every sticker centre and a ruler to check the scale."""

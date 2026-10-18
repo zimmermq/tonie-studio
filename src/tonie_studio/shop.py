@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
 
-from .store import LOCK, read_json, write_json
+from .store import LOCK, changing_json, from_record, read_json
 
 log = logging.getLogger(__name__)
 
@@ -231,9 +231,7 @@ class Shop:
         for sales_id in dict.fromkeys(sales_id for sales_id in sales_ids if sales_id):
             kept = known.get(sales_id)
             if isinstance(kept, dict) and kept.get("sales_id"):
-                fields = ShopInfo.__dataclass_fields__
-                found[sales_id] = ShopInfo(**{key: value for key, value in kept.items()
-                                              if key in fields})
+                found[sales_id] = from_record(ShopInfo, kept)
             elif not (isinstance(kept, dict)
                       and self.clock() - kept.get("missed", 0) < MISS_DAYS * 86400):
                 ask.append(sales_id)
@@ -253,11 +251,9 @@ class Shop:
             answers.update({sales_id: infos.get(sales_id) for sales_id in batch})
 
         if answers:
-            with LOCK:
-                known = read_json(self.data_dir / FILE_NAME, {})
+            with changing_json(self.data_dir / FILE_NAME, {}) as known:
                 for sales_id, info in answers.items():
                     known[sales_id] = asdict(info) if info else {"missed": self.clock()}
-                write_json(self.data_dir / FILE_NAME, known)
             found.update({sales_id: info for sales_id, info in answers.items() if info})
         return found
 

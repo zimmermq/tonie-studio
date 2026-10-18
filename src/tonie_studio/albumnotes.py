@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .models import Model
-from .store import LOCK, read_json, write_json
+from .store import LOCK, changing_json, read_json, write_json
 
 SEEN_FILE = "albums-seen.json"
 MADE_FILE = "albums-made.json"
@@ -70,29 +70,20 @@ def is_new(first_seen: datetime, now: datetime) -> bool:
 def remember_made(data_dir: Path, album_id: str, model_id: str) -> None:
     if not album_id or not model_id:
         return
-    path = data_dir / MADE_FILE
-    with LOCK:
-        records = read_json(path, {})
+    with changing_json(data_dir / MADE_FILE, {}) as records:
         models = records.setdefault(album_id, [])
         if model_id not in models:
             models.append(model_id)
-            write_json(path, records)
 
 
 def forget_model(data_dir: Path, model_id: str) -> None:
     """Drop a deleted tonie, so its album stops looking done."""
-    path = data_dir / MADE_FILE
-    with LOCK:
-        records = read_json(path, {})
-        changed = False
+    with changing_json(data_dir / MADE_FILE, {}) as records:
         for album_id in list(records):
             if model_id in records[album_id]:
                 records[album_id] = [model for model in records[album_id] if model != model_id]
-                changed = True
-            if not records[album_id]:
-                del records[album_id]
-        if changed:
-            write_json(path, records)
+                if not records[album_id]:
+                    del records[album_id]
 
 
 def add_made(data_dir: Path, saved: Mapping, write: bool = True) -> Tuple[bool, bool]:
@@ -106,7 +97,6 @@ def add_made(data_dir: Path, saved: Mapping, write: bool = True) -> Tuple[bool, 
     path = data_dir / MADE_FILE
     with LOCK:
         records = read_json(path, {})
-        records = records if isinstance(records, dict) else {}
         had = bool(records)
         changed = False
         for album_id, models in (saved.items() if isinstance(saved, Mapping) else ()):
@@ -125,8 +115,7 @@ def add_made(data_dir: Path, saved: Mapping, write: bool = True) -> Tuple[bool, 
 def made(data_dir: Path) -> Dict[str, List[str]]:
     """Album id to the tonies recorded as made from it."""
     with LOCK:
-        records = read_json(data_dir / MADE_FILE, {})
-    return records if isinstance(records, dict) else {}
+        return read_json(data_dir / MADE_FILE, {})
 
 
 def albums_with_tonies(data_dir: Path, albums: Sequence[tuple],

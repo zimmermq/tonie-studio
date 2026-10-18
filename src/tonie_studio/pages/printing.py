@@ -13,8 +13,8 @@ from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.background import BackgroundTask
 
-from ..calibration import FILE_NAME as CALIBRATION_FILE
-from ..calibration import build_calibration, expected_first_centre, read_shift, save_measurement
+from ..calibration import (build_calibration, expected_first_centre, is_calibrated, read_shift,
+                           reset, save_measurement)
 from ..jobs import Job, JobRunner, JobState, new_id
 from ..models import images_cached, is_cover_name
 from ..printing import (back_of, known_models, overview_entries, sheet_rows,
@@ -81,7 +81,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "calibrated": bool(calibrated),
             # Never calibrated: the first sheet would be cut wherever this
             # printer happens to shift it.
-            "first_print": not (settings.data_dir / CALIBRATION_FILE).exists(),
+            "first_print": not is_calibrated(settings.data_dir),
         })
 
 
@@ -106,10 +106,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/sheet/calibration/reset")
     def reset_calibration():
-        want_left, want_top = expected_first_centre()
-        # Measured exactly where it belongs, minus what is stored, is no shift.
-        right, down = read_shift(settings.data_dir)
-        save_measurement(settings.data_dir, want_left + right, want_top + down)
+        reset(settings.data_dir)
         return RedirectResponse("/sheet#printer", 303)
 
 

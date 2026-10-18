@@ -19,7 +19,8 @@
 
 <p class="row wrap gap-8">
   {% for value, name in [("7", t("listening.days", count=7)), ("30", t("listening.days", count=30)), ("all", t("listening.all"))] %}
-  <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}">{{ name }}</a>
+  <a class="button {% if period == value %}primary{% endif %}" href="/listening?period={{ value }}"
+     {% if period == value %}aria-current="true"{% endif %}>{{ name }}</a>
   {% endfor %}
 </p>
 {% endblock %}

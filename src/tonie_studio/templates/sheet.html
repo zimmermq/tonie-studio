@@ -65,12 +65,12 @@
            survives the circle or does not. -->
       <span class="modes">
         <label class="mode chosen">
-          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fill }}" checked hidden>
+          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fill }}" checked class="visually-hidden">
           <span class="preview big"><span class="fg"></span></span>
           <span class="muted">{{ t("sheet.fill") }}</span>
         </label>
         <label class="mode">
-          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fit }}" hidden>
+          <input type="radio" name="mode_{{ loop.index0 }}" value="{{ fit }}" class="visually-hidden">
           <span class="preview big is-fit"><span class="bg"></span><span class="fg"></span></span>
           <span class="muted">{{ t("sheet.fit") }}</span>
         </label>
@@ -80,9 +80,9 @@
            number only appears once something is ticked, for the rarer case of
            wanting the same motif several times. -->
       <span class="times empty">
-        <button type="button" class="small" data-step="-1">&minus;</button>
+        <button type="button" class="small" data-step="-1" aria-label="{{ t('sheet.fewer') }}">&minus;</button>
         <span class="count">1</span>&times;
-        <button type="button" class="small" data-step="1">+</button>
+        <button type="button" class="small" data-step="1" aria-label="{{ t('sheet.more') }}">+</button>
       </span>
       {#- count:mode:model, kept up to date by the page and only sent while ticked. #}
       <input type="hidden" name="picks" data-model="{{ model.id }}"

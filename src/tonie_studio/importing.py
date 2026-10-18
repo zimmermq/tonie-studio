@@ -35,7 +35,7 @@ import random
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -43,7 +43,7 @@ from . import github
 from .github import Repo, RepoError
 from .i18n import Problem
 from .nfc import DumpError, parse_dump
-from .store import LOCK, read_json, write_json
+from .store import LOCK, from_record, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
@@ -277,13 +277,9 @@ def _load(data_dir: Path) -> Optional[Run]:
     if not isinstance(stored, dict):
         return None
     try:
-        known = {item.name for item in fields(Item)}
-        items = [Item(**{k: v for k, v in entry.items() if k in known})
-                 for entry in stored.get("items", [])]
-        pace = Pace(**{k: v for k, v in stored.get("pace", {}).items()
-                       if k in {f.name for f in fields(Pace)}})
-        known = {item.name for item in fields(Run)} - {"items", "pace"}
-        return Run(items=items, pace=pace, **{k: v for k, v in stored.items() if k in known})
+        items = [from_record(Item, entry) for entry in stored.get("items", [])]
+        pace = from_record(Pace, stored.get("pace", {}))
+        return from_record(Run, {**stored, "items": items, "pace": pace})
     except (TypeError, AttributeError) as error:
         log.warning("ignoring unreadable %s: %s", FILE_NAME, error)
         return None

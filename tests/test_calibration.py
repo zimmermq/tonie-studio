@@ -4,7 +4,7 @@ import pytest
 from reportlab.lib.units import mm
 
 from tonie_studio.calibration import (LARGEST_SHIFT_MM, build_calibration, expected_first_centre,
-                                      read_shift, save_measurement)
+                                      is_calibrated, read_shift, reset, save_measurement)
 from tonie_studio.sheet import sticker_positions
 
 
@@ -48,6 +48,19 @@ class TestShift:
 
         dx, dy = read_shift(tmp_path)
         assert abs(dx) == LARGEST_SHIFT_MM and abs(dy) == LARGEST_SHIFT_MM
+
+    def test_a_reset_is_no_shift_and_still_counts_as_calibrated(self, tmp_path):
+        # Reset means "this printer is fine as it is", which is an answer to
+        # the first-print warning too.
+        left, top = expected_first_centre()
+        save_measurement(tmp_path, left + 3, top)
+
+        reset(tmp_path)
+
+        assert read_shift(tmp_path) == (0.0, 0.0) and is_calibrated(tmp_path)
+
+    def test_never_measured_is_not_calibrated(self, tmp_path):
+        assert not is_calibrated(tmp_path)
 
 
 class TestShiftedSheet:

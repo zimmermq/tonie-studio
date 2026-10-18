@@ -11,9 +11,13 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextlib import contextmanager
+from dataclasses import fields
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Iterator, Mapping, Type, TypeVar
+
+T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 
@@ -23,14 +27,50 @@ LOCK = Lock()
 
 
 def read_json(path: Path, default: Any) -> Any:
-    """The file's content, or ``default`` when it is missing or unreadable."""
+    """The file's content, or ``default`` when it is missing or unreadable.
+
+    Unless ``default`` is None, content of another type than it (a list where
+    a dict belongs) also reads as ``default``, so callers can rely on the type.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return default
     except (OSError, ValueError) as error:
         log.warning("cannot read %s, carrying on without it: %s", path, error)
         return default
+    if default is not None and not isinstance(value, type(default)):
+        log.warning("%s holds a %s, not a %s; carrying on without it",
+                    path, type(value).__name__, type(default).__name__)
+        return default
+    return value
+
+
+@contextmanager
+def changing_json(path: Path, default: Any) -> Iterator[Any]:
+    """Hand out the file's content for changing in place, under LOCK.
+
+    It is written back when the block ends and the content differs from what
+    was read; a block that raises writes nothing. ``default`` must be a fresh
+    object, as it is what a missing file hands out.
+    """
+    with LOCK:
+        value = read_json(path, default)
+        before = json.dumps(value, sort_keys=True)
+        yield value
+        if json.dumps(value, sort_keys=True) != before:
+            write_json(path, value)
+
+
+def from_record(cls: Type[T], record: Mapping) -> T:
+    """``cls`` made from a stored record, leaving out keys it does not know.
+
+    Records outlive the code: a key a newer version wrote, or an older one
+    left, must not stop the rest from loading. A missing required field
+    raises TypeError, as calling ``cls`` would.
+    """
+    known = {field.name for field in fields(cls)}
+    return cls(**{key: value for key, value in record.items() if key in known})
 
 
 def write_json(path: Path, value: Any) -> None:

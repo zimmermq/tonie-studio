@@ -307,6 +307,7 @@ input[type=range] { accent-color: var(--accent); }
 }
 .mode .preview { opacity: .55; transition: opacity .15s; }
 .mode.chosen { border-color: var(--accent); }
+.mode:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mode.chosen .preview { opacity: 1; }
 .mode.chosen .muted { color: var(--ink); font-weight: 600; }
 .preview.big { width: 64px; height: 64px; }
@@ -315,6 +316,13 @@ input[type=range] { accent-color: var(--accent); }
   font-weight: 600; font-size: 12px; margin-left: 8px; padding: 1px 7px;
   border-radius: 99px; background: var(--accent); color: var(--card);
   vertical-align: 1px;
+}
+
+/* Out of sight but still in the page, so Tab and the arrow keys reach it;
+   ``hidden`` would take it out of the keyboard's reach too. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
 }
 
 /* A file input cannot be styled, so the label is the button. The input stays
@@ -456,7 +464,7 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17150f; --card: #211e18; --ink: #ece7dd; --muted: #a09889;
-    --line: #35302a; --accent: #fb923c;
+    --line: #35302a; --accent: #fb923c; --ok: #4ade80; --bad: #f87171;
   }
   button.primary, .button.primary { color: #17150f; }
   .warn { background: #2b1a10; border-color: #7c2d12; color: #fdba74; }

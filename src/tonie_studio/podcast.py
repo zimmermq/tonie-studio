@@ -31,7 +31,7 @@ import shutil
 import socket
 import threading
 import xml.etree.ElementTree as ElementTree
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
@@ -47,7 +47,7 @@ from .jobs import JobRunner
 from .library import is_library, path_of, played, same
 from .models import find_model, picture_suffix
 from .runtimes import remember
-from .store import LOCK, read_json, write_json
+from .store import LOCK, from_record, read_json, write_json
 from .tags import find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .tonie import publish
@@ -390,14 +390,8 @@ def update_subscription(data_dir: Path, subscription: Subscription) -> None:
 
 def _read(data_dir: Path) -> List[Subscription]:
     """Under LOCK, which the caller holds for the whole read-change-write."""
-    stored = read_json(data_dir / FILE_NAME, [])
-    known = {item.name for item in fields(Subscription)}
-    subscriptions = []
-    for entry in stored if isinstance(stored, list) else []:
-        if isinstance(entry, dict) and entry.get("id") and entry.get("feed"):
-            subscriptions.append(Subscription(**{key: value for key, value in entry.items()
-                                                 if key in known}))
-    return subscriptions
+    return [from_record(Subscription, entry) for entry in read_json(data_dir / FILE_NAME, [])
+            if isinstance(entry, dict) and entry.get("id") and entry.get("feed")]
 
 
 def _write(data_dir: Path, subscriptions: List[Subscription]) -> None:
