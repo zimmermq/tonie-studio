@@ -287,6 +287,53 @@ class TestReplacing:
         assert teddycloud.files["/a.taf"] == b"older"
 
 
+class TestReplacingCarriesTheModelAlong:
+    """A model names its audio by audio_id and hash; new audio has new ones."""
+
+    OLD = {"audioId": 111, "sha1Hash": "aa" * 20, "valid": True}
+
+    def _models(self, teddycloud):
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.taf_headers["/a.taf"] = dict(self.OLD)
+        teddycloud.custom_models += [
+            {"model": "TS-0001", "series": "S", "episodes": "E",
+             "audio_id": [111], "hash": ["AA" * 20]},
+            {"model": "TS-0002", "series": "S", "episodes": "F",
+             "audio_id": [222], "hash": ["BB" * 20]},
+        ]
+
+    def test_the_model_of_the_old_audio_names_the_new(self, teddycloud, sources):
+        # Left on the old pair, teddyCloud's library no longer matches the new
+        # taf to its tonie, and neither does find_model_by_audio.
+        self._models(teddycloud)
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        new = teddycloud.taf_headers["/a.taf"]
+        model = next(m for m in teddycloud.custom_models if m["model"] == "TS-0001")
+        assert model["audio_id"] == [new["audioId"]]
+        assert model["hash"] == [new["sha1Hash"].upper()]
+
+    def test_other_models_are_left_alone(self, teddycloud, sources):
+        self._models(teddycloud)
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        other = next(m for m in teddycloud.custom_models if m["model"] == "TS-0002")
+        assert (other["audio_id"], other["hash"]) == ([222], ["BB" * 20])
+
+    def test_a_model_of_several_parts_keeps_the_others(self, teddycloud, sources):
+        self._models(teddycloud)
+        teddycloud.custom_models[0].update(audio_id=[111, 333], hash=["AA" * 20, "CC" * 20])
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        new = teddycloud.taf_headers["/a.taf"]
+        first = next(m for m in teddycloud.custom_models if m["model"] == "TS-0001")
+        assert first["audio_id"] == [new["audioId"], 333]
+        assert first["hash"] == [new["sha1Hash"].upper(), "CC" * 20]
+
+
 class TestEncodeProgress:
     def test_reports_the_playing_time_rather_than_a_file_count(self, teddycloud, sources):
         seen = []

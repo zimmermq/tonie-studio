@@ -27,7 +27,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .i18n import Problem
 from .library import same, source_of
-from .models import WRITING
+from .models import WRITING, list_models
 from .tags import list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -297,6 +297,7 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     # A name of its own each time: a copy an earlier failed replace left
     # behind may be what the stickers play now, and is not this one's to delete.
     aside = f"{target[:-len(TAF_SUFFIX)]}{ASIDE_MARK}{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
+    old_header = (_find_entry(client, target) or {}).get("tafHeader") or {}
     _encode(client, staged, aside, progress, total_seconds)
 
     with WRITING:
@@ -314,7 +315,33 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     with WRITING:
         for ruid in playing:
             client.set_tag(ruid, source=source_of(target))
+        _carry_models(client, old_header,
+                      (_find_entry(client, target) or {}).get("tafHeader") or {})
     _delete(client, aside)
+
+
+def _carry_models(client: TeddyCloudClient, old: dict, new: dict) -> None:
+    """Have every model that named the old audio name the new one instead.
+
+    A model names its audio by audio_id and hash, and new audio has new
+    ones. Left on the old pair, the model still plays through the stickers
+    that name it, but teddyCloud's library and find_model_by_audio no longer
+    match the new taf to it. Only the replaced pair changes; a model listing
+    the parts of a set keeps the other parts. Under WRITING.
+    """
+    if any(header.get("audioId") is None or not header.get("sha1Hash") for header in (old, new)):
+        return
+    old_pair = (str(old["audioId"]), old["sha1Hash"].upper())
+    for model in list_models(client):
+        pairs = list(zip(model.audio_ids, model.hashes))
+        if old_pair not in [(str(audio), str(sha).upper()) for audio, sha in pairs]:
+            continue
+        for index, (audio, sha) in enumerate(pairs):
+            if (str(audio), str(sha).upper()) == old_pair:
+                model.audio_ids[index] = new["audioId"]
+                model.hashes[index] = new["sha1Hash"].upper()
+        client.upsert_custom_tonie(model.to_json())
+        log.info("model %s now names the replaced audio %s", model.id, new["audioId"])
 
 
 def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult]:

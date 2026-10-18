@@ -822,7 +822,7 @@ class Run:
         model = self.tc.models()[str(self.state["upload_model"])]
         matched = ((self.tc.library_entry(target) or {}).get("tonieInfo") or {}).get("model")
         if str(header.get("audioId")) not in [str(value) for value in model.get("audio_id") or []]:
-            result.notes.append(
+            raise FlowFailed(
                 f"model {model['model']} still carries audio_id {model.get('audio_id')} of the "
                 f"replaced audio, the taf now has {header.get('audioId')}; teddyCloud matches "
                 f"the new taf to model {matched!r}")
