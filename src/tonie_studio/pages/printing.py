@@ -7,7 +7,7 @@ import math
 import time
 import uuid
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Set
 
 from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -18,6 +18,7 @@ from ..calibration import build_calibration, expected_first_centre, read_shift, 
 from ..i18n import DEFAULT as DEFAULT_LANGUAGE
 from ..i18n import Translator
 from ..models import Model, cache_name, fetch_picture, images_cached, is_cover_name, list_models
+from ..naming import Catalog, norm
 from ..overview import Entry, build_overview
 from ..runtimes import minutes, playing_times
 from ..sheet import (BACK_FADE, DIAMETER_MM, FILL, FIT, PER_PAGE, Back, Sticker, back_lines,
@@ -31,15 +32,22 @@ log = logging.getLogger(__name__)
 # The most copies of one motif the sheet page lets a person ask for.
 MOST_COPIES = 99
 
+# How many catalogue tonies a search puts on the sheet page at once. Every row
+# loads its cover twice, once per preview, so a page of all of them, several
+# hundred, would load a few hundred megabytes of pictures.
+MOST_FOUND = 30
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
     settings = ctx.settings
     templates = ctx.templates
     client = ctx.client
+    namer = ctx.namer
 
     @app.get("/sheet", response_class=HTMLResponse)
-    def sheet_page(request: Request, model: List[str] = Query(default=[]), calibrated: str = ""):
+    def sheet_page(request: Request, model: List[str] = Query(default=[]), calibrated: str = "",
+                   q: str = ""):
         """The sheet, optionally with motifs already asked for.
 
         Coming from tonies that were just recorded, hunting for them again in
@@ -49,9 +57,17 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         cached = images_cached(connection)
         models = _printable_models(connection, cached)
+        # Tonies the catalogue names only come onto the page when asked for,
+        # by the tonie list's print button or by a search.
+        official = []
+        if cached is not False and (model or q.strip()):
+            official = _official_models(connection, namer.catalog()[0], set(model), q)
+        models = official + [entry for entry in models if entry.id not in {m.id for m in official}]
         return templates.TemplateResponse(request, "sheet.html", {
             "models": models,
             "images_cached": cached,
+            "query": q.strip(),
+            "found": len(official),
             "per_page": PER_PAGE,
             "most_copies": MOST_COPIES,
             "fill": FILL,
@@ -123,6 +139,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         stickers = []
         described = {model.id: model for model in _printable_models(connection)}
+        missing = {model for model in models if model not in described}
+        if missing:
+            described.update({model.id: model for model in _official_models(
+                connection, namer.catalog()[0], missing)})
         times = playing_times(settings.data_dir)
 
         for position, model in enumerate(models):
@@ -213,6 +233,32 @@ def _printable_models(client: TeddyCloudClient, cached: Optional[bool] = True) -
     """
     return [model for model in list_models(client)
             if model.cover or (cached is not False and cache_name(model.picture))]
+
+
+def _official_models(client: TeddyCloudClient, catalog: Catalog, ids: Set[str],
+                     query: str = "") -> List[Model]:
+    """Catalogue models on a sticker with a picture to print: those in ``ids``,
+    and up to MOST_FOUND whose name contains ``query``.
+
+    Only tonies on a sticker: the catalogue lists thousands nobody here owns.
+    Their picture comes through teddyCloud's image cache.
+    """
+    custom = {model.id for model in list_models(client)}
+    on_stickers = sorted({tag.model for tag in list_tags(client) if tag.model} - custom)
+    wanted = norm(query)
+    asked, found = [], []
+    for model_id in on_stickers:
+        entry = catalog.by_model.get(model_id)
+        if not entry:
+            continue
+        model = Model.from_json(entry)
+        if not cache_name(model.picture):
+            continue
+        if model_id in ids:
+            asked.append(model)
+        elif wanted and wanted in norm(model.label) and len(found) < MOST_FOUND:
+            found.append(model)
+    return asked + sorted(found, key=lambda model: model.label.casefold())
 
 
 def _overview_entries(client: TeddyCloudClient, times: Dict[str, int],

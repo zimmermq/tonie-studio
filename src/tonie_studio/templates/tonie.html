@@ -6,10 +6,25 @@
 <p class="sub">{{ tag.uid }}{% if tag.source %} &middot; {{ tag.source }}{% endif %}</p>
 
 {% if not model %}
-<div class="warn">
-  {{ t("tonie.no_model") }}
+{#- Nothing is wrong with a tonie the catalogue names, or with an empty
+    sticker: there is just nothing of this app's to edit. #}
+<div class="card row items-start">
+  {% if tag.picture | cover_url(false) %}
+  <img class="cover" src="{{ tag.picture | cover_url(false) }}" alt="Cover">
+  {% endif %}
+  <div class="grow">
+    <p class="mt-0">
+      {%- if tag.model %}{{ t("tonie.official", model=tag.model) }}{% else %}{{ t("tonie.no_model") }}{% endif -%}
+    </p>
+    <p class="row wrap gap-12 mb-0">
+      {% if tag.model %}
+      <a class="button" href="/sheet?model={{ tag.model | urlencode }}">{{ t("tonies.sticker") }}</a>
+      {% endif %}
+      <a class="button" href="/tonies">{{ t("common.back") }}</a>
+    </p>
+  </div>
 </div>
-<p><a class="button" href="/tonies">{{ t("common.back") }}</a></p>
+
 {% else %}
 
 <form method="post" action="/tonies/{{ tag.ruid }}" enctype="multipart/form-data">

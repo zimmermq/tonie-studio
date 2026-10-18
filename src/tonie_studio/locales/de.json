@@ -505,6 +505,10 @@
   "one": "{count} Bild",
   "other": "{count} Bilder"
  },
+ "sheet.search": "Offizielle Tonies auf deinen Stickern dazunehmen",
+ "sheet.search_button": "Suchen",
+ "sheet.search_hint": "Serie oder Folge, zum Beispiel Bobo",
+ "sheet.search_none": "Kein offizieller Tonie auf einem Sticker passt zu \"{query}\".",
  "sheet.sheets": {
   "one": "{count} Blatt",
   "other": "{count} Blätter"
@@ -535,6 +539,7 @@
  "tonie.not_a_url": "Ein Stream braucht eine Adresse, nicht {url}.",
  "tonie.nothing_to_copy": "Der Sticker {ruid} spielt nichts, das sich kopieren ließe.",
  "tonie.nothing_to_remove": "Der Sticker spielt nichts; da gibt es nichts zu löschen.",
+ "tonie.official": "Diesen Tonie benennt der offizielle Katalog (Modell {model}): Name, Cover und Titel kommen aus tonies.json, darum gibt es hier nichts zu bearbeiten.",
  "tonie.only_http": "Nur http- und https-Streams gehen.",
  "tonie.remove_button": "Tonie löschen",
  "tonie.remove_hint": "Leert den Sticker und löscht, was nur zu ihm gehört. Was ein anderer Sticker noch nutzt, bleibt, und das Album im Archiv ebenso: daraus lässt sich der Tonie neu machen.",

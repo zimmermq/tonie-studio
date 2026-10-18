@@ -505,6 +505,10 @@
   "one": "{count} picture",
   "other": "{count} pictures"
  },
+ "sheet.search": "Add official tonies on your stickers",
+ "sheet.search_button": "Search",
+ "sheet.search_hint": "Series or episode, for example Bobo",
+ "sheet.search_none": "No official tonie on a sticker matches \"{query}\".",
  "sheet.sheets": {
   "one": "{count} sheet",
   "other": "{count} sheets"
@@ -535,6 +539,7 @@
  "tonie.not_a_url": "A stream needs a URL, not {url}.",
  "tonie.nothing_to_copy": "The sticker {ruid} plays nothing to copy.",
  "tonie.nothing_to_remove": "The sticker plays nothing; there is nothing to delete.",
+ "tonie.official": "The official catalogue names this tonie (model {model}): its name, cover and track names come from tonies.json, so there is nothing to edit here.",
  "tonie.only_http": "Only http and https streams are supported.",
  "tonie.remove_button": "Delete tonie",
  "tonie.remove_hint": "Empties the sticker and deletes what only it uses. Whatever another sticker still uses stays, and so does the album in the archive: the tonie can be made again from it.",

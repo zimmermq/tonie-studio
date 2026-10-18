@@ -61,3 +61,52 @@ class TestPrinting:
 
         assert "TS-0039" in page and f"/cover/cache/{NAME}" in page
         assert response.status_code == 200 and response.content.startswith(b"%PDF")
+
+
+WOLF = {"model": "10000581", "series": "Wilde Wölfe", "episodes": "Das große Rennen",
+        "language": "de-de", "category": "audio-play", "pic": CDN,
+        "tracks": ["Kapitel 1", "Kapitel 2"], "release": "1600000000"}
+
+
+class TestPrintingOfficialTonies:
+    """A tonie named by the catalogue can have its cover printed, asked for or searched."""
+
+    @staticmethod
+    def on_a_sticker(teddycloud):
+        teddycloud.catalogue = [WOLF, dict(WOLF, model="10000999", episodes="Nirgends")]
+        teddycloud.add_tag("11dfc517500304e0", source="lib://by/audioID/1.taf",
+                           tonie_model="10000581")
+        teddycloud.files[f"/cache/{NAME}"] = jpeg_bytes()
+
+    def test_asked_for_by_the_tonie_list_it_is_on_the_sheet_page(self, client, teddycloud):
+        self.on_a_sticker(teddycloud)
+
+        page = client.get("/sheet?model=10000581").text
+
+        assert "10000581" in page and f"/cover/cache/{NAME}" in page
+
+    def test_not_asked_for_it_stays_off_the_page(self, client, teddycloud):
+        # Hundreds of them would make a page of hundreds of pictures.
+        self.on_a_sticker(teddycloud)
+
+        assert "10000581" not in client.get("/sheet").text
+
+    def test_a_search_finds_it_by_name(self, client, teddycloud):
+        self.on_a_sticker(teddycloud)
+
+        page = client.get("/sheet?q=wölfe").text
+
+        assert "10000581" in page
+
+    def test_only_tonies_on_a_sticker_are_found(self, client, teddycloud):
+        self.on_a_sticker(teddycloud)
+
+        assert "10000999" not in client.get("/sheet?q=Nirgends").text
+
+    def test_its_cover_and_back_are_printed(self, client, teddycloud):
+        self.on_a_sticker(teddycloud)
+
+        response = client.post("/sheet", data={"models": ["10000581"], "counts": ["2"],
+                                               "back": "1"})
+
+        assert response.status_code == 200 and response.content.startswith(b"%PDF")

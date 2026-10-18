@@ -86,6 +86,19 @@ class TestEditTonie:
         page = client.get("/tonies/7ab4ed0e500304e0").text
 
         assert "kein eigenes Modell" in page
+        assert 'class="warn"' not in page  # nothing is wrong with it
+
+    def test_a_tonie_the_catalogue_names_says_where_its_name_comes_from(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(
+            source="lib://by/audioID/1.taf", tonie_model="10000581",
+            picture="/cache/" + "A" * 64 + ".png")
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "offizielle Katalog" in page and "10000581" in page
+        assert 'class="warn"' not in page
+        assert 'href="/sheet?model=10000581"' in page
+        assert 'src="/cover/cache/' + "A" * 64 + '.png"' in page
 
     def test_saves_a_corrected_title(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
@@ -372,3 +385,4 @@ class TestBoxSaysWhyItIsDisconnected:
         box._state.silent = True
 
         assert client.get("/api/box").json()["silent"] is False
+

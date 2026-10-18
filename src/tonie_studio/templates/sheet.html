@@ -14,6 +14,17 @@
 {% endif %}
 {% if first_print %}<div class="warn">{{ t("sheet.first_time") }} <a href="#printer">{{ t("sheet.first_time_link") }}</a></div>{% endif %}
 
+{% if images_cached != false %}
+<form method="get" action="/sheet" class="row wrap gap-12 items-end mb-8">
+  <label class="field grow m-0">
+    <span>{{ t("sheet.search") }}</span>
+    <input type="search" name="q" value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}">
+  </label>
+  <button type="submit">{{ t("sheet.search_button") }}</button>
+</form>
+{% if query and not found %}<p class="muted">{{ t("sheet.search_none", query=query) }}</p>{% endif %}
+{% endif %}
+
 <form method="post" action="/sheet" enctype="multipart/form-data" id="sheetform">
   {% if models %}
   <div class="row sheethead">
