@@ -33,7 +33,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         Half the app keeps working without it, so an outage should read as a
         service being away rather than as this one being broken.
         """
-        if error.status and 400 <= error.status < 500:
+        if error.refused:
             # teddyCloud answered and said no: it is there, so calling this an
             # outage would send the reader looking for the wrong problem.
             log.warning("teddyCloud refused while serving %s: %s", request.url.path, error)

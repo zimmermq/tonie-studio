@@ -698,14 +698,15 @@ class TestJobErrorsInTheReadersLanguage:
         assert client.get(f"/api/job/{job_id}").json()["error"] == "Bitte mindestens einen Track auswählen."
         assert "Bitte mindestens einen Track" in client.get(f"/job/{job_id}").text
 
-    def test_an_error_nobody_described_is_shown_as_it_came(self, client, runner):
+    def test_an_error_nobody_described_is_framed_as_a_failure(self, client, runner):
+        # Raw text from ffmpeg or teddyCloud says what broke, not that the job did.
         def fails(progress):
             raise RuntimeError("ffmpeg died")
 
         job_id = runner.submit("encode", "/X.taf", fails)
         assert runner.get(job_id).done.wait(5)
 
-        assert client.get(f"/api/job/{job_id}").json()["error"] == "ffmpeg died"
+        assert client.get(f"/api/job/{job_id}").json()["error"] == "Das ging nicht: ffmpeg died"
 
 
 class TestGroupStatus:

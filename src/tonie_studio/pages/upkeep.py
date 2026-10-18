@@ -3,27 +3,19 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Dict
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..backup import (LARGEST_BACKUP, BackupError, apply_restore, create_backup, describe_backup,
-                      plan_restore, read_backup)
-from ..checkup import apply_fix, examine
+                      park, plan_restore, read_backup, take_parked)
+from ..checkup import BULK_FIXES, apply_fix, examine
 from ..encode import EncodeError
 from ..podcast import SERIES as PODCAST_SERIES
-from ..settings import Settings
-from ..store import sweep
 from ..tags import TonieError
-from ..teddycloud import TeddyCloudError
 from .common import Context, Refused, refusing
-
-# The repairs the checkup page offers for all findings at once.
-BULK_FIXES = frozenset({"nocloud"})
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +61,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if current is None:
             return RedirectResponse("/checkup?stale=1", 303)
 
-        with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
+        with refusing(TonieError, EncodeError):
             apply_fix(connection, settings.data_dir, fix, target)
         log.info("checkup: %s applied to %s", fix, target)
         return RedirectResponse(f"/checkup?done={fix}", 303)
@@ -88,7 +80,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         connection = client()
         targets = [finding.target for finding in examine(connection, **work_in_progress())
                    if finding.fix == fix]
-        with refusing(TonieError, EncodeError, TeddyCloudError, ValueError):
+        with refusing(TonieError, EncodeError):
             for target in targets:
                 apply_fix(connection, settings.data_dir, fix, target)
         log.info("checkup: %s applied to %d sticker(s)", fix, len(targets))
@@ -114,20 +106,14 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/restore", response_class=HTMLResponse)
     def restore_preview(request: Request, file: UploadFile = File(...)):
-        """Show what a restore would do. Nothing is written until confirmed.
-
-        The upload is parked on the volume under a random name, so the
-        confirmation acts on exactly the file that was previewed.
-        """
+        """Show what a restore would do. Nothing is written until confirmed."""
         # Read at most one byte past the limit: enough to know it is too big
         # without holding all of it.
         data = file.file.read(LARGEST_BACKUP + 1)
         with refusing(BackupError):
             backup = read_backup(data)
 
-        token = uuid.uuid4().hex
-        _restore_dir(settings).mkdir(parents=True, exist_ok=True)
-        (_restore_dir(settings) / f"{token}.zip").write_bytes(data)
+        token = park(settings.data_dir, data)
         return templates.TemplateResponse(request, "restore.html", {
             "steps": plan_restore(client(), backup, settings.data_dir),
             "manifest": backup.manifest,
@@ -140,31 +126,15 @@ def register(app: FastAPI, ctx: Context) -> None:
     def restore_apply(request: Request, token: str):
         if not token.isalnum():
             raise Refused(400, "error.not_a_restore")
-        parked = _restore_dir(settings) / f"{token}.zip"
-        if not parked.is_file():
+        data = take_parked(settings.data_dir, token)
+        if data is None:
             raise Refused(404, "error.restore_gone")
-        try:
-            with refusing(BackupError):
-                backup = read_backup(parked.read_bytes())
-                steps = apply_restore(client(), backup, settings.data_dir)
-        finally:
-            parked.unlink(missing_ok=True)
+        with refusing(BackupError):
+            backup = read_backup(data)
+            steps = apply_restore(client(), backup, settings.data_dir)
         return templates.TemplateResponse(request, "restore.html", {
             "steps": steps,
             "manifest": backup.manifest,
             "token": token,
             "done": True,
         })
-
-
-# --- helpers --------------------------------------------------------------
-
-
-def _restore_dir(settings: Settings) -> Path:
-    """Where an uploaded backup waits between preview and confirmation."""
-    return settings.data_dir / "restore"
-
-
-def clear_parked_restores(settings: Settings, older_than: float = 86400.0) -> None:
-    """Drop backups uploaded for a preview that was never confirmed."""
-    sweep(_restore_dir(settings), "*.zip", older_than)

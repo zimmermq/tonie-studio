@@ -2,7 +2,7 @@
 // moves on. A run settles one tonie every few minutes, so a whole new page is
 // cheap and keeps all the drawing in the template.
 (() => {
-  const data = JSON.parse(document.getElementById('page-data').textContent);
+  const data = pageData();
   if (!data.watch) return;
   let seen = null;
   window.every(5000, async () => {

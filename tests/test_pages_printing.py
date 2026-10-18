@@ -154,7 +154,7 @@ class TestSheet:
         teddycloud.images["TS-0001.jpg"] = jpeg_bytes()
         seen = []
 
-        import tonie_studio.pages.printing as web
+        import tonie_studio.printing as web
         original = web.build_sheet
         try:
             web.build_sheet = lambda stickers, target, shift=(0.0, 0.0), progress=None, layout=None: (
@@ -173,7 +173,7 @@ class TestSheet:
         assert response.status_code == 400
 
     def test_keeps_only_the_latest_sheets_for_downloading_again(self, client, settings):
-        from tonie_studio.pages.printing import KEEP_SHEETS
+        from tonie_studio.printing import KEEP_SHEETS
 
         for _sheet in range(KEEP_SHEETS + 2):
             print_sheet(client, files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))])
@@ -258,7 +258,7 @@ class TestCalibrationPages:
             target.write_bytes(b"%PDF")
             return []
 
-        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+        with patch("tonie_studio.printing.build_sheet", side_effect=instead):
             print_sheet(client, [("TS-0001", 1)])
 
         assert shifts[-1][0] == pytest.approx(-2.0, abs=0.06)
@@ -311,7 +311,7 @@ class TestSheetRefusesWhatItCannotPrint:
             target.write_bytes(b"%PDF")
             return []
 
-        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+        with patch("tonie_studio.printing.build_sheet", side_effect=instead):
             print_sheet(client, [(model, 100000000)])
 
         assert asked and max(asked) <= 99
@@ -341,7 +341,7 @@ class TestNoPdfIsLeftBehind:
             target.write_bytes(b"%PDF-1.4 half")
             raise RuntimeError("reportlab ran out of something")
 
-        with patch("tonie_studio.pages.printing.build_sheet", side_effect=half_written):
+        with patch("tonie_studio.printing.build_sheet", side_effect=half_written):
             response = print_sheet(client, [(model, 1)])
 
         assert response.status_code == 500
@@ -351,7 +351,7 @@ class TestNoPdfIsLeftBehind:
         import os
         import time
 
-        from tonie_studio.pages.printing import clear_old_pdfs
+        from tonie_studio.printing import clear_old_pdfs
 
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         old = settings.data_dir / "sheet-dead.pdf"
@@ -483,7 +483,7 @@ class TestLayouts:
             target.write_bytes(b"%PDF")
             return []
 
-        with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+        with patch("tonie_studio.printing.build_sheet", side_effect=instead):
             print_sheet(client, [("TS-0001", 1)], layout="punch")
             print_sheet(client, [("TS-0001", 1)])
             print_sheet(client, [("TS-0001", 1)], layout="nonsense")

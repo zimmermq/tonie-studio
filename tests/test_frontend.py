@@ -89,6 +89,10 @@ class TestPagesUseTheSharedParts:
         '<div class="hero"': "_details_page.html",
         '<div class="bar">': "_progress_page.html",
         'type="file"': "file_button",
+        "error_key, **": "error_text",
+        '<select name="category"': "category_select",
+        'id="page-data"': "page_script",
+        'id="tickshown"': "tick_buttons (_list.html)",
     }
 
     def test_no_page_writes_a_shared_part_out_by_hand(self):

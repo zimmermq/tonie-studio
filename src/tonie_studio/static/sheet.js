@@ -1,5 +1,5 @@
 // The script of the sheet page; see templates/sheet.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 const words = data.words;
 const rows = [...document.querySelectorAll('.sticker')];
@@ -107,7 +107,7 @@ const isUid = word => /^[0-9a-f]{6,}$/.test(word);
 function searches(text) {
   return text.toLowerCase().split(/[,;\n]+/).map(part => part.trim()).filter(Boolean)
     .flatMap(part => {
-      const words = part.split(/\s+/).map(word => word.replace(/:/g, ''));
+      const words = searchWords(part);
       return words.length > 1 && words.every(isUid) ? words.map(word => [word]) : [words];
     });
 }
@@ -123,19 +123,17 @@ function filter() {
   let count = 0;
   for (const row of rows) {
     const hit = !wanted.length
-      || wanted.some(words => words.every(word => row.dataset.search.includes(word)));
+      || wanted.some(words => matches(row, words));
     row.hidden = !(hit && (!onlyticked.checked || countOf(row) > 0));
     if (!row.hidden) count += 1;
   }
   shown.textContent = count === rows.length ? ''
-    : say(words['sheet.shown_of'], {shown: count, count: rows.length});
+    : say(words['list.shown_of'], {shown: count, count: rows.length});
   nohits.hidden = count > 0 || !rows.length;
 }
 
 if (find) {
   find.addEventListener('input', filter);
-  // Enter would send the whole form, and with it a sheet nobody asked for yet.
-  find.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
   onlyticked.addEventListener('change', filter);
   document.getElementById('tickshown').addEventListener('click', () => {
     for (const row of rows) if (!row.hidden && countOf(row) < 1) setCount(row, 1);

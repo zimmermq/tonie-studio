@@ -11,7 +11,6 @@ import requests
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..albumnotes import forget_model
 from ..encode import EncodeError
 from ..listing import Column, filters
 from ..models import (CATEGORIES, DEFAULT_CATEGORY, cover_url,
@@ -19,7 +18,6 @@ from ..models import (CATEGORIES, DEFAULT_CATEGORY, cover_url,
                       picture_suffix, release_year, update_model)
 from ..naming import LIBRARY_FOLDER, LIBRARY_PREFIX
 from ..podcast import LARGEST_IMAGE, FeedError, unsubscribe
-from ..runtimes import forget
 from ..shop import LANGUAGE as SHOP_LANGUAGE
 from ..shop import Shop
 from ..tags import TonieError, TonieTag, list_tags
@@ -137,7 +135,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.post("/tonies/{ruid}/copy")
     def copy_tonie(ruid: str, target: str = Form(...), move: str = Form("")):
         """Make another sticker play this tonie; with ``move``, this sticker is then forgotten."""
-        with refusing(TonieError, TeddyCloudError):
+        with refusing(TonieError):
             if move:
                 move_tag(client(), ruid, target)
             else:
@@ -171,10 +169,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     def delete_tonie(ruid: str):
         """Free the sticker and delete what only it used: model, taf, its podcast."""
         with refusing(TonieError, EncodeError):
-            removal = remove_tonie(client(), ruid)
-        if removal.model:
-            forget(settings.data_dir, removal.model)
-            forget_model(settings.data_dir, removal.model)
+            remove_tonie(client(), ruid, settings.data_dir)
         # A subscription would only fail on the emptied sticker from now on.
         unsubscribe(settings.data_dir, ruid)
         return RedirectResponse("/tonies", 303)
@@ -184,12 +179,6 @@ def register(app: FastAPI, ctx: Context) -> None:
 # took its picture and details from. teddyCloud stores a custom model whole,
 # so the field travels with the model, into its backups too.
 SHOP_LINK = "shop_sales_id"
-
-
-
-
-
-
 
 
 # The tonie list's columns, in the order the rows show them.

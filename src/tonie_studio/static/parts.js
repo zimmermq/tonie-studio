@@ -1,5 +1,5 @@
 // The script of the parts page; see templates/parts.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 // Updated in place rather than by reloading the page, which would throw it
 // back to the top every few seconds.

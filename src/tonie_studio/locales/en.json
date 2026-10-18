@@ -560,7 +560,6 @@
   "one": "{count} sheet",
   "other": "{count} sheets"
  },
- "sheet.shown_of": "{shown} of {count} shown",
  "sheet.skipped": "Left off, the picture could not be read: {names}",
  "sheet.total": {
   "one": "{count} cover",

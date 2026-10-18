@@ -16,7 +16,6 @@ from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
 from ..tags import TonieTag, list_tags
 from ..tags import label as tag_label
-from ..teddycloud import TeddyCloudError
 from ..times import from_seconds
 from .common import Context, refusing
 
@@ -48,7 +47,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/library/delete")
     def library_delete(path: str = Form(...)):
-        with refusing(EncodeError, TeddyCloudError):
+        with refusing(EncodeError):
             delete_taf(client(), path)
         return RedirectResponse("/library", 303)
 

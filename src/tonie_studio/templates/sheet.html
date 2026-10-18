@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, file_button, picked with context %}
+{% from "_list.html" import tick_buttons with context %}
+{% from "_parts.html" import field, file_button, page_script, picked with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("tonies.print") %}
 {% set page_heading = t("sheet.heading") %}
@@ -32,10 +33,9 @@
   {% if rows %}
   {#- Applied on the page: the rows are all here, so a search costs no request. #}
   <div class="toolbar">
-    <input type="search" id="find" value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}"
+    <input type="search" id="find" data-no-enter value="{{ query }}" placeholder="{{ t('sheet.search_hint') }}"
            autocomplete="off" aria-label="{{ t('sheet.search') }}">
-    <button type="button" id="tickshown">{{ t("list.tick_shown") }}</button>
-    <button type="button" id="untick">{{ t("list.untick") }}</button>
+    {{ tick_buttons() }}
     <label class="row gap-8 clickable"><input type="checkbox" id="onlyticked">
       <span>{{ t("sheet.only_ticked") }}</span></label>
     <span class="muted" id="shown"></span>
@@ -176,6 +176,5 @@
 
 
 
-<script type="application/json" id="page-data">{{ {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "sheet.shown_of"), "backFade": back_fade} | tojson }}</script>
-<script src="{{ asset('sheet.js') }}"></script>
+{{ page_script("sheet", {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "list.shown_of"), "backFade": back_fade}) }}
 {% endblock %}

@@ -40,7 +40,7 @@
    data-name="{{ item.name }}" data-series="{{ (tag.series ~ ' ' ~ item.name) | trim | lower }}"
    data-added="{{ item.added.timestamp() | int if item.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
    data-category="{{ item.category | lower }}" data-age="{{ item.age if item.age is not none else '' }}"
-   data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.model ~ ' ' ~ item.category) | lower }}">
+   data-search="{{ (tag.label ~ ' ' ~ tag.uid ~ ' ' ~ tag.uid | replace(':', '') ~ ' ' ~ tag.model ~ ' ' ~ item.category) | lower }}">
   {{ thumb(picture) }}
   <span class="t-name"><strong>{{ tag.episode or tag.label }}</strong>
     <span class="onbox" hidden>{{ t("tonies.on_box") }}</span></span>

@@ -1,13 +1,11 @@
 // The script of the job page; see templates/job.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 const id = data.id;
 const words = data.words;
 const fill = document.getElementById('fill');
 const state = document.getElementById('state');
 const detail = document.getElementById('detail');
-const outcome = document.getElementById('outcome');
-const message = document.getElementById('message');
 
 // The encode counts in seconds of audio, the uploads in files. Showing
 // "encode 312/4917" would be true and useless.
@@ -30,7 +28,6 @@ function show(job) {
   detail.textContent = describe(job);
 
   if (job.state === 'done' || job.state === 'failed') {
-    outcome.hidden = false;
     const next = document.getElementById('next');
     next.hidden = job.state !== 'done';
     // A batch encode may have gone on its sticker by itself since the page
@@ -40,8 +37,7 @@ function show(job) {
       next.href = ending.href;
       next.textContent = words[ending.nextKey];
     }
-    message.textContent = job.error || words[(ending || data).doneKey];
-    message.className = job.state === 'failed' ? 'mt-0 state-failed' : 'mt-0 state-done';
+    ended(job.error || words[(ending || data).doneKey], job.state === 'failed');
     return false;
   }
   return true;

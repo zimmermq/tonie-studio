@@ -1,5 +1,5 @@
 // The script of the album page; see templates/album.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 // The preview mirrors what the server will render: the cover scaled inside
 // the circle and shifted, with the same arithmetic on both sides. A CSS

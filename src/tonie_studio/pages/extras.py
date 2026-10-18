@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -14,8 +13,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..listening import TonieListening, summarise
 from ..listing import Column, filters
-from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, Subscription, add_subscription,
-                       load_subscriptions, parse_feed, remove_subscription)
+from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions, parse_feed,
+                       remove_subscription)
+from ..podcast import subscribe as add_podcast
 from ..runtimes import playing_times
 from ..tags import TonieTag, find_tag, list_tags
 from .common import Context, Refused
@@ -103,12 +103,10 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "feed.no_audio")
         tag = find_tag(client(), ruid)
         if tag is None:
-            raise Refused(400, "error.no_tag")
+            raise Refused(404, "error.no_tag")
 
-        subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
-                                    keep=max(1, min(keep, 20)), title=parsed.title,
-                                    played_before=tag.source or "")
-        add_subscription(settings.data_dir, subscription)
+        subscription = add_podcast(settings.data_dir, feed, ruid, keep, title=parsed.title,
+                                   played_before=tag.source or "")
         job_id = podcasts.queue(subscription.id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
 

@@ -302,6 +302,16 @@ class TestStoringSafely:
 
         assert load_subscriptions(tmp_path) == []
 
+    @pytest.mark.parametrize("keep, kept", [(0, 1), (3, 3), (500, 20)])
+    def test_subscribing_keeps_a_sensible_number_of_episodes(self, tmp_path, keep, kept):
+        from tonie_studio.podcast import subscribe
+
+        subscription = subscribe(tmp_path, "https://example.org/feed.xml", RUID, keep,
+                                 title="Kakadu", played_before="lib://Alt.taf")
+
+        assert subscription.keep == kept and subscription.played_before == "lib://Alt.taf"
+        assert load_subscriptions(tmp_path) == [subscription]
+
     def test_unsubscribing_a_sticker_keeps_the_others(self, tmp_path):
         from tonie_studio.podcast import add_subscription, unsubscribe
 

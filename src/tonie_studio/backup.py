@@ -22,6 +22,7 @@ import io
 import json
 import logging
 import os
+import uuid
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ from .listening import FILE_NAME as LISTENING_FILE
 from .models import Model, fetch_cover, is_cover_name
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
+from .store import sweep
 from .tags import TonieTag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
@@ -46,6 +48,11 @@ FORMAT = 1
 # Far above any real backup - a few hundred kilobytes of covers per tonie -
 # and far below what would hurt the process holding it in memory.
 LARGEST_BACKUP = 64 * 1024 * 1024
+
+# Where an uploaded backup waits between its preview and the confirmation,
+# and how long before housekeeping takes one nobody confirmed.
+PARKED_FOLDER = "restore"
+PARKED_FOR = 86400.0
 # The same for the backup unpacked; its covers do not shrink when packed, so
 # a real one is hardly larger than its file.
 LARGEST_UNPACKED = 256 * 1024 * 1024
@@ -420,3 +427,36 @@ def _json(value) -> str:
     # Umlauts written as themselves: a backup someone opens to check should
     # read "Siebenschl\u00e4fer", and the zip stores UTF-8 either way.
     return json.dumps(value, ensure_ascii=False, indent=1)
+
+
+def park(data_dir: Path, data: bytes) -> str:
+    """Keep an uploaded backup until it is confirmed; returns the token naming it.
+
+    The confirmation then acts on exactly the file that was previewed.
+    """
+    token = uuid.uuid4().hex
+    folder = data_dir / PARKED_FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{token}.zip").write_bytes(data)
+    return token
+
+
+def take_parked(data_dir: Path, token: str) -> Optional[bytes]:
+    """The backup parked under ``token``, removed as it is handed out; None if gone.
+
+    Taken rather than read, so a restore can only be applied once.
+    """
+    if not token.isalnum():
+        return None
+    parked = data_dir / PARKED_FOLDER / f"{token}.zip"
+    try:
+        return parked.read_bytes()
+    except FileNotFoundError:
+        return None
+    finally:
+        parked.unlink(missing_ok=True)
+
+
+def clear_parked(data_dir: Path, older_than: float = PARKED_FOR) -> None:
+    """Drop backups uploaded for a preview that was never confirmed."""
+    sweep(data_dir / PARKED_FOLDER, "*.zip", older_than)

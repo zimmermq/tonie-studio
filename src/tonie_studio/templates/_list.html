@@ -45,3 +45,10 @@
   {% if trailing %}<span></span>{% endif %}
 </div>
 {% endmacro %}
+
+{#- Ticking what a search and the chips leave in view, and unticking it all;
+    the page's own script gives them their work. #}
+{% macro tick_buttons() %}
+  <button type="button" id="tickshown">{{ t("list.tick_shown") }}</button>
+  <button type="button" id="untick">{{ t("list.untick") }}</button>
+{% endmacro %}

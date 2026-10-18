@@ -1,4 +1,5 @@
 {% extends "_list_page.html" %}
+{% from "_list.html" import tick_buttons with context %}
 {% from "_parts.html" import file_button, picked, thumb with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("albums.title") %}
@@ -57,8 +58,7 @@
 {#- Ticking gathers albums for one batch; like on the print page, it acts on
     what the search and the chips leave in view. #}
 <p class="row wrap gap-8 mt-0" id="ticks">
-  <button type="button" id="tickshown">{{ t("list.tick_shown") }}</button>
-  <button type="button" id="untick">{{ t("list.untick") }}</button>
+  {{ tick_buttons() }}
 </p>
 {% endif %}
 {% endblock %}

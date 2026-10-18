@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
@@ -14,7 +14,8 @@ from ..jobs import Job, JobRunner, JobState
 from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
 from ..publishing import Outcome, job_states, publish_outcome
 from ..tags import TonieError, list_tags
-from .common import Context, Refused, refusing, translator
+from .common import (Context, Refused, failure_text, group_or_404, job_or_404, refusing,
+                     translator)
 
 
 log = logging.getLogger(__name__)
@@ -31,9 +32,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/parts/{group}", response_class=HTMLResponse)
     def parts_page(request: Request, group: str):
-        found = groups.get(group)
-        if found is None:
-            raise Refused(404, "error.parts_gone")
+        found = group_or_404(groups, group)
         batch = found.batch
         by_hand = bool(found.placing and found.placing.by_hand)
         members = [job for job in map(jobs.get, found.jobs) if job]
@@ -58,9 +57,7 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/job/{job_id}", response_class=HTMLResponse)
     def job_page(request: Request, job_id: str):
-        job = jobs.get(job_id)
-        if job is None:
-            raise Refused(404, "error.no_job")
+        job = job_or_404(jobs, job_id)
         # A podcast refresh puts its taf on the sticker itself; only an album
         # encode still has to be given to one.
         podcast = job.kind == "podcast"
@@ -77,7 +74,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "assigned_ending": (None if podcast or published else
                                 {"doneKey": "job.published", "href": "/tonies",
                                  "nextKey": "job.to_tonies"}),
-            "error": _error_text(job, translator(request)),
+            "error": failure_text(job, translator(request)),
         })
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
@@ -124,17 +121,13 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/api/job/{job_id}")
     def job_status(request: Request, job_id: str):
-        job = jobs.get(job_id)
-        if job is None:
-            raise Refused(404, "error.no_job")
+        job = job_or_404(jobs, job_id)
         return JSONResponse(_job_json(job, translator(request)))
 
     @app.get("/api/group/{group}")
     def group_status(request: Request, group: str):
         """Every job of a group in one answer, for the progress page."""
-        found = groups.get(group)
-        if found is None:
-            raise Refused(404, "error.parts_gone")
+        found = group_or_404(groups, group)
         translate = translator(request)
         members = [jobs.get(job_id) for job_id in found.jobs]
         return JSONResponse({"jobs": [_job_json(job, translate) for job in members if job]})
@@ -145,17 +138,10 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 def _finished_outcome(jobs: JobRunner, job_id: str) -> Outcome:
     """The outcome of a finished encode, or a refusal explaining which it is not."""
-    job = jobs.get(job_id)
-    if job is None:
-        raise Refused(404, "error.no_job")
+    job = job_or_404(jobs, job_id)
     if job.state is not JobState.DONE or not isinstance(job.result, Outcome):
         raise Refused(409, "error.no_taf_yet")
     return job.result
-
-
-def _error_text(job: Job, translate: Translator) -> Optional[str]:
-    """Why a job failed, in the reader's language when the app described it."""
-    return job.problem.say(translate) if job.problem else job.error
 
 
 def _job_json(job: Job, translate: Translator) -> Dict:
@@ -168,7 +154,7 @@ def _job_json(job: Job, translate: Translator) -> Dict:
         "done": job.done_count,
         "total": job.total,
         "percent": job.percent,
-        "error": _error_text(job, translate),
+        "error": failure_text(job, translate),
         "target": job.label,
         "assigned": bool(outcome and outcome.model),
         "model": (outcome and outcome.model) or None,

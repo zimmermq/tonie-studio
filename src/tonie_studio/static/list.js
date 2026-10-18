@@ -17,9 +17,9 @@
   const list = document.querySelector('[data-list]');
   const rows = list ? [...list.querySelectorAll('[data-search]')] : [];
   if (rows.length) {
-    const pageData = JSON.parse(document.getElementById('page-data').textContent);
-    const ORDERS = pageData.orders;
-    const shownOf = pageData.words['list.shown_of'];
+    const data = pageData();
+    const ORDERS = data.orders;
+    const shownOf = data.words['list.shown_of'];
     const search = document.getElementById('search');
     const sort = document.getElementById('sort');
     const count = document.getElementById('count');
@@ -35,7 +35,7 @@
 
     // Named rather than taken as the first of "orders": the page's JSON comes
     // with its keys in alphabetical order.
-    const firstKey = ORDERS[pageData.first] ? pageData.first : Object.keys(ORDERS)[0];
+    const firstKey = ORDERS[data.first] ? data.first : Object.keys(ORDERS)[0];
     const asked = new URLSearchParams(location.search || '');
     const state = {
       q: asked.get('q') || '',
@@ -69,11 +69,11 @@
     }
 
     function filter() {
-      const terms = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+      const terms = searchWords(state.q);
       let shown = 0;
       for (const row of rows) {
         const tagged = !state.filter || row.dataset.tags.split(' ').includes(state.filter);
-        row.hidden = !(tagged && terms.every(term => row.dataset.search.includes(term)));
+        row.hidden = !(tagged && matches(row, terms));
         if (!row.hidden) shown += 1;
       }
       count.textContent = shown === rows.length ? '' : say(shownOf, { shown, count: rows.length });

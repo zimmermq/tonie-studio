@@ -399,3 +399,33 @@ class TestWhichAlbumBecameWhichTonie:
         parts = {part.what: part.count for part in describe_backup(cloud, recorded)}
 
         assert parts["made"] == 1
+
+
+class TestParkedBackups:
+    def test_a_parked_backup_is_handed_out_once(self, tmp_path):
+        from tonie_studio.backup import park, take_parked
+
+        token = park(tmp_path, b"zip")
+
+        assert take_parked(tmp_path, token) == b"zip"
+        assert take_parked(tmp_path, token) is None
+
+    def test_a_token_that_is_not_one_reaches_no_file(self, tmp_path):
+        from tonie_studio.backup import take_parked
+
+        (tmp_path / "secret.zip").write_bytes(b"x")
+
+        assert take_parked(tmp_path, "../secret") is None
+        assert (tmp_path / "secret.zip").exists()
+
+    def test_only_old_parked_backups_are_cleared(self, tmp_path):
+        import os
+
+        from tonie_studio.backup import PARKED_FOLDER, clear_parked, park
+
+        old, new = park(tmp_path, b"old"), park(tmp_path, b"new")
+        os.utime(tmp_path / PARKED_FOLDER / f"{old}.zip", (0, 0))
+
+        clear_parked(tmp_path)
+
+        assert [path.stem for path in (tmp_path / PARKED_FOLDER).iterdir()] == [new]

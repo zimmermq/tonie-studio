@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .backup import clear_parked
 from .boxstate import BoxWatcher
 from .cache import BackgroundCache
 from .encode import list_tafs, remove_orphaned_staging
@@ -38,9 +39,8 @@ from .pages import radio as radio_page
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Catalogue, Context, describe_progress,
                            page_context)
-from .pages.printing import clear_old_pdfs
-from .pages.upkeep import clear_parked_restores
 from .podcast import Fetch, PodcastUpdater, download
+from .printing import clear_old_pdfs
 from .settings import Settings
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .uploads import remove_old_uploads
@@ -171,7 +171,7 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
         # loop would leave the volume to fill until the app restarts.
         try:
             remove_old_uploads(settings.upload_dir, settings.upload_keep_days)
-            clear_parked_restores(settings)
+            clear_parked(settings.data_dir)
             clear_old_pdfs(settings.data_dir)
         except Exception:
             log.exception("housekeeping round failed")

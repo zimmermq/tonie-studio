@@ -551,10 +551,10 @@ class TestRemoveTonie:
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["a"])
         return teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"]
 
-    def test_frees_the_sticker_and_deletes_model_and_taf(self, teddycloud, encoded, made):
+    def test_frees_the_sticker_and_deletes_model_and_taf(self, tmp_path, teddycloud, encoded, made):
         from tonie_studio.tonie import remove_tonie
 
-        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0")
+        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
 
         entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
         assert (entry["source"], entry["tonie_model"]) == ("", "")
@@ -562,46 +562,60 @@ class TestRemoveTonie:
         assert encoded.target not in teddycloud.files
         assert (removal.model, removal.taf) == (made, encoded.target)
 
-    def test_keeps_what_another_sticker_still_uses(self, teddycloud, encoded, made):
+    def test_keeps_what_another_sticker_still_uses(self, tmp_path, teddycloud, encoded, made):
         from tonie_studio.tonie import remove_tonie
 
         copy_tag(teddycloud, "7ab4ed0e500304e0", "deb4ed0e500304e0")
 
-        removal = remove_tonie(teddycloud, "deb4ed0e500304e0")
+        removal = remove_tonie(teddycloud, "deb4ed0e500304e0", tmp_path)
 
         assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == ""
         assert [model["model"] for model in teddycloud.custom_tonies()] == [made]
         assert encoded.target in teddycloud.files
         assert (removal.model, removal.taf) == (None, None)
 
-    def test_an_official_model_is_left_alone(self, teddycloud, encoded):
+    def test_an_official_model_is_left_alone(self, tmp_path, teddycloud, encoded):
         from tonie_studio.tonie import remove_tonie
 
         teddycloud.tag_entries["7ab4ed0e500304e0"].update(source=encoded.source,
                                                          tonie_model="10000001")
 
-        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0")
+        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
 
         assert teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"] == ""
         assert removal.model is None and removal.taf == encoded.target
 
-    def test_a_sticker_whose_taf_is_already_gone_is_freed(self, teddycloud):
+    def test_a_sticker_whose_taf_is_already_gone_is_freed(self, tmp_path, teddycloud):
         from tonie_studio.tonie import remove_tonie
 
         teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Weg/Weg.taf"
 
-        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0")
+        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
 
         assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == ""
         assert removal.taf is None
 
-    def test_a_free_sticker_has_nothing_to_remove(self, teddycloud):
+    def test_a_free_sticker_has_nothing_to_remove(self, tmp_path, teddycloud):
         from tonie_studio.tonie import remove_tonie
 
         with pytest.raises(TonieError) as caught:
-            remove_tonie(teddycloud, "7ab4ed0e500304e0")
+            remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
 
         assert caught.value.key == "tonie.nothing_to_remove"
+
+    def test_what_was_noted_about_the_model_goes_too(self, tmp_path, teddycloud, made):
+        from tonie_studio.albumnotes import made as albums_made
+        from tonie_studio.albumnotes import remember_made
+        from tonie_studio.runtimes import playing_times, remember
+        from tonie_studio.tonie import remove_tonie
+
+        remember(tmp_path, made, 600)
+        remember_made(tmp_path, "album", made)
+
+        remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
+
+        assert playing_times(tmp_path) == {} and albums_made(tmp_path) == {}
+
 
 class TestTrackNamesKeepTheirChapters:
     def test_a_track_without_a_name_keeps_its_place(self, teddycloud, encoded):

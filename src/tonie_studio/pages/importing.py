@@ -112,7 +112,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         except naming.PlanChanged:
             return RedirectResponse("/import/names?changed=1", 303)
         except TeddyCloudError as error:
-            if error.status and 400 <= error.status < 500:
+            if error.refused:
                 raise Refused(409, "names.refused", detail=str(error)) from error
             raise
         return RedirectResponse(

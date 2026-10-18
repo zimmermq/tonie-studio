@@ -28,13 +28,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from .albumnotes import forget_model
 from .encode import Taf, delete_taf, list_tafs
 from .library import is_library, played, same
-from .models import MODEL_PREFIX, Model, find_model, list_models, remove_model, update_model
-from .runtimes import forget
+from .models import MODEL_PREFIX, Model, find_model, list_models, update_model
 from .tags import TonieError, TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
+from .tonie import delete_model
+
+# The repairs offered for every finding at once. Only one that flips a flag
+# belongs here: deleting and emptying stay one at a time, each shown first.
+BULK_FIXES = frozenset({"nocloud"})
 
 log = logging.getLogger(__name__)
 
@@ -112,8 +115,8 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
     findings: List[Finding] = []
     findings += _tag_findings(tags, tafs)
     findings += _model_findings(models)
-    findings += _leftovers(tags, models, tafs, {_same(path) for path in busy},
-                           tuple(_same(folder).rstrip("/") + "/" for folder in busy_folders))
+    findings += _leftovers(tags, models, tafs, {same(path) for path in busy},
+                           tuple(same(folder).rstrip("/") + "/" for folder in busy_folders))
     if tafs is None:
         findings.append(Finding(
             kind="library_unreadable",
@@ -135,9 +138,9 @@ def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]]) -> List[Findi
             continue
         ruid, name = tag.ruid, tag.label
 
-        if present is not None and _same(source) not in present:
+        if present is not None and same(source) not in present:
             fixed = repaired(source)
-            if fixed and _same(fixed) in present:
+            if fixed and same(fixed) in present:
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
                     detail="checkup.garbled_path",
@@ -218,8 +221,8 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
     named = {tag.model.lower() for tag in tags}
 
     for taf in tafs or []:
-        path = _same(taf.path)
-        if _same(taf.source) in playing or path in busy or path.startswith(busy_folders):
+        path = same(taf.path)
+        if same(taf.source) in playing or path in busy or path.startswith(busy_folders):
             continue
         if taf.model.lower().startswith(BOX_SOUND_PREFIX):
             continue
@@ -241,8 +244,6 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
         ))
     return findings
 
-
-_same = same
 
 
 def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -> None:
@@ -273,8 +274,6 @@ def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -
     elif fix == "delete_taf":
         delete_taf(client, target)
     elif fix == "delete_model":
-        remove_model(client, target)
-        forget(data_dir, target)
-        forget_model(data_dir, target)
+        delete_model(client, target, data_dir)
     else:
         raise ValueError(f"unknown repair {fix!r}")

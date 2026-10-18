@@ -1,5 +1,5 @@
 // The script of the assign page; see templates/assign.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 const words = data.words;
 // A blank sticker reaches teddyCloud as a tag it does not know, which is

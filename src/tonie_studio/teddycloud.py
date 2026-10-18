@@ -92,6 +92,11 @@ class TeddyCloudError(RuntimeError):
         super().__init__(message)
         self.status = status
 
+    @property
+    def refused(self) -> bool:
+        """teddyCloud answered and said no, as opposed to not answering at all."""
+        return bool(self.status) and 400 <= self.status < 500
+
 
 class TeddyCloudClient:
     """Thin request builder over the teddyCloud management API."""

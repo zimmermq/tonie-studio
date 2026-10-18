@@ -18,7 +18,7 @@
 {% macro sticker_picker(tags, name, empty, preselect=None) -%}
 <div class="picker" data-picker>
   {% if tags %}
-  <input type="search" class="picker-find" placeholder="{{ t('picker.search') }}"
+  <input type="search" class="picker-find" data-no-enter placeholder="{{ t('picker.search') }}"
          autocomplete="off" aria-label="{{ t('picker.search_label') }}">
   <div class="picker-list">
     {%- set chosen = preselect or (tags | rejectattr("assigned") | map(attribute="ruid") | first) %}
@@ -94,4 +94,27 @@
 {#- The line beside a file button saying what it holds. #}
 {% macro picked(slot) -%}
 <span class="muted grow truncate" id="{{ slot }}">{{ t("common.nothing_chosen") }}</span>
+{%- endmacro %}
+
+{#- Why a stored record failed: in the reader's language when the app
+    described it (``error_key`` and ``error_params``), else the raw ``error``
+    text from a part that does not speak it. #}
+{% macro error_text(record) -%}
+{%- if record.error_key %}{{ t(record.error_key, **record.error_params) }}{% else %}{{ record.error }}{% endif -%}
+{%- endmacro %}
+
+{#- The choice of a tonie's category, ``selected`` chosen where given. #}
+{% macro category_select(categories, selected=None) -%}
+<select name="category">
+  {%- for entry in categories %}
+  <option value="{{ entry }}"{% if entry == selected %} selected{% endif %}>{{ entry }}</option>
+  {%- endfor %}
+</select>
+{%- endmacro %}
+
+{#- A page's own script and what the server hands it: ``data`` goes into
+    #page-data as JSON, where static/<name>.js reads it. #}
+{% macro page_script(name, data) -%}
+<script type="application/json" id="page-data">{{ data | tojson }}</script>
+<script src="{{ asset(name ~ '.js') }}"></script>
 {%- endmacro %}

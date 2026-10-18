@@ -7,21 +7,35 @@ The page asks; this decides. sheet.py and overview.py then only draw.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 
 from .i18n import DEFAULT as DEFAULT_LANGUAGE
-from .i18n import Translator
+from .i18n import Problem, Translator
 from .models import Model, cache_name, fetch_picture, list_models
 from .naming import Catalog
 from .overview import Entry
 from .runtimes import minutes
-from .sheet import Back, Sticker
+from .sheet import SHEET, Back, Layout, Sticker, build_sheet
+from .store import sweep
 from .tags import list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
+
+# How many finished sheets are kept for downloading again; older ones go
+# when a newer one is done. A sheet of every tonie is some 20 MB.
+KEEP_SHEETS = 3
+
+# How old a PDF left in the data folder must be before housekeeping removes
+# it. One being sent right now is seconds old.
+OLD_PDF_SECONDS = 86400
+
+
+class PrintError(Problem, ValueError):
+    """A sheet that cannot be made from what was asked for."""
 
 
 @dataclass
@@ -171,3 +185,43 @@ def cover_bytes(client: TeddyCloudClient, model: Optional[Model]) -> Optional[by
     except TeddyCloudError as error:
         log.warning("cannot read the cover of %s: %s", model.id, error)
         return None
+
+
+@dataclass
+class MadeSheet:
+    path: Path
+    skipped: List[str] = field(default_factory=list)
+
+
+def make_sheet(stickers: Sequence[Sticker], target: Path, shift: Tuple[float, float],
+                progress: Callable[[str, int, int], None], layout: Layout = SHEET) -> MadeSheet:
+    """Build the sheet at ``target``, leaving nothing behind when that fails."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        skipped = build_sheet(stickers, target, shift,
+                              progress=lambda done, total: progress("pictures", done, total),
+                              layout=layout)
+    except ValueError as error:
+        # Every picture asked for was unreadable, so there is nothing to print.
+        target.unlink(missing_ok=True)
+        raise PrintError("error.nothing_to_print") from error
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    if skipped:
+        log.warning("left off the sheet: %s", ", ".join(skipped))
+    _keep_latest_sheets(target.parent)
+    return MadeSheet(target, skipped)
+
+
+def _keep_latest_sheets(data_dir: Path) -> None:
+    """Remove all but the KEEP_SHEETS newest sheets."""
+    sheets = sorted(data_dir.glob("sheet-*.pdf"), key=lambda path: path.stat().st_mtime,
+                    reverse=True)
+    for old in sheets[KEEP_SHEETS:]:
+        old.unlink(missing_ok=True)
+
+
+def clear_old_pdfs(data_dir: Path) -> None:
+    """Remove PDFs a process that died while sending them left behind."""
+    sweep(data_dir, "*.pdf", OLD_PDF_SECONDS)

@@ -2,7 +2,8 @@
 // they do can be checked without a browser. Only what the scripts touch is
 // there: elements by id, their text, class, style and hidden state. The
 // result also carries ``timers``, the steps the scripts scheduled for later,
-// ``fetched``, every request they made, and ``dispatch``, to fire an event.
+// ``fetched``, every request they made, ``dispatch``, to fire an event, and
+// ``window``, to reach what the scripts put there.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -86,5 +87,6 @@ export async function runPage(scripts, { ids = [], pageData = {}, answers = {},
     for (const listener of listeners[type] || []) await listener({ detail, ...event });
     for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
   }
-  return Object.assign(elements, { timers, fetched, dispatch, location: context.location });
+  return Object.assign(elements, { timers, fetched, dispatch, location: context.location,
+                                   window: context });
 }

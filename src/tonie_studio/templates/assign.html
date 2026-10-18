@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, sticker_picker with context %}
+{% from "_parts.html" import category_select, field, page_script, sticker_picker with context %}
 {% set page_title = t("assign.title") %}
 {% set page_heading = t("assign.heading") %}
 
@@ -32,11 +32,7 @@
       <input type="text" name="episode" value="{{ result.episode }}" required>
     {% endcall %}
     {% call field(t("field.category"), class="mb-0") %}
-      <select name="category">
-        {% for category in categories %}
-        <option value="{{ category }}">{{ category }}</option>
-        {% endfor %}
-      </select>
+      {{ category_select(categories) }}
     {% endcall %}
   </div>
 
@@ -49,6 +45,5 @@
      <a class="ml-12" href="/">{{ t("assign.later") }}</a></p>
 </form>
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("assign.unknown_tag", "assign.unknown_tag_hint", "assign.new_tag")} | tojson }}</script>
-<script src="{{ asset('assign.js') }}"></script>
+{{ page_script("assign", {"words": t.strings("assign.unknown_tag", "assign.unknown_tag_hint", "assign.new_tag")}) }}
 {% endblock %}

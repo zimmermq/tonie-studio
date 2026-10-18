@@ -11,6 +11,10 @@ window.say = (text, values = {}) => {
     (match, name) => (name in values ? values[name] : match));
 };
 
+// What the server handed the page's own script, from #page-data. A page's
+// script runs at the end of the body, where it is already there.
+window.pageData = () => JSON.parse(document.getElementById('page-data').textContent);
+
 // Calls ``step`` now and again every ``ms`` for as long as it returns true.
 // A step that fails - a dropped connection, a server restarting - is tried
 // again rather than ending the loop: the work being watched goes on.
@@ -25,6 +29,22 @@ window.every = (ms, step) => {
     if (again) setTimeout(run, ms);
   };
   run();
+};
+
+// The words of a search as typed. Colons are left out: sticker chips print a
+// UID with or without them, so every searchable row carries it without.
+window.searchWords = text => text.toLowerCase().split(/\s+/)
+  .map(word => word.replace(/:/g, '')).filter(Boolean);
+
+// Whether every one of ``words`` is in the element's data-search.
+window.matches = (element, words) => words.every(word => element.dataset.search.includes(word));
+
+// How the work of a progress page ended, in the outcome card every one has.
+window.ended = (text, failed) => {
+  document.getElementById('outcome').hidden = false;
+  const message = document.getElementById('message');
+  message.textContent = text;
+  message.className = failed ? 'mt-0 state-failed' : 'mt-0 state-done';
 };
 
 // Under a file picker, what it holds: ``describe`` turns the chosen files into
@@ -72,17 +92,18 @@ document.addEventListener('input', event => {
   const find = event.target;
   if (!find.classList || !find.classList.contains('picker-find')) return;
   const picker = find.closest('[data-picker]');
-  const words = find.value.toLowerCase().split(/\s+/).map(word => word.replace(/:/g, '')).filter(Boolean);
+  const words = searchWords(find.value);
   let shown = 0;
   for (const row of picker.querySelectorAll('[data-search]')) {
-    row.hidden = !words.every(word => row.dataset.search.includes(word));
+    row.hidden = !matches(row, words);
     if (!row.hidden) shown += 1;
   }
   picker.querySelector('.picker-none').hidden = shown > 0;
 });
-// Enter in a picker's search would send its form before a sticker was chosen.
+// Enter in a search that only filters the page would send the form around it:
+// a picker's before a sticker was chosen, the sheet's before anything was ticked.
 document.addEventListener('keydown', event => {
-  if (event.key === 'Enter' && event.target.classList && event.target.classList.contains('picker-find')) {
+  if (event.key === 'Enter' && event.target.dataset && 'noEnter' in event.target.dataset) {
     event.preventDefault();
   }
 });

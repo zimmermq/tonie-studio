@@ -31,7 +31,7 @@ from ..i18n import Problem, Translator, languages, negotiate
 from ..importing import Importer
 from ..naming import Namer
 from ..shop import Shop
-from ..jobs import Groups, JobRunner
+from ..jobs import Group, Groups, Job, JobRunner
 from ..listening import ListeningLog
 from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
@@ -162,10 +162,12 @@ class Refused(Problem):
 def refusing(*kinds: Type[BaseException], status: int = 400) -> Iterator[None]:
     """Answer what the services raise as one of ``kinds`` with a refusal the page shows.
 
-    For the errors a person can act on - teddyCloud saying no, a sticker that
-    is taken - which the page then names: "That did not work: ...". Anything
-    else is a fault and stays one. ``status`` is 502 where what failed is a
-    server this app asked on the person's behalf.
+    For the errors a person can act on - a sticker that is taken, a file that
+    cannot be read - which the page then names: "That did not work: ...".
+    Anything else is a fault and stays one. ``status`` is 502 where what failed
+    is a server this app asked on the person's behalf. TeddyCloudError is not
+    one of these: the app-wide handler tells teddyCloud refusing from
+    teddyCloud being away, and answers both the same on every page.
     """
     try:
         yield
@@ -179,6 +181,34 @@ def tag_or_404(tags: Iterable[TonieTag], ruid: str) -> TonieTag:
     if tag is None:
         raise Refused(404, "error.no_tag")
     return tag
+
+
+def job_or_404(runner: JobRunner, job_id: str, kind: Optional[str] = None) -> Job:
+    """The job ``job_id`` (of ``kind``, if given), or a refusal saying there is none."""
+    job = runner.get(job_id)
+    if job is None or (kind is not None and job.kind != kind):
+        raise Refused(404, "error.no_job")
+    return job
+
+
+def group_or_404(groups: Groups, group_id: str) -> Group:
+    """The group of jobs ``group_id``, or a refusal saying it is gone."""
+    group = groups.get(group_id)
+    if group is None:
+        raise Refused(404, "error.parts_gone")
+    return group
+
+
+def failure_text(job: Job, translate: Translator) -> Optional[str]:
+    """Why ``job`` failed, in the reader's language; None if it did not fail.
+
+    A failure the app described is said as it was described; anything else
+    is raw text from a part that does not speak the reader's language, so it
+    is framed as "That did not work: ...".
+    """
+    if job.problem:
+        return job.problem.say(translate)
+    return translate("error.failed", detail=job.error) if job.error else None
 
 
 def refused(problem: Problem, status: int = 400) -> Refused:

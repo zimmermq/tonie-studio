@@ -1,7 +1,9 @@
 """Tests for the pages of the tonies, the box marker, radio tonies and the library."""
 
 import re
+from unittest.mock import patch
 
+import pytest
 from web_helpers import encode_and_assign_page, jpeg_bytes, publish_album
 
 
@@ -281,6 +283,18 @@ class TestLibraryPage:
 
         assert response.status_code == 400
         assert "/wichtig.json" in teddycloud.files
+
+    @pytest.mark.parametrize("status, answer", [(403, 502), (None, 503)])
+    def test_teddycloud_failing_is_answered_as_everywhere(self, client, status, answer):
+        # Refusing and being away read differently, and the same on every page.
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        with patch("tonie_studio.pages.library.delete_taf",
+                   side_effect=TeddyCloudError("no", status=status)):
+            response = client.post("/library/delete", data={"path": "/Weg/Weg.taf"},
+                                   follow_redirects=False)
+
+        assert response.status_code == answer
 
 
 class TestHeaderMarker:

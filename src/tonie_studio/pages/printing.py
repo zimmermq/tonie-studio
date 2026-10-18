@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 import math
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Sequence, Tuple
+from typing import Callable, List, Tuple
 
 from fastapi import FastAPI, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -15,26 +14,19 @@ from starlette.background import BackgroundTask
 
 from ..calibration import (build_calibration, expected_first_centre, is_calibrated, read_shift,
                            reset, save_measurement)
-from ..jobs import Job, JobRunner, JobState, new_id
+from ..jobs import JobState, new_id
 from ..models import images_cached, is_cover_name
-from ..printing import (back_of, known_models, overview_entries, sheet_rows,
-                        stickers_for)
+from ..printing import (PrintError, back_of, known_models, make_sheet, overview_entries,
+                        sheet_rows, stickers_for)
 from ..overview import build_overview
 from ..runtimes import playing_times
-from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Layout, Sticker, back_lines,
-                     build_sheet)
-from ..store import sweep
-from .common import Context, Refused, translator
+from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Sticker, back_lines)
+from .common import Context, Refused, failure_text, job_or_404, translator
 
 log = logging.getLogger(__name__)
 
 # The most copies of one motif the sheet page lets a person ask for.
 MOST_COPIES = 99
-
-# How many finished sheets are kept for downloading again; older ones go
-# when a newer one is done. A sheet of every tonie is some 20 MB.
-KEEP_SHEETS = 3
-
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -153,24 +145,21 @@ def register(app: FastAPI, ctx: Context) -> None:
         job_id = new_id()
         target = settings.data_dir / f"sheet-{job_id}.pdf"
         prints.submit("sheet", f"sheet of {len(stickers)} motif(s)",
-                      lambda progress: _make_sheet(stickers, target, read_shift(settings.data_dir),
+                      lambda progress: make_sheet(stickers, target, read_shift(settings.data_dir),
                                                    progress, LAYOUTS.get(layout, SHEET)),
                       job_id=job_id)
         return RedirectResponse(f"/sheet/print/{job_id}", 303)
 
     @app.get("/sheet/print/{job_id}", response_class=HTMLResponse)
     def sheet_job_page(request: Request, job_id: str):
-        job = _sheet_job(prints, job_id)
+        job = job_or_404(prints, job_id, "sheet")
         return templates.TemplateResponse(request, "sheet_job.html", {"job": job})
 
     @app.get("/api/sheet/print/{job_id}")
     def sheet_job_state(request: Request, job_id: str):
-        job = _sheet_job(prints, job_id)
+        job = job_or_404(prints, job_id, "sheet")
         translate = translator(request)
-        problem = None
-        if job.state is JobState.FAILED:
-            problem = (job.problem.say(translate) if job.problem
-                       else translate("error.failed", detail=job.error))
+        problem = failure_text(job, translate) if job.state is JobState.FAILED else None
         return {
             "state": job.state.value,
             "percent": job.percent or 0,
@@ -182,10 +171,10 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.get("/sheet/print/{job_id}/pdf")
     def sheet_job_pdf(job_id: str):
-        job = _sheet_job(prints, job_id)
+        job = job_or_404(prints, job_id, "sheet")
         if job.state is JobState.FAILED:
-            if isinstance(job.problem, Refused):
-                raise job.problem
+            if isinstance(job.problem, PrintError):
+                raise Refused(400, job.problem.key, **job.problem.params)
             raise Refused(500, "error.failed", detail=job.error)
         if job.state is not JobState.DONE:
             raise Refused(409, "error.sheet_not_ready")
@@ -217,11 +206,6 @@ def register(app: FastAPI, ctx: Context) -> None:
 # --- helpers --------------------------------------------------------------
 
 
-# How old a PDF left in the data folder must be before housekeeping removes
-# it. One being sent right now is seconds old.
-OLD_PDF_SECONDS = 86400
-
-
 def _send_pdf(data_dir: Path, prefix: str, filename: str,
               build: Callable[[Path], None]) -> FileResponse:
     """Build a PDF in ``data_dir``, send it as ``filename`` and remove it once sent.
@@ -239,11 +223,6 @@ def _send_pdf(data_dir: Path, prefix: str, filename: str,
                         background=BackgroundTask(target.unlink, missing_ok=True))
 
 
-def clear_old_pdfs(data_dir: Path) -> None:
-    """Remove PDFs a process that died while sending them left behind."""
-    sweep(data_dir, "*.pdf", OLD_PDF_SECONDS)
-
-
 def _pick(text: str) -> Tuple[str, int, str]:
     """One row's choice as the page sends it, "count:mode:model", as (model, count, mode).
 
@@ -257,48 +236,6 @@ def _pick(text: str) -> Tuple[str, int, str]:
     except ValueError:
         copies = 0
     return model_id, copies, FIT if mode == FIT else FILL
-
-
-@dataclass
-class MadeSheet:
-    path: Path
-    skipped: List[str] = field(default_factory=list)
-
-
-def _make_sheet(stickers: Sequence[Sticker], target: Path, shift: Tuple[float, float],
-                progress: Callable[[str, int, int], None], layout: Layout = SHEET) -> MadeSheet:
-    """Build the sheet at ``target``, leaving nothing behind when that fails."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        skipped = build_sheet(stickers, target, shift,
-                              progress=lambda done, total: progress("pictures", done, total),
-                              layout=layout)
-    except ValueError as error:
-        # Every picture asked for was unreadable, so there is nothing to print.
-        target.unlink(missing_ok=True)
-        raise Refused(400, "error.nothing_to_print") from error
-    except BaseException:
-        target.unlink(missing_ok=True)
-        raise
-    if skipped:
-        log.warning("left off the sheet: %s", ", ".join(skipped))
-    _keep_latest_sheets(target.parent)
-    return MadeSheet(target, skipped)
-
-
-def _keep_latest_sheets(data_dir: Path) -> None:
-    """Remove all but the KEEP_SHEETS newest sheets."""
-    sheets = sorted(data_dir.glob("sheet-*.pdf"), key=lambda path: path.stat().st_mtime,
-                    reverse=True)
-    for old in sheets[KEEP_SHEETS:]:
-        old.unlink(missing_ok=True)
-
-
-def _sheet_job(prints: JobRunner, job_id: str) -> Job:
-    job = prints.get(job_id)
-    if job is None or job.kind != "sheet":
-        raise Refused(404, "error.no_job")
-    return job
 
 
 def _millimetres(text: str) -> float:

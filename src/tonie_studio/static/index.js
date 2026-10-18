@@ -1,5 +1,5 @@
 // The script of the index page; see templates/index.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 // Search, filter and order are the shared list's (list.js).
 const words = data.words;

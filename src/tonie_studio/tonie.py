@@ -23,10 +23,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
+from .albumnotes import forget_model
 from .encode import EncodeResult, delete_taf, taf_exists
 from .library import is_library, path_of, same
 from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, find_model, find_model_by_audio,
                      new_model, next_model_id, release_from_year, remove_model, upload_cover)
+from .runtimes import forget
 from .tags import TonieError, find_tag, list_tags, require_tag
 from .teddycloud import TeddyCloudClient
 
@@ -218,6 +220,17 @@ class Removal:
     taf: Optional[str] = None
 
 
+def delete_model(client: TeddyCloudClient, model_id: str, data_dir: Path) -> None:
+    """Delete one of this app's models, and what the app noted about it here.
+
+    A playing time or an album record left behind would make a later model of
+    the same id look known, or its album look done.
+    """
+    remove_model(client, model_id)
+    forget(data_dir, model_id)
+    forget_model(data_dir, model_id)
+
+
 def plan_removal(client: TeddyCloudClient, ruid: str) -> Removal:
     """What ``remove_tonie`` would delete, without deleting anything."""
     tags = list_tags(client)
@@ -242,7 +255,7 @@ def plan_removal(client: TeddyCloudClient, ruid: str) -> Removal:
     return Removal(ruid=ruid, model=model, taf=taf)
 
 
-def remove_tonie(client: TeddyCloudClient, ruid: str) -> Removal:
+def remove_tonie(client: TeddyCloudClient, ruid: str, data_dir: Path) -> Removal:
     """Free a sticker, and delete its model and taf where nothing else uses them.
 
     The sticker is emptied first: should a deletion after it fail, nothing
@@ -252,7 +265,7 @@ def remove_tonie(client: TeddyCloudClient, ruid: str) -> Removal:
         removal = plan_removal(client, ruid)
         client.set_tag(ruid, source="", tonie_model="")
         if removal.model:
-            remove_model(client, removal.model)
+            delete_model(client, removal.model, data_dir)
         if removal.taf:
             delete_taf(client, removal.taf)
     log.info("tag %s emptied; deleted model %s, taf %s", ruid, removal.model, removal.taf)

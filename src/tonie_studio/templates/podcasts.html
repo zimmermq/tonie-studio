@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, sticker_picker with context %}
+{% from "_parts.html" import error_text, field, sticker_picker with context %}
 {% set page_title = t("nav.podcasts") %}
 
 {% block intro %}{{ t("podcasts.intro") }}{% endblock %}
@@ -14,9 +14,7 @@
         &middot; {% if entry.updated %}{{ t("podcasts.updated", date=entry.updated[:10]) }}{% else %}{{ t("podcasts.not_loaded") }}{% endif %}
       </span>
       {% if entry.error_key or entry.error %}
-      <span class="state-failed detail">
-        {%- if entry.error_key %}{{ t(entry.error_key, **entry.error_params) }}{% else %}{{ entry.error }}{% endif -%}
-      </span>
+      <span class="state-failed detail">{{ error_text(entry) }}</span>
       {% endif %}
     </span>
     <form method="post" action="/podcasts/{{ entry.id }}/refresh">

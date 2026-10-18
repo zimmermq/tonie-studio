@@ -1,5 +1,5 @@
 // The script of the tonies page; see templates/tonies.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 
 // The marker follows the box live: teddyCloud pushes the events, this only
 // asks for the result. Polling every few seconds is plenty for something a

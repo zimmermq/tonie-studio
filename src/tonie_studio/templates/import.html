@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, file_button, picked with context %}
+{% from "_parts.html" import error_text, field, file_button, page_script, picked with context %}
 {% set page_title = t("nav.import") %}
 
 {% macro pace_fields(pace) %}
@@ -34,9 +34,9 @@
     {%- if run.paused %} &middot; {{ t("import.paused") }}{% endif %}
     {%- if run.phase == "running" and not run.paused and next_at %} &middot; {{ t("import.next_at", time=t.when(next_at)) }}{% endif %}
   </p>
-  {% if run.error_key or run.error %}
+  {% if run.error or run.error_key %}
   <p class="state-failed">
-    {%- if run.error_key %}{{ t(run.error_key, **run.error_params) }}{% else %}{{ run.error }}{% endif -%}
+    {{- error_text(run) -}}
   </p>
   {% endif %}
   <div class="list">
@@ -86,7 +86,7 @@
       <strong class="truncate">{{ item.path }}</strong>
       <span class="state-failed detail">
         {%- if when %}{{ t.when(when) }} &middot; {% endif -%}
-        {%- if item.error_key %}{{ t(item.error_key, **item.error_params) }}{% else %}{{ item.error }}{% endif -%}
+        {{- error_text(item) -}}
       </span>
     </span>
   </div>
@@ -128,6 +128,5 @@
 </form>
 {% endif %}
 
-<script type="application/json" id="page-data">{{ {"watch": run is not none and run.active} | tojson }}</script>
-<script src="{{ asset('import.js') }}"></script>
+{{ page_script("import", {"watch": run is not none and run.active}) }}
 {% endblock %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import page_script with context %}
 {% from "_list.html" import toolbar, chips, head with context %}
 {#- A page that is a list: search, filter chips and order over rows the
     server sent all at once (list.js), the same on every list page.
@@ -48,7 +49,6 @@
 {%- set list_data = {"words": t.strings("list.shown_of", *page_words | default([])),
                      "first": first | default(columns[0].key), "orders": columns | orders} %}
 {%- set _ = list_data.update(page_data | default({})) %}
-<script type="application/json" id="page-data">{{ list_data | tojson }}</script>
-<script src="{{ asset('list.js') }}"></script>
+{{ page_script("list", list_data) }}
 {% block scripts %}{% endblock %}
 {% endblock %}

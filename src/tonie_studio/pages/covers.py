@@ -11,8 +11,7 @@ from fastapi.responses import Response
 
 from ..models import CACHE, COVER_TYPES, cache_name, fetch_cover, is_cover_name
 from ..sheet import FILL, FIT, PIXELS, render_square
-from ..teddycloud import TeddyCloudError
-from .common import Context, Refused, refusing
+from .common import Context, Refused
 
 log = logging.getLogger(__name__)
 
@@ -34,8 +33,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         if cache_name(f"{CACHE}{name}") != name:
             raise Refused(400, "error.not_an_image")
-        with refusing(TeddyCloudError, status=502):
-            data = client().fetch(f"{CACHE}{name}")
+        data = client().fetch(f"{CACHE}{name}")
         return _picture_response(data, name, mode, size)
 
     @app.get("/cover/custom/{name}")
@@ -52,8 +50,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         """
         if "/" in name or ".." in name or not is_cover_name(name):
             raise Refused(400, "error.not_an_image")
-        with refusing(TeddyCloudError, status=502):
-            data = fetch_cover(client(), name)
+        data = fetch_cover(client(), name)
 
         return _picture_response(data, name, mode, size)
 

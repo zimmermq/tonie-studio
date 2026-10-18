@@ -30,6 +30,7 @@ import re
 import shutil
 import socket
 import threading
+import uuid
 import xml.etree.ElementTree as ElementTree
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -63,6 +64,9 @@ SERIES = "Podcasts"
 EPISODE_LINE = "Neueste Folgen"
 
 DEFAULT_KEEP = 5
+# The most episodes one sticker carries; more would not fit its memory and
+# would take an evening to encode.
+MOST_KEEP = 20
 
 # Children's podcast episodes run from ten minutes to an hour; this is several
 # times the largest of them and still something a pod can hold in memory.
@@ -362,6 +366,21 @@ def add_subscription(data_dir: Path, subscription: Subscription) -> None:
     with LOCK:
         current = [entry for entry in _read(data_dir) if entry.id != subscription.id]
         _write(data_dir, current + [subscription])
+
+
+def subscribe(data_dir: Path, feed: str, ruid: str, keep: int, title: str = "",
+              played_before: str = "") -> Subscription:
+    """Store a new subscription of ``feed`` onto the sticker ``ruid`` and return it.
+
+    ``played_before`` is what the sticker plays now, so the first refresh can
+    tell it was not given something else meanwhile. ``keep`` is held to
+    between one episode and MOST_KEEP.
+    """
+    subscription = Subscription(id=uuid.uuid4().hex[:10], feed=feed, ruid=ruid,
+                                keep=max(1, min(keep, MOST_KEEP)), title=title,
+                                played_before=played_before)
+    add_subscription(data_dir, subscription)
+    return subscription
 
 
 def remove_subscription(data_dir: Path, subscription_id: str) -> None:

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field with context %}
+{% from "_parts.html" import field, page_script with context %}
 {% set page_title = album.title %}
 
 {% block intro %}
@@ -106,6 +106,5 @@
      <a class="ml-12" href="/">{{ t("common.cancel") }}</a></p>
 </form>
 
-<script type="application/json" id="page-data">{{ {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit")} | tojson }}</script>
-<script src="{{ asset('album.js') }}"></script>
+{{ page_script("album", {"id": id, "mostChapters": most_chapters, "words": t.strings("album.chosen", "album.parts_one", "album.parts_many", "album.parts_many_minutes", "album.parts_limit")}) }}
 {% endblock %}

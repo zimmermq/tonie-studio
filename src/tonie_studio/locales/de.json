@@ -560,7 +560,6 @@
   "one": "{count} Blatt",
   "other": "{count} Blätter"
  },
- "sheet.shown_of": "{shown} von {count} angezeigt",
  "sheet.skipped": "Weggelassen, das Bild war nicht lesbar: {names}",
  "sheet.total": {
   "one": "{count} Cover",

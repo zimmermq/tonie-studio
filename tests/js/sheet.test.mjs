@@ -24,7 +24,7 @@ async function page(rows, layouts = []) {
                            punch: { perPage: 15, diameterMm: 44.5 } }, mostCopies: 99,
                 words: { 'sheet.total': '{count} covers', 'sheet.sheets': '{count} sheets',
                          'sheet.nothing_chosen': 'none', 'sheet.pictures': '',
-                         'sheet.shown_of': '{shown} of {count}' } },
+                         'list.shown_of': '{shown} of {count}' } },
   });
   const search = text => { find.value = text; find.fire('input'); };
   const shown = () => rows.filter(row => !row.hidden).map(row => row.dataset.search.split(' ')[0]);

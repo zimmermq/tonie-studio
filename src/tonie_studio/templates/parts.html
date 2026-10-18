@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_parts.html" import page_script with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t(title_key) %}
 {% set page_heading = t(heading_key) %}
@@ -38,6 +39,5 @@
 </p>
 {% endif %}
 
-<script type="application/json" id="page-data">{{ {"words": t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed"), "placing": placing, "group": group} | tojson }}</script>
-<script src="{{ asset('parts.js') }}"></script>
+{{ page_script("parts", {"words": t.strings("job.state.queued", "job.state.running", "job.state.done", "job.state.failed"), "placing": placing, "group": group}) }}
 {% endblock %}

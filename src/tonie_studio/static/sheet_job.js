@@ -1,22 +1,13 @@
 // The script of the page that watches a sheet being made; see templates/sheet_job.html.
-const data = JSON.parse(document.getElementById('page-data').textContent);
+const data = pageData();
 const words = data.words;
 const fill = document.getElementById('fill');
 const detail = document.getElementById('detail');
-const outcome = document.getElementById('outcome');
-const message = document.getElementById('message');
 const download = document.getElementById('download');
 const skipped = document.getElementById('skipped');
 
 // A second a poll: a sheet takes seconds to a minute, and the bar should move.
 const POLL_MS = 1000;
-
-// How the work ended, in the outcome card every progress page has.
-function ended(text, failed) {
-  outcome.hidden = false;
-  message.textContent = text;
-  message.className = failed ? 'mt-0 state-failed' : 'mt-0 state-done';
-}
 
 // Asked until the sheet is done or failed; a missed answer is asked again.
 window.every(POLL_MS, async () => {

@@ -90,7 +90,7 @@ def captured_sheet():
         target.write_bytes(b"%PDF-1.4\n")
         return []
 
-    with patch("tonie_studio.pages.printing.build_sheet", side_effect=instead):
+    with patch("tonie_studio.printing.build_sheet", side_effect=instead):
         yield asked
 
 
