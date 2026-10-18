@@ -24,6 +24,7 @@ from .cache import BackgroundCache
 from .encode import list_tafs, remove_orphaned_staging
 from .importing import Importer
 from .naming import Namer
+from .shop import Shop
 from .jobs import Groups, JobRunner
 from .library import same
 from .listening import ListeningLog
@@ -56,6 +57,7 @@ def create_app(
     watcher: Optional[BoxWatcher] = None,
     fetch: Fetch = download,
     importer: Optional[Importer] = None,
+    shop: Optional[Shop] = None,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them."""
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
@@ -91,6 +93,7 @@ def create_app(
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
     importer = importer or Importer(client, settings.data_dir)
     namer = Namer(client, importer.dumps)
+    shop = shop or Shop(settings.data_dir)
     # Whoever built the importer decides what follows an import, unless they
     # left it open: then each imported tonie is named straight away.
     if importer.after_import is None:
@@ -132,6 +135,7 @@ def create_app(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
         groups=groups, library=library, importer=importer, namer=namer,
+        shop=shop,
     )
     for part in (site, albums, job_pages, batch, tonies, extras, upkeep, printing, importing):
         part.register(app, ctx)

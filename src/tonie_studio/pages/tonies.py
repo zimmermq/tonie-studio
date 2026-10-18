@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import requests
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
@@ -15,11 +17,11 @@ from ..encode import EncodeError, delete_taf, list_tafs
 from ..library import same
 from ..models import (CACHE, CATEGORIES, COVER_TYPES, DEFAULT_CATEGORY, cache_name, fetch_cover,
                       find_model, images_cached, is_cover_name, update_model)
-from ..podcast import load_subscriptions, remove_subscription
+from ..podcast import LARGEST_IMAGE, FeedError, load_subscriptions, remove_subscription
 from ..runtimes import forget
 from ..sheet import FILL, FIT, PIXELS, render_square
 from ..tags import TonieError, list_tags
-from ..teddycloud import TeddyCloudError
+from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from ..tonie import copy_tag, plan_removal, publish_stream, remove_tonie
 from .common import Context, Refused
 
@@ -66,9 +68,23 @@ def register(app: FastAPI, ctx: Context) -> None:
         tag = next((candidate for candidate in tags if candidate.ruid == ruid), None)
         if tag is None:
             raise Refused(404, "error.no_tag")
+        model = find_model(connection, tag.model) if tag.model else None
+        # What the catalogue and the shop say about it: for a tonie the
+        # catalogue names by its article number, for a model of this app by
+        # the shop product it was linked to. The first view asks the shop.
+        entry, about = None, None
+        if tag.model and model is None:
+            entry = ctx.namer.catalog()[0].by_model.get(tag.model)
+            if entry:
+                about = ctx.shop.lookup(tag.model, entry.get("language") or "")
+        elif model is not None and model.other.get(SHOP_LINK):
+            about = ctx.shop.lookup(str(model.other[SHOP_LINK]))
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
-            "model": find_model(connection, tag.model) if tag.model else None,
+            "model": model,
+            "entry": entry,
+            "about": about,
+            "year": _year(entry.get("release")) if entry else None,
             "categories": CATEGORIES,
             # Where a copy could go, the empty stickers first.
             "others": [other for other in tags if other.ruid != ruid],
@@ -76,6 +92,59 @@ def register(app: FastAPI, ctx: Context) -> None:
             "removal": plan_removal(connection, ruid) if tag.assigned or tag.model else None,
         })
 
+
+    @app.get("/tonies/{ruid}/shop", response_class=HTMLResponse)
+    def shop_page(request: Request, ruid: str):
+        """What the shop has that could be this tonie, for a person to pick from."""
+        connection = client()
+        tag, model = _own_model(connection, ruid)
+        return templates.TemplateResponse(request, "shop.html", {
+            "tag": tag,
+            "model": model,
+            "found": ctx.shop.search(model.series, model.episode),
+            "chapters": _chapters(connection, tag.source),
+        })
+
+    @app.post("/tonies/{ruid}/shop")
+    def take_from_shop(ruid: str, sales_id: str = Form(...)):
+        """Take a shop product's picture, category and, where they fit, chapter titles.
+
+        The name stays the one given here. The chapter titles are only taken
+        when the product has as many as this tonie's audio has chapters: they
+        are named by position, and titles of another edition would name the
+        wrong ones. The product's article number is kept in the model, so the
+        page shows what the shop says about it from then on.
+        """
+        connection = client()
+        tag, model = _own_model(connection, ruid)
+        info = ctx.shop.lookup(sales_id)
+        if info is None:
+            raise Refused(404, "error.shop_unknown", product=sales_id)
+        picture = None
+        if info.picture:
+            try:
+                picture = ctx.fetch(info.picture, LARGEST_IMAGE)
+            except (FeedError, requests.RequestException) as error:
+                raise Refused(502, "error.failed", detail=error) from error
+        tracks = info.tracks if info.tracks and len(info.tracks) == _chapters(
+            connection, tag.source) else None
+        updated = update_model(
+            connection, model.id, tracks=tracks,
+            category=info.genre_key if info.genre_key in CATEGORIES else None,
+            cover=picture, cover_name=_picture_suffix(info.picture))
+        updated.other[SHOP_LINK] = info.sales_id
+        connection.upsert_custom_tonie(updated.to_json())
+        log.info("model %s takes picture and details of shop product %s", model.id, info.sales_id)
+        return RedirectResponse(f"/tonies/{ruid}", 303)
+
+    def _own_model(connection, ruid):
+        tag = next((candidate for candidate in list_tags(connection) if candidate.ruid == ruid), None)
+        if tag is None:
+            raise Refused(404, "error.no_tag")
+        model = find_model(connection, tag.model) if tag.model else None
+        if model is None:
+            raise Refused(404, "error.no_model")
+        return tag, model
 
     @app.post("/tonies/{ruid}/copy")
     def copy_tonie(ruid: str, target: str = Form(...)):
@@ -293,3 +362,37 @@ def _picture_response(data: bytes, name: str, mode: Optional[str], size: int) ->
             return Response(data, media_type="image/jpeg", headers=NO_SNIFFING)
     return Response(data, media_type=COVER_TYPES.get(Path(name).suffix.lower(), "image/jpeg"),
                     headers=NO_SNIFFING)
+
+
+# Where a model of this app keeps the article number of the shop product it
+# took its picture and details from. teddyCloud stores a custom model whole,
+# so the field travels with the model, into its backups too.
+SHOP_LINK = "shop_sales_id"
+
+
+def _year(release: Optional[str]) -> Optional[int]:
+    """The year of a catalogue release, given as seconds since 1970, or None."""
+    try:
+        return datetime.fromtimestamp(int(release), timezone.utc).year if release else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _chapters(client: TeddyCloudClient, source: str) -> Optional[int]:
+    """How many chapters the taf a tag plays has, or None when that cannot be read."""
+    if not source.startswith("lib://"):
+        return None
+    path = "/" + source[len("lib://"):]
+    folder, name = path.rsplit("/", 1)
+    try:
+        listing = client.list_dir(folder or "/", special="library")
+    except TeddyCloudError:
+        return None
+    entry = next((item for item in listing if item.get("name") == name), None)
+    header = (entry or {}).get("tafHeader") or {}
+    return len(header["trackSeconds"]) if header.get("trackSeconds") else None
+
+
+def _picture_suffix(url: str) -> str:
+    """The cover type of a picture address, ``png`` or ``jpg`` as teddyCloud keeps covers."""
+    return "png" if url.split("?", 1)[0].lower().endswith(".png") else "jpg"

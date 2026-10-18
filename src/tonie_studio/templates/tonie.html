@@ -69,6 +69,42 @@
 
 {% endif %}
 
+{% if about or entry or model %}
+<h2>{{ t("tonie.about") }}</h2>
+<div class="card">
+  {% if about and about.description %}
+  {#- Cleaned by shop.clean_description: text and plain formatting only. #}
+  <div class="description">{{ about.description | safe }}</div>
+  {% endif %}
+  {%- set facts = [] %}
+  {%- if about and about.age_min %}{% set _ = facts.append(t("tonie.about_age", age=about.age_min)) %}{% endif %}
+  {%- if about and about.minutes %}{% set _ = facts.append(t("tonie.about_minutes", minutes=about.minutes)) %}{% endif %}
+  {%- if about and about.genre %}{% set _ = facts.append(about.genre) %}{% endif %}
+  {%- if about %}{% for theme in about.themes %}{% set _ = facts.append(theme) %}{% endfor %}{% endif %}
+  {%- if year %}{% set _ = facts.append(t("tonie.about_year", year=year)) %}{% endif %}
+  {% if facts %}
+  <p class="muted">{% for fact in facts %}{% if not loop.first %} &middot; {% endif %}{{ fact }}{% endfor %}</p>
+  {% endif %}
+  {% if entry and entry.tracks %}
+  <h3>{{ t("tonie.about_tracks") }}</h3>
+  <ol class="muted">
+    {% for track in entry.tracks %}<li>{{ track }}</li>{% endfor %}
+  </ol>
+  {% endif %}
+  {% if model and not about %}
+  <p class="muted">{{ t("tonie.shop_hint") }}</p>
+  {% endif %}
+  <p class="row wrap gap-12 mb-0">
+    {% if about and about.url %}
+    <a class="button" href="{{ about.url }}" target="_blank" rel="noopener noreferrer">{{ t("tonie.on_shop") }}</a>
+    {% endif %}
+    {% if model %}
+    <a class="button" href="/tonies/{{ tag.ruid }}/shop">{{ t("tonie.shop_search") }}</a>
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
 {% if tag.source %}
 <h2>{{ t("tonie.copy_title") }}</h2>
 <div class="card">

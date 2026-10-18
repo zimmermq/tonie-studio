@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ t("shop.title") }} - tonie-studio{% endblock %}
+
+{% block body %}
+<h1>{{ t("shop.title") }}</h1>
+<p class="sub">
+  {{ model.series }} - {{ model.episode }} &middot; {{ model.id }}
+</p>
+<p class="muted">{{ t("shop.intro") }}</p>
+
+<div class="list">
+{% for info in found %}
+  <div class="album">
+    {% if info.picture %}
+    {#- Shop pictures are wide with the figure in the middle; at the list's
+        usual square size the figure would be a speck. #}
+    <img class="shop-picture" src="{{ info.picture }}" alt="" loading="lazy" referrerpolicy="no-referrer">
+    {% else %}
+    <span class="noart" aria-hidden="true"></span>
+    {% endif %}
+    <span class="grow truncate">
+      <strong class="truncate">{{ info.name }}</strong>
+      <span class="muted truncate">
+        {{ info.series }} &middot; {{ info.sales_id }}
+        {%- if info.tracks %} &middot;
+        {%- if chapters and info.tracks | length == chapters %} <span class="state-done">{{ t("shop.chapters_match", count=chapters) }}</span>
+        {%- elif chapters %} {{ t("shop.chapters_differ", shop=info.tracks | length, taf=chapters) }}
+        {%- else %} {{ t("shop.chapters", count=info.tracks | length) }}{% endif %}
+        {%- endif %}
+      </span>
+    </span>
+    {% if info.url %}
+    <a class="button small" href="{{ info.url }}" target="_blank" rel="noopener noreferrer">tonies.com</a>
+    {% endif %}
+    <form method="post" action="/tonies/{{ tag.ruid }}/shop">
+      <input type="hidden" name="sales_id" value="{{ info.sales_id }}">
+      <button type="submit" class="small primary">{{ t("shop.take") }}</button>
+    </form>
+  </div>
+{% else %}
+  <div class="album muted">{{ t("shop.none") }}</div>
+{% endfor %}
+</div>
+
+<p><a class="button" href="/tonies/{{ tag.ruid }}">{{ t("common.back") }}</a></p>
+{% endblock %}

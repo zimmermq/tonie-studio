@@ -279,6 +279,21 @@ class TestRetitling:
         assert (step.kind, step.model_id, step.new_model.episode) == (RETITLE, "TS-0039", "Mit Gefühl")
         assert step.new_model.audio_ids == ["11"] and result.retired == []
 
+    def test_keeps_the_cover_and_shop_link_a_person_took_from_tonies_com(self):
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Eule Set - Mit Gefuehl")
+        ours.picture = "/custom_img/TS-0039.png"
+        ours.other["shop_sales_id"] = "11003994"
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")}, retitle=True)
+
+        written = result.steps[0].new_model.to_json()
+        assert written["pic"] == "/custom_img/TS-0039.png"
+        assert written["shop_sales_id"] == "11003994"
+        assert written["episodes"] == "Mit Gefühl"
+
     def test_only_when_asked(self):
         ours = model("TS-0039", 11, "AA", series="Eule", episode="Eule Set - Mit Gefuehl")
         tags = [tag(ruid("00000001"), lib(11), "TS-0039")]

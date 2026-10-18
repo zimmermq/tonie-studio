@@ -30,6 +30,7 @@ from ..i18n import COOKIE as LANG_COOKIE
 from ..i18n import Problem, Translator, languages, negotiate
 from ..importing import Importer
 from ..naming import Namer
+from ..shop import Shop
 from ..jobs import Groups, JobRunner
 from ..listening import ListeningLog
 from ..models import ModelCache
@@ -83,6 +84,8 @@ class Context:
     library: BackgroundCache[Set[str]]
     importer: Importer
     namer: Namer
+    # What the tonies.com shop says about tonies.
+    shop: Shop
 
 
 class Catalogue:

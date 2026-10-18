@@ -1,0 +1,259 @@
+"""What the tonies.com shop says about a tonie: description, age, running time, picture.
+
+The catalogue teddyCloud keeps (tonies.json) names a tonie and lists its
+tracks, but has no description, age recommendation or link, and knows
+nothing of tonies it does not list, such as new Cuddle Tonies. The shop
+does, and its pages fetch their products as JSON from its own search
+service, which this module asks the same way: by article number (the
+catalogue's model, the shop's salesId) for a tonie the catalogue names, and by
+the words of its name for one it does not. One answer carries everything:
+picture, description, age, running time, genre, themes, link and the titles
+of the chapters.
+
+The service is the shop's own and not documented. Should it change, nothing
+here breaks: a lookup that fails is no answer, and the pages then simply show
+less. Only the German shop is asked, the one the de-de catalogue entries
+belong to.
+
+A tonie's answer is kept beside the app's data, so the shop is asked once
+per tonie; one it does not know is asked again after MISS_DAYS, since the
+shop gains products over time.
+"""
+
+from __future__ import annotations
+
+import html
+import logging
+import re
+import time
+import unicodedata
+from dataclasses import asdict, dataclass, field
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import requests
+
+from .store import LOCK, read_json, write_json
+
+log = logging.getLogger(__name__)
+
+BASE = "https://tonies.com"
+API = "https://api.prod.shop.tonies.com/api/os/products/"
+SHOP_LOCALE = "de-DE"
+LANGUAGE = "de-de"
+FILE_NAME = "shop.json"
+
+# How long a tonie the shop does not know is left alone before asking again.
+MISS_DAYS = 30
+
+# A search for a word of the name returns this many products at most. The
+# service matches any word anywhere, also in descriptions, so the ranking
+# here sorts out which of them are meant.
+SEARCH_LIMIT = 30
+
+# How many requests one search makes at most: a word each, the longest first,
+# and the umlaut spelling of a word a dump wrote out ("gefuehle"), since the
+# shop does not always find a word spelled out.
+SEARCH_REQUESTS = 4
+
+# How many candidates a search hands back.
+MOST_FOUND = 6
+
+TIMEOUT = 15
+
+# Words too common to say anything about which tonie is meant.
+_COMMON = frozenset("""
+    und mit der die das den dem des ein eine einer von vom fuer fur zum zur auf aus bei
+    tonie tonies folge teil set and the with
+""".split())
+
+Fetch = Callable[[str, Dict[str, str]], Dict[str, Any]]
+
+
+@dataclass
+class ShopInfo:
+    sales_id: str
+    url: str = ""
+    name: str = ""
+    series: str = ""
+    picture: str = ""
+    description: str = ""  # cleaned HTML, safe to put on a page as it is
+    age_min: Optional[int] = None
+    minutes: Optional[int] = None
+    genre: str = ""
+    genre_key: str = ""  # such as audio-play, the catalogue's category for it
+    themes: List[str] = field(default_factory=list)
+    tracks: List[str] = field(default_factory=list)
+
+
+def _fold(text: str) -> str:
+    text = text.lower()
+    for umlaut, spelled in (("\u00e4", "ae"), ("\u00f6", "oe"), ("\u00fc", "ue"), ("\u00df", "ss")):
+        text = text.replace(umlaut, spelled)
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+
+
+def _words(text: str) -> List[str]:
+    return [word for word in re.findall(r"[a-z0-9]+", _fold(text))
+            if len(word) >= 3 and word not in _COMMON]
+
+
+def search_words(series: str, episode: str) -> List[str]:
+    """The words of a name worth searching the shop for, as written, the longest first.
+
+    The shop searches the spelling it is given: "Löwen" finds what "loewen"
+    does not, so the words keep their umlauts.
+    """
+    words = []
+    for word in re.findall(r"\w+", f"{series} {episode}".lower()):
+        folded = _fold(word)
+        if len(folded) >= 4 and folded not in _COMMON and word not in words:
+            words.append(word)
+    return sorted(words, key=len, reverse=True)
+
+
+def _queries(words: List[str]) -> List[str]:
+    """What to ask the shop for: each word, and its umlaut spelling where a dump wrote it out."""
+    queries = []
+    for word in words:
+        queries.append(word)
+        if re.search(r"(ae|oe|ue)", word) and not re.search("[\u00e4\u00f6\u00fc]", word):
+            queries.append(word.replace("ae", "\u00e4").replace("oe", "\u00f6")
+                           .replace("ue", "\u00fc"))
+    return queries[:SEARCH_REQUESTS]
+
+
+def info_from(document: Dict[str, Any]) -> ShopInfo:
+    """A product as the shop's search answers it, reduced to what a page shows."""
+    product = document.get("_source", document)
+    genre = product.get("genre") or {}
+    tracks = product.get("tracks") or ""
+    path = product.get("productUrl") or ""
+    return ShopInfo(
+        sales_id=str(product.get("salesId") or ""),
+        url=f"{BASE}{path}" if path.startswith("/") else "",
+        name=product.get("name") or "",
+        series=(product.get("series") or {}).get("name") or "",
+        picture=(product.get("firstImage") or {}).get("url") or "",
+        description=clean_description(product.get("description") or ""),
+        age_min=product.get("ageMin"),
+        minutes=product.get("runTime"),
+        genre=genre.get("name") or "",
+        genre_key=genre.get("key") or "",
+        themes=[theme.get("name") for theme in product.get("theme") or [] if theme.get("name")],
+        tracks=[line.strip() for line in tracks.splitlines() if line.strip()]
+        if isinstance(tracks, str) else [str(track) for track in tracks],
+    )
+
+
+class _Cleaner(HTMLParser):
+    """Keeps text and a handful of formatting tags without their attributes."""
+
+    KEEP = {"b", "strong", "i", "em", "p", "br", "ul", "ol", "li"}
+    # Whose content is dropped along with the tag, not only the tag.
+    DROP = {"script", "style", "iframe", "object", "template"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out: List[str] = []
+        self.dropping = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.DROP:
+            self.dropping += 1
+        elif tag in self.KEEP and not self.dropping:
+            self.out.append(f"<{tag}>")
+
+    def handle_endtag(self, tag):
+        if tag in self.DROP:
+            self.dropping = max(0, self.dropping - 1)
+        elif tag in self.KEEP and tag != "br" and not self.dropping:
+            self.out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.dropping:
+            self.out.append(html.escape(data, quote=False))
+
+
+def clean_description(text: str) -> str:
+    """The shop's description HTML reduced to plain formatting, safe to show.
+
+    It comes from a service this app does not control, so only text and
+    simple formatting tags survive: no attributes, no links, no scripts.
+    """
+    cleaner = _Cleaner()
+    cleaner.feed(text or "")
+    cleaner.close()
+    return re.sub(r"<p>\s*</p>", "", "".join(cleaner.out)).strip()
+
+
+def _get(url: str, params: Dict[str, str]) -> Dict[str, Any]:
+    response = requests.get(url, params=params, timeout=TIMEOUT,
+                            headers={"User-Agent": "tonie-studio", "Accept": "application/json"})
+    response.raise_for_status()
+    return response.json()
+
+
+class Shop:
+    """Asks the shop about tonies and keeps what it said."""
+
+    def __init__(self, data_dir: Path, fetch: Fetch = _get,
+                 clock: Callable[[], float] = time.time):
+        self.data_dir = data_dir
+        self.fetch = fetch
+        self.clock = clock
+
+    def lookup(self, sales_id: str, language: str = LANGUAGE) -> Optional[ShopInfo]:
+        """What the shop says about the product with article number ``sales_id``."""
+        if language != LANGUAGE or not sales_id:
+            return None
+        with LOCK:
+            known = read_json(self.data_dir / FILE_NAME, {}).get(sales_id)
+        if isinstance(known, dict):
+            if known.get("sales_id"):
+                fields = ShopInfo.__dataclass_fields__
+                return ShopInfo(**{key: value for key, value in known.items() if key in fields})
+            if self.clock() - known.get("missed", 0) < MISS_DAYS * 86400:
+                return None
+
+        try:
+            answer = self.fetch(API, {"shopLocale": SHOP_LOCALE, "salesId": sales_id, "limit": "1"})
+        except (OSError, ValueError, requests.RequestException) as error:
+            # Not remembered: the shop being away says nothing about the tonie.
+            log.warning("tonies.com could not be asked about %s: %s", sales_id, error)
+            return None
+        found = [info_from(document) for document in answer.get("documents") or []]
+        info = next((item for item in found if item.sales_id == sales_id), None)
+        self.remember(sales_id, info)
+        return info
+
+    def remember(self, sales_id: str, info: Optional[ShopInfo]) -> None:
+        with LOCK:
+            known = read_json(self.data_dir / FILE_NAME, {})
+            known[sales_id] = asdict(info) if info else {"missed": self.clock()}
+            write_json(self.data_dir / FILE_NAME, known)
+
+    def search(self, series: str, episode: str) -> List[ShopInfo]:
+        """The shop's products whose names share most words with this one, best first."""
+        wanted = set(_words(f"{series} {episode}"))
+        found: Dict[str, ShopInfo] = {}
+        for word in _queries(search_words(series, episode)):
+            try:
+                answer = self.fetch(API, {"shopLocale": SHOP_LOCALE, "search": word,
+                                          "limit": str(SEARCH_LIMIT)})
+            except (OSError, ValueError, requests.RequestException) as error:
+                log.warning("tonies.com could not be searched for %r: %s", word, error)
+                break
+            for document in answer.get("documents") or []:
+                info = info_from(document)
+                if info.sales_id:
+                    found.setdefault(info.sales_id, info)
+
+        def shared(info: ShopInfo) -> int:
+            text = _fold(f"{info.name} {info.series}")
+            return sum(1 for word in wanted if word in text)
+
+        ranked = sorted((info for info in found.values() if shared(info)),
+                        key=lambda info: (-shared(info), info.name.casefold()))
+        return ranked[:MOST_FOUND]
