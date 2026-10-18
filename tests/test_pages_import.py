@@ -6,7 +6,8 @@ import pytest
 
 from tonie_studio.github import RepoError
 from tonie_studio.i18n import Translator
-from tonie_studio.importing import FETCHING, PENDING, STOPPED, Importer
+from tonie_studio.importing import (FETCHING, PENDING, STOPPED, Importer, Pace, Skip, add_skip,
+                                    skip_list)
 
 AUTH = "AB" * 32
 say = Translator("de")
@@ -369,3 +370,67 @@ def _apply_names(site, seen, follow_redirects=True):
     assert response.headers["location"].startswith("/import/names?running=")
     _wait_for_names(site, response)
     return site.get(response.headers["location"], follow_redirects=follow_redirects)
+
+
+class TestSkipList:
+    """The dumps later runs leave out, seen and changed on the import page."""
+
+    def _failed_run(self, site, importer, teddycloud):
+        # Two dumps, so the run is still going when the first one failed.
+        teddycloud.cloud_refusing.add(WOLF_RUID)
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11")),
+                        ("Sammlung/Fest.nfc", dump("21 C9 91 7D"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        for _ in range(5):
+            importer.step()
+
+    def test_a_refused_dump_shows_on_the_list_with_a_way_back(self, site, importer, teddycloud):
+        self._failed_run(site, importer, teddycloud)
+
+        page = site.get("/import").text
+
+        assert 'id="skip-list"' in page and "Sammlung/Wolf.nfc" in page
+        assert "11DFC517/500304E0" in page
+        assert 'action="/import/skip/remove"' in page and f'value="{WOLF_RUID}"' in page
+
+    def test_taking_one_off_the_list(self, site, importer, settings, teddycloud):
+        self._failed_run(site, importer, teddycloud)
+
+        response = site.post("/import/skip/remove", data={"ruid": WOLF_RUID},
+                             follow_redirects=False)
+
+        assert response.status_code == 303 and skip_list(settings.data_dir) == []
+
+    def test_a_failed_dump_can_be_put_on_the_list_from_the_page(self, site, importer, settings,
+                                                                teddycloud):
+        del teddycloud.cloud[WOLF_RUID]
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        for _ in range(5):
+            importer.step()
+
+        page = site.get("/import").text
+        response = site.post("/import/skip", data={"path": "Sammlung/Wolf.nfc"},
+                             follow_redirects=False)
+
+        assert 'action="/import/skip"' in page
+        assert response.status_code == 303
+        assert [entry.ruid for entry in skip_list(settings.data_dir)] == [WOLF_RUID]
+
+    def test_a_dump_that_did_not_fail_is_not_put_on_it(self, site):
+        assert site.post("/import/skip", data={"path": "nope.nfc"}).status_code == 404
+
+    def test_the_list_shows_without_a_run_too(self, site, settings):
+        add_skip(settings.data_dir, Skip(ruid=WOLF_RUID, path="Sammlung/Wolf.nfc"))
+
+        assert 'id="skip-list"' in site.get("/import").text
+
+    def test_the_run_counts_the_ones_it_left_out(self, site, importer, settings, teddycloud):
+        add_skip(settings.data_dir, Skip(ruid=WOLF_RUID, path="Sammlung/Wolf.nfc"))
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        for _ in range(5):
+            importer.step()
+
+        assert site.get("/api/import").json()["counts"]["skipped"] == 1
+        assert 'id="count-skipped"' in site.get("/import").text

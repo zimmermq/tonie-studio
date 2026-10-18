@@ -59,6 +59,9 @@ class FakeTeddyCloud:
         }
         # What the Tonies cloud would hand out, by ruid, and every ruid asked for.
         self.cloud: Dict[str, bytes] = {}
+        # Tonies whose download the cloud refuses as unauthorized, as it does
+        # for a dump whose token it does not accept.
+        self.cloud_refusing: Set[str] = set()
         self.cloud_requests: List[str] = []
         # Lookups of a tonie whose content folder does not exist, which the
         # real server logs as a 404 warning each.
@@ -308,6 +311,9 @@ class FakeTeddyCloud:
             raise TeddyCloudError("no local content available and cloud access disabled", status=503)
         json_path = f"/{folder}/{file}.json"
         entry = json.loads(self.files.get(json_path, b"{}"))
+        if ruid in self.cloud_refusing:
+            raise TeddyCloudError(f"teddyCloud answered 401 for the download of {folder}/{file}: "
+                                  '{"error":{"title":"Unauthorized","status":401}}', status=401)
         if not entry.get("cloud_auth") or ruid not in self.cloud:
             raise TeddyCloudError(f"teddyCloud answered 410 for the download of {folder}/{file}",
                                   status=410)

@@ -17,14 +17,14 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..teddycloud import TeddyCloudError
 from ..times import from_seconds
-from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, UNREADABLE,
-                         ImportProblem, Pace, Run)
+from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, SKIPPED,
+                         UNREADABLE, ImportProblem, Pace, Run, remove_skip, skip_list)
 from .. import naming
 from ..jobs import JobState
 from .common import Context, Refused, refused, upload_form
 
 # The order the counts are shown in.
-STATES = (PENDING, IMPORTED, CACHED, FAILED, DUPLICATE, UNREADABLE)
+STATES = (PENDING, IMPORTED, CACHED, FAILED, SKIPPED, DUPLICATE, UNREADABLE)
 
 # How many of the latest settled tonies the page lists.
 RECENT = 10
@@ -55,7 +55,22 @@ def register(app: FastAPI, ctx: Context) -> None:
             "recent": _recent(run) if run else [],
             "next_at": from_seconds(run.next_at) if run else None,
             "pace": run.pace if run else Pace(),
+            "skips": [(skip, from_seconds(skip.added_at) if skip.added_at else None)
+                      for skip in skip_list(ctx.settings.data_dir)],
         })
+
+    @app.post("/import/skip")
+    def skip_failed(path: str = Form(...)):
+        """Put a dump of the latest run that failed on the skip list."""
+        if not importer.skip_failed(path):
+            raise Refused(404, "import.skip_unknown")
+        return RedirectResponse("/import#skip-list", 303)
+
+    @app.post("/import/skip/remove")
+    def unskip(ruid: str = Form(...)):
+        """Take a sticker off the skip list; the next run tries its dumps again."""
+        remove_skip(ctx.settings.data_dir, ruid)
+        return RedirectResponse("/import#skip-list", 303)
 
     @app.get("/api/import")
     def import_state():

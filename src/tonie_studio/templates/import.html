@@ -77,6 +77,7 @@
 
 {% if failed %}
 <h2>{{ t("import.problems") }}</h2>
+{%- set listed = skips | map(attribute="0.ruid") | list %}
 <div class="list">
   {% for item, when in failed %}
   <div class="item">
@@ -87,10 +88,44 @@
         {{- error_text(item) -}}
       </span>
     </span>
+    {% if item.state == "failed" %}
+    {% if item.ruid in listed %}
+    <span class="pill">{{ t("import.skip.listed") }}</span>
+    {% else %}
+    <form method="post" action="/import/skip">
+      <input type="hidden" name="path" value="{{ item.path }}">
+      <button type="submit" class="small">{{ t("import.skip.add") }}</button>
+    </form>
+    {% endif %}
+    {% endif %}
   </div>
   {% endfor %}
 </div>
 {% endif %}
+{% endif %}
+
+{% if skips %}
+<h2 id="skip-list">{{ t("import.skip.title") }} <span class="muted">({{ skips | length }})</span></h2>
+<p class="muted mt-0">{{ t("import.skip.hint") }}</p>
+<div class="list">
+  {% for skip, when in skips %}
+  <div class="item">
+    <span class="grow truncate">
+      <strong class="truncate">{{ skip.path }}</strong>
+      <span class="muted detail">
+        {{- skip.ruid[:8] | upper }}/{{ skip.ruid[8:] | upper -}}
+        {%- if when %} &middot; {{ t("import.skip.since", time=t.when(when)) }}{% endif -%}
+        {%- if not skip.token %} &middot; {{ t("import.skip.every_dump") }}{% endif -%}
+      </span>
+      {% if skip.reason %}<span class="muted detail truncate">{{ skip.reason }}</span>{% endif %}
+    </span>
+    <form method="post" action="/import/skip/remove">
+      <input type="hidden" name="ruid" value="{{ skip.ruid }}">
+      <button type="submit" class="small">{{ t("import.skip.remove") }}</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 {% if not run or not run.active %}

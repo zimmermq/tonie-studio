@@ -13,8 +13,9 @@ import pytest
 from fake_teddycloud import FakeTeddyCloud
 from tonie_studio.github import Repo, RepoError
 from tonie_studio.importing import (CACHED, CHECKING, DUPLICATE, FAILED, FETCHING, FINISHED,
-                                    GIVEN_UP, IMPORTED, PENDING, STOPPED, UNREADABLE,
-                                    ImportProblem, Importer, Pace, cached_at, import_one)
+                                    GIVEN_UP, IMPORTED, PENDING, SKIP_FILE, SKIPPED, STOPPED,
+                                    UNREADABLE, ImportProblem, Importer, Pace, Skip, add_skip,
+                                    cached_at, import_one, remove_skip, skip_list)
 
 AUTH = "AB" * 32
 
@@ -395,6 +396,133 @@ class TestFailures:
         run_until_idle(importer, clock)
 
         assert states(importer)["Fest.nfc"] == IMPORTED
+
+
+class TestTheSkipList:
+    """Dumps the cloud will not hand the audio for are left out of later runs."""
+
+    def _refused_once(self, importer, teddycloud, clock):
+        teddycloud.cloud_refusing.add(WOLF_RUID)
+        importer.begin([WOLF, FEST], STEADY, "first")
+        run_until_idle(importer, clock)
+        clock.now += 360
+        run_until_idle(importer, clock)
+
+    def test_a_dump_the_cloud_refuses_goes_on_the_list(self, importer, teddycloud, clock, tmp_path):
+        self._refused_once(importer, teddycloud, clock)
+
+        (entry,) = skip_list(tmp_path)
+
+        assert (entry.ruid, entry.path) == (WOLF_RUID, "Wolf.nfc")
+        assert entry.token and "401" in entry.reason
+
+    def test_the_list_never_holds_a_token(self, importer, teddycloud, clock, tmp_path):
+        # A dump's token is what the cloud takes for the tonie; it stays in
+        # the run record only while a run needs it.
+        self._refused_once(importer, teddycloud, clock)
+
+        assert AUTH not in (tmp_path / SKIP_FILE).read_text(encoding="utf-8")
+
+    def test_a_later_run_leaves_it_out_without_asking(self, importer, teddycloud, clock):
+        self._refused_once(importer, teddycloud, clock)
+        importer.begin([WOLF, BIBI], STEADY, "second")
+        asked = len(teddycloud.cloud_requests)
+
+        run_until_idle(importer, clock)
+
+        assert states(importer)["Wolf.nfc"] == SKIPPED
+        assert teddycloud.cloud_requests[asked:] == [BIBI_RUID]
+
+    def test_a_skipped_one_neither_waits_nor_counts_as_failing(self, importer, teddycloud, clock):
+        self._refused_once(importer, teddycloud, clock)
+        importer.begin([WOLF, BIBI], Pace(per_hour=10, jitter=0, max_failures=1), "second")
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().phase == FINISHED
+        assert states(importer)["Bibi.nfc"] == IMPORTED
+
+    def test_a_new_dump_of_the_same_tonie_is_tried(self, importer, teddycloud, clock):
+        self._refused_once(importer, teddycloud, clock)
+        teddycloud.cloud_refusing.clear()
+        fresh = ("Wolf neu.nfc", dump("17 C5 DF 11", auth="CD" * 32))
+        importer.begin([fresh], STEADY, "second")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer)["Wolf neu.nfc"] == IMPORTED
+
+    def test_an_entry_without_a_token_leaves_out_every_dump_of_the_sticker(self, importer,
+                                                                          teddycloud, clock,
+                                                                          tmp_path):
+        add_skip(tmp_path, Skip(ruid=WOLF_RUID, path="Wolf.nfc"))
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer)["Wolf.nfc"] == SKIPPED
+        assert teddycloud.cloud_requests == []
+
+    def test_one_put_on_the_list_during_a_run_is_left_out_at_its_turn(self, importer,
+                                                                      teddycloud, clock,
+                                                                      tmp_path):
+        importer.begin([FEST, WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+        add_skip(tmp_path, Skip(ruid=WOLF_RUID, path="Wolf.nfc"))
+
+        clock.now += 360
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Fest.nfc": IMPORTED, "Wolf.nfc": SKIPPED}
+
+    def test_other_failures_are_not_put_on_it(self, importer, teddycloud, clock, tmp_path):
+        # A tonie the cloud does not have now may have it tomorrow.
+        del teddycloud.cloud[WOLF_RUID]
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer)["Wolf.nfc"] == FAILED
+        assert skip_list(tmp_path) == []
+
+    def test_taken_off_it_the_dump_is_tried_again(self, importer, teddycloud, clock, tmp_path):
+        self._refused_once(importer, teddycloud, clock)
+        teddycloud.cloud_refusing.clear()
+
+        assert remove_skip(tmp_path, WOLF_RUID) == 1
+        importer.begin([WOLF], STEADY, "second")
+        run_until_idle(importer, clock)
+
+        assert states(importer)["Wolf.nfc"] == IMPORTED
+
+    def test_a_failed_dump_of_the_run_can_be_put_on_it_by_hand(self, importer, teddycloud,
+                                                                clock, tmp_path):
+        # Still running, so the dump's token is there to take a fingerprint of.
+        del teddycloud.cloud[WOLF_RUID]
+        importer.begin([WOLF, FEST], STEADY, "test")
+        run_until_idle(importer, clock)
+
+        assert importer.skip_failed("Wolf.nfc")
+        (entry,) = skip_list(tmp_path)
+        assert entry.ruid == WOLF_RUID and entry.token
+
+    def test_after_the_run_the_entry_covers_every_dump_of_the_sticker(self, importer, teddycloud,
+                                                                        clock, tmp_path):
+        del teddycloud.cloud[WOLF_RUID]
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+
+        assert importer.skip_failed("Wolf.nfc")
+        assert skip_list(tmp_path)[0].token == ""
+
+    def test_refusals_from_before_the_list_existed_are_taken_onto_it(self, importer, teddycloud,
+                                                                     clock, tmp_path):
+        self._refused_once(importer, teddycloud, clock)
+        (tmp_path / SKIP_FILE).unlink()
+
+        importer.adopt_refusals()
+
+        assert [entry.ruid for entry in skip_list(tmp_path)] == [WOLF_RUID]
 
 
 class TestControls:

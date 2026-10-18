@@ -28,6 +28,7 @@ show until the next is started.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -44,19 +45,29 @@ from .github import Repo, RepoError
 from .i18n import Problem
 from .models import WRITING
 from .nfc import DumpError, parse_dump
-from .store import LOCK, from_record, read_json, write_json
+from .store import LOCK, changing_json, from_record, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
 
 FILE_NAME = "import.json"
 
+# Dumps later runs leave out; see Skip.
+SKIP_FILE = "import-skip.json"
+
 # How cached_at names a taf that lies beside its content JSON.
 BESIDE = "content/"
 
-# Item states. NEW items have not been checked against teddyCloud yet.
-NEW, PENDING, CACHED, IMPORTED, FAILED, DUPLICATE, UNREADABLE = (
-    "new", "pending", "cached", "imported", "failed", "duplicate", "unreadable")
+# Item states. NEW items have not been checked against teddyCloud yet;
+# SKIPPED ones are on the skip list and are not asked for.
+NEW, PENDING, CACHED, IMPORTED, FAILED, DUPLICATE, UNREADABLE, SKIPPED = (
+    "new", "pending", "cached", "imported", "failed", "duplicate", "unreadable", "skipped")
+
+# What the cloud answers for a dump whose token it does not take. Asking
+# again with the same token gets the same answer, so such a dump is put on
+# the skip list; other failures, such as a tonie the cloud lacks today, may
+# go away and are tried again by the next run.
+UNAUTHORIZED = 401
 
 # Run phases. FETCHING, CHECKING and RUNNING are the active ones; the rest are ends.
 FETCHING, CHECKING, RUNNING, FINISHED, STOPPED, GIVEN_UP = (
@@ -87,6 +98,59 @@ BESIDE_GRACE_SECONDS = 5
 # A pause after an unexpected error in the worker, so a fault that repeats
 # does not spin.
 RETRY_SECONDS = 60
+
+
+@dataclass
+class Skip:
+    """A dump later runs leave out, kept until a person takes it off the list."""
+
+    ruid: str
+    path: str
+    # A fingerprint of the dump's token, never the token itself, which is
+    # what the cloud takes for the tonie. "" leaves out every dump of the
+    # sticker; with one, a new dump of the same tonie is tried again.
+    token: str = ""
+    reason: str = ""
+    added_at: float = 0.0
+
+
+def token_print(auth: str) -> str:
+    """A fingerprint that tells two tokens apart and gives neither away."""
+    return hashlib.sha256(auth.encode("ascii")).hexdigest()[:16] if auth else ""
+
+
+def skip_list(data_dir: Path) -> List[Skip]:
+    """The skip list, oldest first."""
+    entries = read_json(data_dir / SKIP_FILE, [])
+    skips = []
+    for entry in entries:
+        try:
+            skips.append(from_record(Skip, entry))
+        except (TypeError, AttributeError):
+            log.warning("ignoring an unreadable entry of %s", SKIP_FILE)
+    return skips
+
+
+def add_skip(data_dir: Path, skip: Skip) -> None:
+    """Put ``skip`` on the list, in place of an entry for the same dump. Not under LOCK."""
+    with changing_json(data_dir / SKIP_FILE, []) as entries:
+        entries[:] = [entry for entry in entries
+                      if (entry.get("ruid"), entry.get("token")) != (skip.ruid, skip.token)]
+        entries.append(asdict(skip))
+
+
+def remove_skip(data_dir: Path, ruid: str) -> int:
+    """Take every entry of the sticker ``ruid`` off the list; returns how many. Not under LOCK."""
+    with changing_json(data_dir / SKIP_FILE, []) as entries:
+        before = len(entries)
+        entries[:] = [entry for entry in entries if entry.get("ruid") != ruid]
+        return before - len(entries)
+
+
+def _on_list(skips: List[Skip], item: "Item") -> bool:
+    mark = token_print(item.auth)
+    return any(skip.ruid == item.ruid and (not skip.token or skip.token == mark)
+               for skip in skips)
 
 
 class ImportProblem(Problem):
@@ -360,6 +424,34 @@ class Importer:
         self._wake.set()
         return run
 
+    def skip_failed(self, path: str) -> bool:
+        """Put the failed dump ``path`` of the latest run on the skip list.
+
+        Its token is known while the run is active; after, the entry leaves
+        out every dump of the sticker. Returns whether there was such a dump.
+        """
+        run = self.current()
+        item = next((item for item in run.items if item.path == path and item.state == FAILED),
+                    None) if run else None
+        if item is None:
+            return False
+        add_skip(self.data_dir, Skip(ruid=item.ruid, path=item.path, token=token_print(item.auth),
+                                     reason=item.error, added_at=self.clock()))
+        return True
+
+    def adopt_refusals(self) -> None:
+        """Put the latest run's unauthorized failures on the skip list.
+
+        For runs that failed at a dump before the list existed, and so did
+        not put it there; an entry already there is written once more.
+        """
+        run = self.current()
+        for item in run.items if run else []:
+            if item.state == FAILED and f"answered {UNAUTHORIZED} " in item.error:
+                add_skip(self.data_dir, Skip(ruid=item.ruid, path=item.path,
+                                             token=token_print(item.auth), reason=item.error,
+                                             added_at=item.settled_at))
+
     def pause(self) -> None:
         self._change(lambda run: setattr(run, "paused", True) if run.active else None)
 
@@ -385,6 +477,11 @@ class Importer:
     # --- the worker ---------------------------------------------------------
 
     def start(self) -> None:
+        try:
+            self.adopt_refusals()
+        except Exception:
+            # The list is a convenience; the importer runs without it.
+            log.exception("could not take earlier refusals onto the skip list")
         self._thread = threading.Thread(target=self._loop, name="importer", daemon=True)
         self._thread.start()
 
@@ -447,6 +544,7 @@ class Importer:
     def _check(self, run: Run) -> None:
         """Ask teddyCloud about the next batch of unchecked items."""
         client = self.client()
+        skips = skip_list(self.data_dir)
         checked: Dict[int, Tuple[str, str]] = {}
         for index, item in enumerate(run.items):
             if item.state != NEW:
@@ -454,14 +552,15 @@ class Importer:
             entry, where = lookup(client, item.ruid)
             if where:
                 cloud_off(client, item.ruid, entry)
-            checked[index] = (CACHED, where) if where else (PENDING, "")
+            checked[index] = ((CACHED, where) if where
+                              else (SKIPPED, "") if _on_list(skips, item) else (PENDING, ""))
             if len(checked) == CHECKS_PER_WRITE:
                 break
 
         def record(current: Run) -> None:
             for index, (state, where) in checked.items():
-                if state == CACHED:
-                    _settle_item(current.items[index], CACHED, where, 0.0)
+                if state in (CACHED, SKIPPED):
+                    _settle_item(current.items[index], state, where, 0.0)
                 else:
                     current.items[index].state = state
             if not any(item.state == NEW for item in current.items):
@@ -484,6 +583,13 @@ class Importer:
             settled = self.clock()
             self._record(run.id,
                          lambda current: _settle_item(current.items[index], CACHED, where, settled))
+            return 0
+
+        # Put on the skip list while the run went on: left out, no wait.
+        if _on_list(skip_list(self.data_dir), item):
+            settled = self.clock()
+            self._record(run.id,
+                         lambda current: _settle_item(current.items[index], SKIPPED, "", settled))
             return 0
 
         now = self.clock()
@@ -509,6 +615,10 @@ class Importer:
                 if current.streak >= current.pace.max_failures and current.active:
                     current.phase = GIVEN_UP
             self._record(run.id, failed)
+            if isinstance(cause, TeddyCloudError) and cause.status == UNAUTHORIZED:
+                add_skip(self.data_dir, Skip(ruid=item.ruid, path=item.path,
+                                             token=token_print(item.auth), reason=str(cause),
+                                             added_at=self.clock()))
             return 0
 
         log.info("imported %s as %s", item.path, where)
