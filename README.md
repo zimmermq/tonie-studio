@@ -141,6 +141,26 @@ Dependencies are listed in `requirements.in`; `requirements.txt` is the lock bui
 every package's hashes. After changing `requirements.in`, lock again with
 `uv pip compile requirements.in --generate-hashes --python-version 3.15 --universal -o requirements.txt`.
 
+The unit tests talk to a stand-in for teddyCloud, and a stand-in can behave differently from the
+real server. `scripts/e2e_teddycloud.py` runs the app against a real teddyCloud in Docker, with
+its cloud access switched off, and checks what really arrived there: every upload finished,
+tafs, stickers, models and covers as written. It needs Docker and ffmpeg and takes about ten
+minutes for both modes (`normal`, and `slow` with uploads arriving in pieces, as over a network):
+
+```bash
+.venv/bin/python scripts/e2e_teddycloud.py --work /tmp/e2e --certs ~/.cache/e2e-teddycloud-certs
+```
+
+A fresh teddyCloud makes its own certificates on first start, which takes about a quarter of an
+hour; `--certs` keeps them for the next run. A stand-in for the Tonies cloud lets the import run
+through teddyCloud's real cloud code, so the check also sees which token each download carries.
+
+Run it after any change to how the app talks to teddyCloud (`teddycloud.py`, encoding, uploads,
+imports, backup and restore) and before releasing it. On GitHub the same check is the workflow
+"End-to-end check against teddyCloud": it can be started by hand, and runs every Monday when
+`main` has moved since its last successful run. It cannot cover the Tonies cloud, tonies.com, a
+real Toniebox or public podcast feeds.
+
 To run it locally, set `TS_TEDDYCLOUD_URL` (and usually `TS_ARCHIVE_DIR` and `TS_DATA_DIR`) and
 start `uvicorn --factory tonie_studio.main:app` with `src` on the `PYTHONPATH`.
 
