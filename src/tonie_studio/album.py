@@ -205,8 +205,8 @@ def list_albums(
             continue
         covers = _cover_candidates(entries) if describe else []
         if describe:
-            first = min(audio, key=lambda path: _natural_key(path.name))
-            title, artist, year = _describe(directory, [_read_tags(first) or TrackTags()])
+            first = _read_tags(_first_file(audio)) or TrackTags()
+            title, artist, year = _describe(directory, [first], first)
         else:
             title, artist, year = "", None, None
         summaries.append(AlbumSummary(
@@ -266,7 +266,8 @@ def read_album(path: Path) -> Album:
     elif _cover_rank(candidates[0]) == ARTEFACT_RANK:
         warnings.append(WARN_ARTEFACT_COVER)
 
-    title, artist, year = _describe(path, tags.values())
+    first = tags[_first_file(files)] if files else TrackTags()
+    title, artist, year = _describe(path, tags.values(), first)
 
     return Album(
         path=path,
@@ -406,8 +407,24 @@ def disc_number(folder_name: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-def _describe(path: Path, all_tags):
+def _first_file(files: Sequence[Path]) -> Path:
+    """The track whose tags name the album: the first by file name."""
+    return min(files, key=lambda path: _natural_key(path.name))
+
+
+def name_from_file(name: str) -> str:
+    """What a lone audio file is called, read from its name like a track title."""
+    return _track_title(Path(name), TrackTags())
+
+
+def _describe(path: Path, all_tags, first: TrackTags):
     """The album's title, artist and year, from the tags or from the folder name.
+
+    The title is the album tag of ``first``, the first track by file name,
+    even where other tracks name another album: the album list reads that
+    track alone, and the list and the album's own pages have to call one
+    album the same. A folder of tracks from several albums is a mix with
+    no name of its own, so the first track's is as good as any.
 
     The discs of one release carry the same album tag, and would read as the
     same album twice: the same title, the same taf, so the second could never
@@ -415,7 +432,7 @@ def _describe(path: Path, all_tags):
     release is read from the folder above it.
     """
     tags = list(all_tags)
-    title = _common(tag.album for tag in tags)
+    title = (first.album or "").strip() or None
     artist = _common(tag.albumartist for tag in tags) or _common(tag.artist for tag in tags)
     year = _year(_common(tag.date for tag in tags))
     disc = disc_number(path.name)

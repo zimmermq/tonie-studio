@@ -202,13 +202,10 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
     # Whatever was mid-encode when the process died is nobody's job now, and
     # it is holding hundreds of megabytes in teddyCloud's library. Only at
     # startup: once jobs run, a staging folder is usually one of theirs.
-    # A replace stopped the same way leaves its stickers on the copy beside
-    # the taf; nothing else points them back.
     try:
         removed = remove_orphaned_staging(client())
         if removed:
             log.info("cleared %d abandoned staging folder(s)", removed)
-        recover_asides(client())
     except TeddyCloudError as error:
         # teddyCloud being down is no reason for this app not to start; the
         # pages that need it will say so themselves.
@@ -223,6 +220,11 @@ def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
             # A refresh takes minutes; a day-old folder is one a crash left.
             sweep(settings.data_dir / PODCAST_WORK_FOLDER, "*", 86400)
             _check_space(settings.data_dir)
+            # A replace stopped with the process leaves its stickers on the
+            # copy beside the taf; nothing else points them back. Every round,
+            # not only the first: teddyCloud may still have been writing the
+            # taf when the app came back. The stickers play the copy meanwhile.
+            recover_asides(client())
         except Exception:
             log.exception("housekeeping round failed")
         if stop.wait(HOUSEKEEPING_EVERY):

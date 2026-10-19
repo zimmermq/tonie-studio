@@ -7,8 +7,10 @@ const state = document.getElementById('state');
 const detail = document.getElementById('detail');
 
 // The encode counts in seconds of audio, the uploads in files. Showing
-// "encode 312/4917" would be true and useless.
+// "encode 312/4917" would be true and useless. A job that ended keeps the
+// step it was last at; saying it beside "done" contradicts the state.
 function describe(job) {
+  if (job.state === 'done' || job.state === 'failed') return '';
   if (!job.step) return words['job.preparing'];
   if (job.step === 'upload') return say(words['job.uploaded'], {done: job.done, count: job.total});
   if (job.step === 'encode') {

@@ -86,13 +86,27 @@ function setCount(row, value, recount = true) {
   if (recount) refresh();
 }
 
+// The total is what the PDF will hold, so the count of sheets is the one
+// that comes out of the printer: every cover, a text side right after each
+// while those are printed too, and every extra picture once.
+const wantback = document.getElementById('wantback');
+const extras = document.querySelector('input[name=files]');
+// Steps that follow every change of what is ticked or how many.
+const countsChanged = [];
 function refresh() {
-  const sum = rows.reduce((n, row) => n + countOf(row), 0);
-  const sheets = Math.ceil(sum / layout().perPage);
-  total.textContent = sum
-    ? say(words['sheet.total'], {count: sum}) + ', ' + say(words['sheet.sheets'], {count: sheets})
+  const covers = rows.reduce((n, row) => n + countOf(row), 0);
+  const backs = wantback && wantback.checked ? covers : 0;
+  const pictures = extras && extras.files ? extras.files.length : 0;
+  const parts = [[covers, 'sheet.total'], [backs, 'sheet.backs'], [pictures, 'sheet.pictures']]
+    .filter(([count]) => count).map(([count, key]) => say(words[key], {count}));
+  const sheets = Math.ceil((covers + backs + pictures) / layout().perPage);
+  total.textContent = parts.length
+    ? [...parts, say(words['sheet.sheets'], {count: sheets})].join(', ')
     : words['sheet.nothing_chosen'];
+  for (const step of countsChanged) step();
 }
+if (wantback) wantback.addEventListener('change', () => refresh());
+if (extras) extras.addEventListener('change', () => refresh());
 
 for (const row of rows) {
   row.querySelector('.want').addEventListener('change', event => {
@@ -182,7 +196,6 @@ if (disc) {
     return backs[key];
   }
   const who = document.getElementById('backwho');
-  const wantback = document.getElementById('wantback');
   const wanttracks = document.getElementById('wanttracks');
   // The circle is drawn at this many pixels for a sticker of this many
   // millimetres, so a point on screen covers what it covers on paper.
@@ -227,27 +240,24 @@ if (disc) {
     who.textContent = row.querySelector('strong').textContent;
   }
 
+  // Switched off, the preview stays, faded: it shows what switching it on
+  // would add. It is drawn whenever the first ticked row may have changed,
+  // which every tick, step, "untick all" and "fill the sheet" ends in a
+  // recount for, and so does another layout.
   function showBack() {
     const on = wantback.checked;
     disc.parentElement.style.opacity = on ? '1' : '.35';
     wanttracks.disabled = !on;
-    if (on) drawBack();
   }
 
   wantback.addEventListener('change', showBack);
   wanttracks.addEventListener('change', drawBack);
-  for (const row of rows) {
-    row.querySelector('.want').addEventListener('change', () => {
-      if (wantback.checked) drawBack();
-    });
-  }
-  layoutChanged.push(() => { if (wantback.checked) drawBack(); });
-  drawBack();
+  countsChanged.push(drawBack);
   showBack();
 }
 
 layoutChanged.push(refresh);
-showLayout();
 for (const row of rows) setCount(row, countOf(row), false);
-refresh();
+// Draws the first total and text side as well.
+showLayout();
 filter();

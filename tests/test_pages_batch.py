@@ -579,8 +579,9 @@ class TestRecognisingWritesNothing:
                                                                              teddycloud):
         # Two editions with identical track names: the tonie is one of them,
         # and which one the track list cannot tell. Hiding the wrong one
-        # would keep it from ever being made.
-        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+        # would keep it from ever being made. The names are in neither
+        # album's title, so only the tracks can match.
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "Ohne", "episodes": "Namen",
                                         "tracks": ["Der Tee", "Immer muss ich", "Sommer lang"]})
         first = self._album_with(client, "Neu/Eins", "der_tee", "immer_muss_ich", "sommer_lang")
         second = self._album_with(client, "Neu/Zwei", "der_tee", "immer_muss_ich", "sommer_lang")

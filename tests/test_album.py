@@ -325,6 +325,21 @@ class TestListAlbums:
 
         assert summary.title == "Von Track eins"
 
+    def test_names_a_mixed_folder_as_its_own_page_does(self, tmp_path, tags):
+        # The listing reads the first track alone; were the album page to
+        # read the others too, one upload would be called two names.
+        directory = _album(tmp_path, "abc123", ["01-a.flac", "02-b.flac", "03-c.flac"])
+        tags["01-a.flac"] = TrackTags(album="Upload Album")
+        tags["02-b.flac"] = TrackTags(album="Ganz anderes")
+
+        assert list_albums(tmp_path)[0].title == read_album(directory).title == "Upload Album"
+
+    def test_names_a_folder_whose_first_track_is_untagged_as_its_own_page_does(self, tmp_path, tags):
+        directory = _album(tmp_path, "Gute Nacht", ["01-a.flac", "02-b.flac"])
+        tags["02-b.flac"] = TrackTags(album="Nur Track zwei")
+
+        assert list_albums(tmp_path)[0].title == read_album(directory).title == "Gute Nacht"
+
     def test_falls_back_to_the_folder_name_when_nothing_is_tagged(self, tmp_path, tags):
         _album(tmp_path, "Lichterkinder-Schlaflieder-WEB-FLAC-2021-WALKMAN", ["01-a.flac"])
 

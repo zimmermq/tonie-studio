@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict
+from typing import Dict, Optional
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
@@ -78,7 +78,15 @@ def register(app: FastAPI, ctx: Context) -> None:
         })
 
     @app.get("/job/{job_id}/assign", response_class=HTMLResponse)
-    def assign_page(request: Request, job_id: str, new: str = ""):
+    def assign_page(request: Request, job_id: str, new: str = "",
+                    series: Optional[str] = None, episode: Optional[str] = None,
+                    category: str = ""):
+        """The form giving a finished encode its sticker.
+
+        ``series``, ``episode`` and ``category`` are what the page had typed
+        when it reloaded itself for a new sticker; without them the fields
+        start from the album page's choices again.
+        """
         outcome = _finished_outcome(jobs, job_id)
         connection = client()
         tags = list_tags(connection)
@@ -104,6 +112,9 @@ def register(app: FastAPI, ctx: Context) -> None:
             "categories": CATEGORIES,
             "preselect": preselect,
             "duplicate": duplicate,
+            "series": outcome.series if series is None else series,
+            "episode": outcome.episode if episode is None else episode,
+            "category": category if category in CATEGORIES else None,
         })
 
     @app.post("/job/{job_id}/assign")

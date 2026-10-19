@@ -51,6 +51,26 @@ class TestRepaired:
 
         assert repaired(f"Schl{twice}fer") == "Schläfer"
 
+    @pytest.mark.parametrize("damaged, meant", [
+        ("\u00c3\u201epfel", "\u00c4pfel"),
+        ("\u00c3\u0153berraschung", "\u00dcberraschung"),
+        ("Fu\u00c3\u0178ball", "Fu\u00dfball"),
+        ("\u00c3\u201erger \u00c3\u00bcber", "\u00c4rger \u00fcber"),
+    ])
+    def test_undoes_utf8_read_as_windows_1252(self, damaged, meant):
+        # Windows-1252 puts letters and quotes where latin-1 has control
+        # characters, so text it damaged holds characters latin-1 cannot hold.
+        assert repaired(damaged) == meant
+
+    def test_undoes_windows_1252_damage_done_twice(self):
+        twice = "\u00c4".encode("utf-8").decode("cp1252").encode("utf-8").decode("cp1252")
+
+        assert repaired(f"{twice}pfel") == "\u00c4pfel"
+
+    def test_leaves_correct_text_with_typographic_quotes_alone(self):
+        assert repaired("\u201eGute Nacht\u201c \u2013 Gr\u00fc\u00dfe") is None
+        assert repaired("\u00c4rger \u2026") is None
+
     def test_plain_ascii_is_never_damage(self):
         assert repaired("Papagei") is None
         assert repaired("") is None

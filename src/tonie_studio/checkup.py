@@ -77,11 +77,12 @@ class Finding:
 
 
 def repaired(text: Optional[str]) -> Optional[str]:
-    """The text as it was meant, if it is UTF-8 that was read as latin-1.
+    """The text as it was meant, if it is UTF-8 that was read as latin-1 or Windows-1252.
 
-    Mangled text has a tell: encoded back to latin-1 it is valid UTF-8 again.
-    Correct German never is - a lone "\u00e4" is not a complete UTF-8 sequence -
-    and a decomposed umlaut cannot be encoded to latin-1 at all, so neither is
+    Mangled text has a tell: turned back into the bytes it was read from it
+    is valid UTF-8 again. Correct German never is - a lone "\u00e4" is not a
+    complete UTF-8 sequence, and neither are typographic quotes - and a
+    decomposed umlaut has no byte in either code page at all, so neither is
     ever mistaken for damage. Damage done twice is undone twice.
     """
     if not text or text.isascii():
@@ -89,13 +90,27 @@ def repaired(text: Optional[str]) -> Optional[str]:
     current = text
     for _ in range(3):
         try:
-            candidate = current.encode("latin-1").decode("utf-8")
+            candidate = _bytes_read(current).decode("utf-8")
         except (UnicodeEncodeError, UnicodeDecodeError):
             break
         if candidate == current:
             break
         current = candidate
     return current if current != text else None
+
+
+def _bytes_read(text: str) -> bytes:
+    """The bytes ``text`` was decoded from, had they been read as latin-1 or Windows-1252.
+
+    The two agree on every byte but 0x80-0x9F, where latin-1 has control
+    characters and Windows-1252 letters and punctuation ("\u00c3\u201e" is
+    "\u00c4" read the Windows way). Text read the Windows way still holds the
+    control characters for the five bytes Windows-1252 leaves undefined, so
+    one string can hold both; each character is mapped back on its own.
+    Raises UnicodeEncodeError for a character neither code page has.
+    """
+    return b"".join(bytes([ord(character)]) if ord(character) < 256
+                    else character.encode("cp1252") for character in text)
 
 
 def examine(client: TeddyCloudClient, busy: Iterable[str] = (),

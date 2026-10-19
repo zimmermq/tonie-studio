@@ -28,13 +28,13 @@
   <h2>{{ t("assign.what") }}</h2>
   <div class="card">
     {% call field(t("field.series")) %}
-      <input type="text" name="series" value="{{ result.series }}">
+      <input type="text" name="series" value="{{ series }}">
     {% endcall %}
     {% call field(t("field.episode")) %}
-      <input type="text" name="episode" value="{{ result.episode }}" required>
+      <input type="text" name="episode" value="{{ episode }}" required>
     {% endcall %}
     {% call field(t("field.category"), class="mb-0") %}
-      {{ category_select(categories) }}
+      {{ category_select(categories, category) }}
     {% endcall %}
   </div>
 

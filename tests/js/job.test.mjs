@@ -51,3 +51,17 @@ const busy = await runPage(['app.js', 'job.js'], {
 
 assert.equal(busy.timers.length, 1);
 console.log('job.test: retry ok');
+
+// A finished job is past its last step: the line under the bar says no more
+// than the state does, rather than "encoding" beside "done".
+for (const state of ['done', 'failed']) {
+  const ended = await runPage(['app.js', 'job.js'], {
+    ids: ['fill', 'state', 'detail', 'outcome', 'message', 'next'],
+    pageData: { id: 'e', words: { ...words, 'job.encoding': 'wird encodiert' },
+                doneKey: 'job.taf_done', running: true },
+    answers: { '/api/job/e': { state, percent: 100, step: 'encode', done: 30, total: 60,
+                               error: state === 'failed' ? 'kaputt' : null } },
+  });
+  assert.equal(ended.detail.textContent, '');
+}
+console.log('job.test: ended ok');

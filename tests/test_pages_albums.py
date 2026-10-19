@@ -4,6 +4,7 @@ assignment."""
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 from web_helpers import (album_page_after_upload, checked_ruid, encode_and_assign_page, finish_job,
                          eventually, first_album_id, page_script, publish_album, upload_series,
@@ -302,6 +303,19 @@ class TestJobPage:
         assert status["percent"] == 100
         assert status["target"] == "/Status.taf"
 
+    def test_a_finished_job_names_no_step_beside_its_state(self, client, runner):
+        # A job keeps the step it was last at; "encoding" beside "done" is
+        # two answers to one question.
+        job, _page = encode_and_assign_page(client, runner)
+        assert job.step
+
+        page = client.get(f"/job/{job.id}").text
+        home = client.get("/").text
+
+        assert page.split('id="detail"', 1)[1].split("</p>", 1)[0] == ' role="status">'
+        assert "wird encodiert" not in home and "Minuten" not in home
+        assert "fertig - " not in home
+
     def test_refuses_an_unknown_job(self, client):
         assert client.get("/api/job/nope").status_code == 404
         assert client.get("/job/nope").status_code == 404
@@ -453,6 +467,20 @@ class TestUpload:
         page = album_page_after_upload(client, response)
         assert "Eins" in page and "Zwei" in page
 
+    @pytest.mark.parametrize("names, title", [
+        (["Gute_Nacht/01-a.mp3", "Gute_Nacht/02-b.mp3"], "Gute Nacht"),
+        (["02-zwei.mp3", "01-eins.mp3"], "Eins"),
+    ])
+    def test_an_untagged_upload_is_called_what_was_picked_everywhere(self, client, names, title):
+        response = client.post("/upload", files=[
+            ("files", (name, b"\x01" * 8, "audio/mpeg")) for name in names],
+            follow_redirects=False)
+
+        batch = client.get(response.headers["location"]).text
+        listing = client.get("/").text
+        assert f'<strong class="truncate">{title}' in listing
+        assert f'name="episodes" value="{title}"' in batch
+
     def test_offers_a_folder_picker(self, client):
         assert "webkitdirectory" in client.get("/").text
 
@@ -503,6 +531,26 @@ class TestAssignPage:
         marked = page.split('value="deb4ed0e500304e0"')[1].split(">")[0]
         assert "checked" in marked
         assert "gerade aufgelegt" in page
+
+    def test_keeps_what_was_typed_when_drawn_again_for_a_new_sticker(self, client, runner):
+        # The page reloads itself once a sticker is held against the box, and
+        # sends along what had been typed so it is not lost.
+        job, _page = encode_and_assign_page(client, runner)
+
+        page = client.get(f"/job/{job.id}/assign", params={
+            "new": "deb4ed0e500304e0", "series": "Eigene Reihe", "episode": "Folge <1>",
+            "category": "audio-book"}).text
+
+        assert 'name="series" value="Eigene Reihe"' in page
+        assert 'name="episode" value="Folge &lt;1&gt;"' in page
+        assert '<option value="audio-book" selected>' in page
+
+    def test_an_unknown_category_in_the_address_selects_none(self, client, runner):
+        job, _page = encode_and_assign_page(client, runner)
+
+        page = client.get(f"/job/{job.id}/assign", params={"category": "nonsense"}).text
+
+        assert " selected>" not in page.split('name="category"')[1].split("</select>")[0]
 
     def test_ignores_a_stale_link_to_a_tag_that_is_not_there(self, client, runner):
         job, _page = encode_and_assign_page(client, runner)

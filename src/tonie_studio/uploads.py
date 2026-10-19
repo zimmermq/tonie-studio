@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .album import is_audio_name
+from .album import is_audio_name, name_from_file
 from .batch import episode_order
 from .i18n import Problem
 from .models import is_cover_name
@@ -44,8 +44,7 @@ def spool(upload_dir: Path, files: Iterable[Tuple[Optional[str], BinaryIO]]) -> 
         return []
     root = upload_dir / uuid.uuid4().hex[:12]
     root.mkdir(parents=True)
-    destinations = ({key: root for key in by_folder} if len(by_folder) == 1
-                    else _subfolders(root, by_folder))
+    destinations = _subfolders(root, by_folder)
     try:
         for key, members in by_folder.items():
             destinations[key].mkdir(parents=True, exist_ok=True)
@@ -84,20 +83,36 @@ def _subfolders(root: Path, folders: Dict[str, List[Tuple[str, BinaryIO]]]) -> D
 
     The names matter: an album without tags is called after its folder, and
     a series without an artist tag after the folder holding its episodes.
+    ``root`` itself has a random name, which is never what anyone picked.
     Only those two levels are kept; anything deeper would sit below what the
-    album scan reaches. Two folders that end alike get a number.
+    album scan reaches. Files picked one by one come with no folder and are
+    named after the first of them. Two folders that end alike get a number.
     """
     taken: set = set()
     destinations = {}
-    for folder in folders:
-        parts = [part for part in map(_base_name, PurePosixPath(folder).parts) if part][-2:]
-        parts = parts or ["album"]
+    for folder, members in folders.items():
+        parts = [part for part in map(_folder_name, PurePosixPath(folder).parts) if part][-2:]
+        parts = parts or [_folder_name(name_from_file(_first_track(members))) or "album"]
         name, number = parts[-1], 2
         while str(PurePosixPath(*parts)).casefold() in taken:
             parts[-1], number = f"{name} ({number})", number + 1
         taken.add(str(PurePosixPath(*parts)).casefold())
         destinations[folder] = root.joinpath(*parts)
     return destinations
+
+
+def _first_track(members: Sequence[Tuple[str, BinaryIO]]) -> str:
+    """The file name of the first audio file among ``members``, in episode order."""
+    return min((_base_name(name) for name, _data in members if is_audio_name(name)),
+               key=episode_order)
+
+
+def _folder_name(name: str) -> str:
+    """``name`` made fit to name a folder the album scan still finds.
+
+    The scan passes over hidden folders, so a leading dot would hide the album.
+    """
+    return _base_name(name).lstrip(".")
 
 
 def _base_name(name: Optional[str]) -> str:

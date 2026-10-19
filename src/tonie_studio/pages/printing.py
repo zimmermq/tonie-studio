@@ -15,12 +15,13 @@ from starlette.background import BackgroundTask
 from ..calibration import (build_calibration, expected_first_centre, is_calibrated, read_shift,
                            reset, save_measurement)
 from ..jobs import JobState, new_id
-from ..models import images_cached, is_cover_name
+from ..models import images_cached, is_cover_name, list_models
 from ..printing import (PrintError, back_of, known_models, make_sheet, overview_entries,
                         sheet_rows, stickers_for)
 from ..overview import build_overview
 from ..runtimes import playing_times
 from ..sheet import (BACK_FADE, FILL, FIT, LAYOUTS, SHEET, Sticker, back_lines)
+from ..teddycloud import TeddyCloudClient
 from .common import Context, Refused, failure_text, job_or_404, read_picture, translator
 
 log = logging.getLogger(__name__)
@@ -42,8 +43,10 @@ def register(app: FastAPI, ctx: Context) -> None:
         """The sheet, with a row for every sticker that has a cover to print.
 
         Asked for with models, the first row of each comes ticked: the tonie
-        page and the walkthrough send people here for exactly those. ``q``
-        fills the search, which the page itself applies.
+        page and the walkthrough send people here for exactly those. One with
+        no picture to print has no row, and is named instead: otherwise the
+        sheet looks complete while a tonie of the batch is missing from it.
+        ``q`` fills the search, which the page itself applies.
         """
         connection = client()
         cached = images_cached(connection)
@@ -55,6 +58,8 @@ def register(app: FastAPI, ctx: Context) -> None:
                 preset.discard(row.model.id)
         return templates.TemplateResponse(request, "sheet.html", {
             "rows": rows,
+            "unprintable": _names_of(connection, [wanted for wanted in model
+                                                  if wanted in preset]),
             "images_cached": cached,
             "query": q.strip(),
             "layouts": list(LAYOUTS.values()),
@@ -204,6 +209,18 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
 # --- helpers --------------------------------------------------------------
+
+
+def _names_of(connection: TeddyCloudClient, model_ids: List[str]) -> List[str]:
+    """How each model is named in a list, in the order given, without repeats.
+
+    An id teddyCloud holds no model for is shown as it is: it is still the
+    one that was asked for, and the only name there is.
+    """
+    if not model_ids:
+        return []
+    labels = {model.id: model.label for model in list_models(connection)}
+    return [labels.get(model_id) or model_id for model_id in dict.fromkeys(model_ids)]
 
 
 def _send_pdf(data_dir: Path, prefix: str, filename: str,

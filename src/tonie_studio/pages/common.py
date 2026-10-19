@@ -35,7 +35,7 @@ from ..i18n import Problem, Translator, languages, negotiate
 from ..importing import Importer
 from ..naming import Namer
 from ..shop import Shop
-from ..jobs import Group, Groups, Job, JobRunner
+from ..jobs import Group, Groups, Job, JobRunner, JobState
 from ..listening import ListeningLog
 from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
@@ -266,7 +266,11 @@ def describe_progress(job, translate: Translator) -> str:
 
     The encode counts seconds of audio, and "encode 312/4917" would be true
     and useless. ``static/job.js`` says the same while the page watches.
+    Nothing for a job that ended: it keeps the step it was last at, and
+    naming that beside "done" contradicts the state.
     """
+    if job.state in (JobState.DONE, JobState.FAILED):
+        return ""
     if not job.step:
         return translate("job.preparing")
     if job.step == encode.UPLOAD:

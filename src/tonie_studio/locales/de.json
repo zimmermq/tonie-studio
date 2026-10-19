@@ -589,6 +589,10 @@
  "sheet.back_to_sheet": "Zurück zum Drucken",
  "sheet.back_tracks": "Tracks mitdrucken",
  "sheet.back_tracks_hint": "- was nicht passt, wird gezählt",
+ "sheet.backs": {
+  "one": "{count} Rückseite",
+  "other": "{count} Rückseiten"
+ },
  "sheet.choose_pictures": "Bilder wählen",
  "sheet.download": "PDF herunterladen",
  "sheet.extra": "Zusätzliche Bilder",
@@ -624,6 +628,10 @@
  "sheet.overview": "Übersicht für die Dose",
  "sheet.overview_hint": "Alle Tonies auf einem A4-Blatt: Cover, Name, Jahr, Spieldauer.",
  "sheet.overview_pdf": "Übersicht als PDF",
+ "sheet.pictures": {
+  "one": "{count} zusätzliches Bild",
+  "other": "{count} zusätzliche Bilder"
+ },
  "sheet.search": "Tonies oder Sticker suchen",
  "sheet.search_hint": "Name, Serie oder UID - mehrere UIDs mit Leerzeichen oder Komma getrennt",
  "sheet.sheets": {
@@ -635,6 +643,7 @@
   "one": "{count} Cover",
   "other": "{count} Cover"
  },
+ "sheet.unprintable": "Ohne Bild, daher nicht auf dem Blatt: {names}. Gib ihnen auf ihrer Tonie-Seite ein Cover.",
  "shop.chapters_differ": "{shop} Kapitel, dein Hörspiel hat {taf}",
  "shop.chapters_match": {
   "one": "{count} Kapitel, passt",

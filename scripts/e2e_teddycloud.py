@@ -65,6 +65,26 @@ What is covered, by flow:
 - names: the naming upkeep (/import/names) moving an old NFC- model into the
   app's namespace, and naming a freshly imported tonie.
 
+Flows that guard against regressions found once; they build on each other
+only where said:
+
+- library_form: "on a sticker" from the library sent as the page's own form
+  (its hidden path read from the page), for a decomposed umlaut too: the
+  sticker names the file as the library lists it.
+- upload_refused: an upload without audio is refused with a message right
+  inside <main>, which the album list's script shows in its #refusal box.
+- delete_cached: deleting an official tonie whose audio teddyCloud cached
+  beside its content JSON frees the sticker and deletes that audio.
+- restore_restart: a restore previewed, the app killed and started again,
+  then confirmed from its page.
+- replace_copy_move: a sticker copied and another moved while a replace has
+  them on the copy beside the target. replace_recovery, after it: the app
+  killed during a replace's final encode; the checkup spares the target, and
+  the recovery at the next start points the stickers back.
+- podcast_move: a podcast's tonie moved while a refresh runs (second app
+  instance, as podcast_inproc); failed_jobs: dozens of failed podcast
+  refreshes leave teddyCloud and the app answering.
+
 What is not covered, and why:
 
 - the Tonies cloud itself and the tonies.com shop: never contacted.
@@ -104,6 +124,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import html.parser
 import http.server
 import io
 import json
@@ -119,11 +140,12 @@ import tempfile
 import threading
 import time
 import traceback
+import unicodedata
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 import requests
 
@@ -171,7 +193,20 @@ SLOW_PIECE = (0.02, 0.05)
 
 FLOWS = ("startup", "pages", "upload", "edit", "copy_move", "replace", "batch", "sheet",
          "library", "checkup", "backup", "radio", "box", "covers", "errors", "delete",
-         "podcasts", "podcast_inproc", "import", "names")
+         "podcasts", "podcast_inproc", "import", "names",
+         "library_form", "upload_refused", "delete_cached", "restore_restart",
+         "replace_copy_move", "replace_recovery", "podcast_move", "failed_jobs")
+
+# The audio of the replace flows, in seconds: long enough that teddyCloud's
+# final encode of a replace leaves time to act while the stickers play the
+# copy beside the target.
+LONG_SECONDS = 1200
+
+# How many podcast refreshes failed_jobs makes fail: more than the about 29
+# connections teddyCloud 0.7.0 serves at once.
+FAILED_JOBS = 35
+# How long an answer may take once those jobs have failed, in seconds.
+QUICK_ANSWER = 15
 
 # Shared by every app process this script starts. It logs every call the app
 # makes to teddyCloud, and in the slowed run it slows the upload body.
@@ -228,6 +263,8 @@ PODCAST_APP_MODULE = '''import logging
 import os
 from pathlib import Path
 
+import time
+
 import requests
 
 import e2e_instrument  # noqa: F401
@@ -239,6 +276,11 @@ FEEDS = Path(os.environ["E2E_FEED_DIR"])
 
 def fetch(url, limit=None, into=None):
     path = FEEDS / url.rsplit("/", 1)[-1]
+    # A file "delay" in the feed folder holds the seconds every episode
+    # download takes, for a flow that acts while a refresh runs.
+    delay = FEEDS / "delay"
+    if path.suffix != ".xml" and delay.is_file():
+        time.sleep(float(delay.read_text()))
     if not path.is_file():
         raise requests.HTTPError(f"404 for {url}")
     data = path.read_bytes()
@@ -377,6 +419,7 @@ class Media:
     short_flac: Path
     episodes: List[Path]
     dump: Path
+    long_album: Path
 
 
 # What an expected answer or log line looks like, returned by a flow:
@@ -440,6 +483,10 @@ def make_media(work: Path) -> Media:
     tone(place / "01 Platz.flac", 3, 1000, "Platz", "E2E Place", "Album P", 1)
     picture(place / "cover.jpg", "rgbtestsrc=size=400x400:rate=1")
 
+    long_album = archive / "E2E Long" / "Album L"
+    tone(long_album / "01 Lang.mp3", LONG_SECONDS, 300, "Lang", "E2E Long", "Album L", 1,
+         ("-c:a", "libmp3lame", "-b:a", "64k"))
+
     short = media / "short.flac"
     tone(short, 3, 1200, "Kurz", "E2E", "E2E", 1)
     feed = media / "feed"
@@ -457,7 +504,7 @@ def make_media(work: Path) -> Media:
         upload_seconds=5 + 4 + 400,
         cover=cover, cover2=media / "cover2.jpg", archive=archive,
         batch_albums=batch_albums, spare_albums=spare_albums, place_album=place,
-        short_flac=short, episodes=episodes, dump=dump,
+        short_flac=short, episodes=episodes, dump=dump, long_album=long_album,
     )
 
 
@@ -468,7 +515,7 @@ def dump_text(ruid: str, token: str) -> str:
     return f"Filetype: Flipper NFC device\nDevice type: ISO15693\nUID: {uid}\nData Content: {data}\n"
 
 
-def feed_xml(episodes: Sequence[Tuple[str, str, str, int]]) -> bytes:
+def feed_xml(episodes: Sequence[Tuple[str, str, str, int]], title: str = "E2E Podcast") -> bytes:
     """An RSS feed of (guid, title, file, seconds) episodes, newest first."""
     items = "".join(
         f"<item><guid>{guid}</guid><title>{title}</title>"
@@ -478,7 +525,7 @@ def feed_xml(episodes: Sequence[Tuple[str, str, str, int]]) -> bytes:
         for number, (guid, title, name, seconds) in enumerate(episodes))
     return ('<?xml version="1.0" encoding="UTF-8"?>'
             '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">'
-            "<channel><title>E2E Podcast</title>"
+            f"<channel><title>{title}</title>"
             '<itunes:image href="https://podcast.e2e.invalid/podcast.jpg"/>'
             f"{items}</channel></rss>").encode("utf-8")
 
@@ -765,7 +812,9 @@ class App:
             **self.extra_env,
         })
         python = ROOT / ".venv" / "bin" / "python"
-        self.log_offset = self.log_path.stat().st_size if self.log_path.exists() else 0
+        if self.process is None:
+            # A restart reads on where the log was read up to.
+            self.log_offset = self.log_path.stat().st_size if self.log_path.exists() else 0
         self.process = subprocess.Popen(
             [str(python if python.exists() else sys.executable), "-m", "uvicorn", "--factory",
              f"{self.module}:app", "--host", "127.0.0.1", "--port", str(self.port)],
@@ -789,6 +838,12 @@ class App:
                 self.process.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+
+    def kill(self) -> None:
+        """End the process at once (SIGKILL), as a crash or the OOM killer does."""
+        if self.process and self.process.poll() is None:
+            self.process.kill()
+            self.process.wait(timeout=20)
 
     def new_log(self) -> List[str]:
         if not self.log_path.exists():
@@ -855,6 +910,109 @@ def page_text(markup: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+class _FormReader(html.parser.HTMLParser):
+    """The fields of one form of a page, read the way a browser sends them."""
+
+    def __init__(self, action: str):
+        super().__init__(convert_charrefs=True)
+        self.action = action
+        self.inside = False
+        self.found = False
+        self.fields: Dict[str, str] = {}
+        self.choices: Dict[str, List[str]] = {}
+        self.select: Optional[str] = None
+        self.option: Optional[str] = None
+
+    def handle_starttag(self, tag, attrs):
+        attr = {name: value or "" for name, value in attrs}
+        if tag == "form":
+            self.inside = attr.get("action") == self.action and not self.found
+            self.found = self.found or self.inside
+            return
+        if not self.inside:
+            return
+        name = attr.get("name")
+        if tag == "input" and name:
+            kind = attr.get("type", "text")
+            if kind == "radio":
+                self.choices.setdefault(name, []).append(attr.get("value", "on"))
+                if "checked" in attr:
+                    self.fields[name] = attr.get("value", "on")
+            elif kind == "checkbox":
+                if "checked" in attr:
+                    self.fields[name] = attr.get("value", "on")
+            elif kind not in ("submit", "button", "file"):
+                self.fields[name] = attr.get("value", "")
+        elif tag == "select" and name:
+            self.select = name
+        elif tag == "option" and self.select:
+            value = attr.get("value", "")
+            if self.select not in self.fields or "selected" in attr:
+                self.fields[self.select] = value
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.inside = False
+        elif tag == "select":
+            self.select = None
+
+
+def form_fields(page: str, action: str) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
+    """What the form posting to ``action`` sends as it stands, and its radio choices."""
+    reader = _FormReader(action)
+    reader.feed(page)
+    if not reader.found:
+        raise FlowFailed(f"the page has no form posting to {action}: {page_text(page)[:300]}")
+    return reader.fields, reader.choices
+
+
+class _MessageReader(html.parser.HTMLParser):
+    """The text of the elements with class "warn" right inside <main>."""
+
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+            "source", "track", "wbr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack: List[str] = []
+        self.messages: List[str] = []
+        self.depth: Optional[int] = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.VOID:
+            return
+        classes = (dict(attrs).get("class") or "").split()
+        parent = self.stack[-1] if self.stack else ""
+        if self.depth is None and parent == "main" and "warn" in classes:
+            self.depth = len(self.stack)
+            self.messages.append("")
+        self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        while self.stack:
+            name = self.stack.pop()
+            if self.depth is not None and len(self.stack) == self.depth:
+                self.depth = None
+            if name == tag:
+                break
+
+    def handle_data(self, data):
+        if self.depth is not None:
+            self.messages[-1] += data
+
+
+def main_messages(page: str) -> List[str]:
+    """What a page says in its messages: the ``main > .warn`` the album list's script reads."""
+    reader = _MessageReader()
+    reader.feed(page)
+    return [re.sub(r"\s+", " ", text).strip() for text in reader.messages]
+
+
+def same_text(text: str) -> str:
+    """``text`` with its umlauts composed, for comparing two spellings of one name."""
+    return unicodedata.normalize("NFC", text)
+
+
 def location(response: requests.Response) -> str:
     return response.headers.get("location", "")
 
@@ -887,6 +1045,7 @@ class Run:
         # Apps whose logs are read after every flow; the podcast one joins for its flow.
         self.apps: List[App] = [self.app]
         self.client = TeddyCloudClient(TC_URL)
+        self._podcast_app: Optional[App] = None
         self.stickers = 0
         self.rtnl_sequence = 0
         # Expected answers noted while a flow runs (see expect), on top of
@@ -1140,8 +1299,11 @@ class Run:
                 "parts": "1", "cover_index": "0", "cover_zoom": "1.0", "cover_x": "0", "cover_y": "0"}
 
     def encode_album(self, identifier: str, series: str, episode: str,
-                     replace: bool = False) -> Tuple[str, dict]:
-        """Start the album page's encode and wait for it; returns the job id and its state."""
+                     replace: bool = False, wait: bool = True) -> Tuple[str, dict]:
+        """Start the album page's encode and wait for it; returns the job id and its state.
+
+        Without ``wait`` it returns once the job is started, with an empty state.
+        """
         form = self.album_form(identifier)
         form.update({"series": series, "episode": episode})
         response = self.app.post(f"/album/{identifier}/encode", expect=(303, 200), data=form)
@@ -1159,6 +1321,8 @@ class Run:
         if not location(response).startswith("/job/"):
             raise FlowFailed(f"encode went to {location(response)!r}, not to its job")
         self.app.get(f"/job/{job_id}")
+        if not wait:
+            return job_id, {}
         state = self.app.wait_job(job_id)
         if state["state"] != "done":
             raise FlowFailed(f"encode job failed: {state.get('error')}")
@@ -1789,16 +1953,26 @@ class Run:
         self.state["podcast_ruid"] = ruid
         return [("POST /podcasts", 400)]
 
-    def flow_podcast_inproc(self, result: Result):
+    def podcast_app(self) -> Tuple[App, Path]:
+        """The second app instance with a local fetch (see PODCAST_APP_MODULE), not started.
+
+        One for the whole run, so its log is read on from flow to flow; and
+        the folder its fetch reads feeds and episodes from.
+        """
         feeds = self.work / "feeds"
         feeds.mkdir(exist_ok=True)
         for path in self.media.episodes + [self.media.episodes[0].parent / "podcast.jpg"]:
             shutil.copyfile(path, feeds / path.name)
+        if self._podcast_app is None:
+            self._podcast_app = App(self.work, self.media.archive, slow=(self.mode == "slow"),
+                                    src=self.src, port=PODCAST_APP_PORT, module="e2e_podcast_app",
+                                    name="podcast-app", extra_env={"E2E_FEED_DIR": str(feeds)})
+            self.apps.append(self._podcast_app)
+        return self._podcast_app, feeds
+
+    def flow_podcast_inproc(self, result: Result):
+        app, feeds = self.podcast_app()
         (feeds / "feed.xml").write_bytes(feed_xml([("e2e-ep1", "Folge 1", "episode1.mp3", 4)]))
-        app = App(self.work, self.media.archive, slow=(self.mode == "slow"), src=self.src,
-                  port=PODCAST_APP_PORT, module="e2e_podcast_app", name="podcast-app",
-                  extra_env={"E2E_FEED_DIR": str(feeds)})
-        self.apps.append(app)
         app.start()
         try:
             ruid = str(self.state.get("podcast_ruid") or self.new_sticker())
@@ -1968,6 +2142,376 @@ class Run:
             raise FlowFailed(f"the sticker now names {renamed!r}: {model}")
         if str(header["audioId"]) not in [str(v) for v in model.get("audio_id") or []]:
             raise FlowFailed(f"the renamed model lost its audio: {model}")
+
+    # --- flows guarding regressions found once -------------------------------
+
+    def assign_through_form(self, link: str, ruid: str) -> Dict[str, str]:
+        """Put a library taf on ``ruid`` the way the page does: open ``link``, send its form."""
+        page = self.app.get(link).text
+        fields, choices = form_fields(page, "/library/assign")
+        if ruid not in choices.get("ruid", []):
+            raise FlowFailed(f"the assign form does not offer sticker {ruid}")
+        fields["ruid"] = ruid
+        answer = self.app.post("/library/assign", data=fields)
+        if location(answer) != f"/tonies/{ruid}":
+            raise FlowFailed(f"library assign went to {location(answer)!r}")
+        return fields
+
+    def flow_library_form(self, result: Result):
+        # Every field from the page itself: its hidden path once carried the
+        # page's own address, which only a form read from the page shows.
+        plain = "/E2E Form/Ohne Umlaut.taf"
+        # The archive share hands out decomposed umlauts, and teddyCloud keeps
+        # the name as it was given.
+        decomposed = "/E2E Form Umlaut/Ba\u0308renlied.taf"
+        composed = unicodedata.normalize("NFC", decomposed)
+        for target in (plain, decomposed):
+            self.library_taf(target)
+        listed = [entry["name"] for entry in self.tc.listing("/E2E Form Umlaut")]
+        if decomposed.rsplit("/", 1)[1] not in listed:
+            raise FlowFailed(f"teddyCloud does not list the decomposed name: {listed}")
+        links = {unicodedata.normalize("NFC", unquote(html.unescape(link).split("path=", 1)[1])):
+                 html.unescape(link) for link in re.findall(
+                     r'href="(/library/assign\?path=[^"]+)"', self.app.get("/library").text)}
+        stickers = []
+        # From the library page's own links, and the umlaut once more as typed.
+        for wanted, link in ((plain, links.get(plain)), (decomposed, links.get(composed)),
+                             (decomposed, "/library/assign?" + urlencode({"path": composed}))):
+            if link is None:
+                raise FlowFailed(f"the library page offers no 'on a sticker' for {wanted}")
+            ruid = self.new_sticker()
+            fields = self.assign_through_form(link, ruid)
+            if same_text(fields.get("path", "")) != same_text(wanted):
+                raise FlowFailed(f"the form's hidden path is {fields.get('path')!r}, not {wanted!r}")
+            entry = self.check_tag(ruid, f"lib://{wanted.lstrip('/')}")
+            tag = self.tc.tags().get(ruid, {})
+            if not tag.get("exists") or not tag.get("valid", True):
+                raise FlowFailed(f"teddyCloud's tag index says the sticker {ruid} plays nothing: "
+                                 f"exists {tag.get('exists')}, valid {tag.get('valid')}")
+            model = self.tc.models().get(entry.get("tonie_model") or "") or {}
+            if model.get("episodes") != fields.get("episode"):
+                raise FlowFailed(f"the form's episode {fields.get('episode')!r} made model {model}")
+            stickers.append(ruid)
+        result.notes.append(f"assigned through the form: {', '.join(stickers)}")
+
+    def flow_upload_refused(self, result: Result):
+        # The album list's script shows a refusal in its own box, reading the
+        # message the refusal page puts right inside <main>.
+        page = self.app.get("/").text
+        if 'id="refusal"' not in page:
+            raise FlowFailed("the album list has no place (#refusal) to show a refused upload")
+        answer = self.app.post("/upload", expect=(400,), headers={"X-Upload": "1"}, files=[
+            ("files", ("E2E Notes/notes.txt", b"not audio\n", "text/plain")),
+            ("files", ("E2E Notes/cover.jpg", self.media.cover.read_bytes(), "image/jpeg"))])
+        messages = [text for text in main_messages(answer.text) if text]
+        wanted = "None of those files is audio teddyCloud can encode."
+        if messages[:1] != [wanted]:
+            raise FlowFailed(f"the refusal says {messages}, expected {wanted!r} in main > .warn")
+        return [("POST /upload", 400)]
+
+    def flow_delete_cached(self, result: Result):
+        # An official tonie: teddyCloud keeps its audio from the cloud in the
+        # sticker's content folder, named after the second half of its id.
+        catalogue = self.tc.get("/api/toniesJson").json()
+        official = next((entry for entry in catalogue if entry.get("model")
+                         and entry.get("audio_id")), None)
+        if official is None:
+            raise FlowFailed("teddyCloud's tonies.json lists no tonie to take a model from")
+        header = self.library_taf("/E2E Cached/source.taf")
+        local = self.work / "cached-source.taf"
+        done = docker("cp", f"{CONTAINER}:/teddycloud/data/library/E2E Cached/source.taf",
+                      str(local), check=False)
+        if done.returncode != 0:
+            raise FlowFailed(f"cannot copy the taf out of teddyCloud: {done.stderr}")
+        self.client.delete("/E2E Cached/source.taf", special="library")
+        ruid = self.new_sticker()
+        folder, name = ruid[:8].upper(), ruid[8:].upper()
+        with local.open("rb") as stream:
+            self.client.upload(stream, name, path=f"/{folder}")
+        self.tc.set_tag(ruid, tonie_model=str(official["model"]), nocloud="true")
+        tag = self.tc.tags().get(ruid, {})
+        if not tag.get("exists"):
+            raise FlowFailed(f"teddyCloud does not see the cached audio of {ruid}: {tag}")
+        page = self.app.get(f"/tonies/{ruid}").text
+        if f"/tonies/{ruid}/delete" not in page:
+            raise FlowFailed("the page of the official tonie offers no delete")
+        self.app.post(f"/tonies/{ruid}/delete")
+        left = self.tc.disk_list(f"/teddycloud/data/content/default/{folder}")
+        if name in left:
+            raise FlowFailed(f"the cached audio {folder}/{name} is still there: {left}")
+        tag = self.tc.tags().get(ruid)
+        if tag is not None and tag.get("exists"):
+            raise FlowFailed(f"teddyCloud still sees audio on the deleted tonie {ruid}: {tag}")
+        self.check_empty(ruid)
+        result.notes.append(f"official model {official['model']}, cached audio "
+                            f"{header.get('audioId')} deleted with the tonie")
+
+    def flow_restore_restart(self, result: Result):
+        model_id = "TS-9960"
+        before = {"model": model_id, "series": "E2E Restore", "episodes": "Vorher", "tracks": []}
+        if self.tc.upsert_model(before) != "OK":
+            raise FlowFailed("cannot make the model the restore brings back")
+        backup = self.app.get("/backup/download").content
+        changed = dict(before, series="E2E Restore changed")
+        if self.tc.upsert_model(changed) != "OK":
+            raise FlowFailed("cannot change the model")
+        preview = self.app.post("/restore", expect=(200,),
+                                files={"file": ("backup.zip", backup, "application/zip")})
+        token = re.search(r'action="/restore/([0-9A-Za-z]+)"', preview.text)
+        if not token:
+            raise FlowFailed(f"restore preview offers no confirmation: {page_text(preview.text)[:300]}")
+        # Restarted between the preview and the confirmation, as an update
+        # of the app would do it.
+        self.crash_app()
+        again = self.app.get(f"/restore/{token.group(1)}/done", expect=(200, 404))
+        if again.status_code != 200:
+            self.expect((f"GET /restore/{token.group(1)}/done", 404))
+            raise FlowFailed(f"after a restart the restore page answers {again.status_code}: "
+                             f"{page_text(again.text)[:200]}")
+        if f'action="/restore/{token.group(1)}"' not in again.text:
+            raise FlowFailed(f"after a restart the restore page offers no confirmation: "
+                             f"{page_text(again.text)[:300]}")
+        answer = self.app.post(f"/restore/{token.group(1)}")
+        done = self.app.wait_page(location(answer))
+        if "state-failed" in done.text:
+            result.notes.append(f"restore page marks: {page_text(done.text)[:200]}")
+        restored = self.tc.models().get(model_id) or {}
+        if restored.get("series") != "E2E Restore":
+            raise FlowFailed(f"model {model_id} after the restore: {restored}")
+        self.tc.delete_models([model_id])
+
+    def crash_app(self) -> None:
+        """Kill the app (SIGKILL) and start it again."""
+        self.app.kill()
+        # Its event stream breaks off, which teddyCloud logs as an error.
+        self.expect(("TCLOG", r"SSE Client with error"))
+        self.app.start()
+
+    def start_replace(self, identifier: str, series: str, episode: str) -> str:
+        return self.encode_album(identifier, series, episode, replace=True, wait=False)[0]
+
+    def wait_aside(self, ruid: str, job_id: str) -> str:
+        """The copy beside the target the sticker plays once the replace's final encode runs."""
+        deadline = time.time() + JOB_TIMEOUT
+        while time.time() < deadline:
+            source = self.tc.content(ruid).get("source") or ""
+            if ".new-" in source:
+                return source
+            if self.app.get(f"/api/job/{job_id}").json()["state"] in ("done", "failed"):
+                raise FlowFailed(f"the replace ended before sticker {ruid} was seen on its copy")
+            time.sleep(0.1)
+        raise FlowFailed(f"sticker {ruid} never played the replace's copy")
+
+    def still_running(self, job_id: str, what: str) -> None:
+        if self.app.get(f"/api/job/{job_id}").json()["state"] != "running":
+            raise FlowFailed(f"the replace ended before {what}; the check proves nothing "
+                             "(make LONG_SECONDS larger)")
+
+    def flow_replace_copy_move(self, result: Result):
+        identifier = self.archive_id(self.media.long_album)
+        series, episode = "E2E Long", f"Long {self.mode}"
+        target = f"/{series}/{episode}.taf"
+        source = f"lib://{target.lstrip('/')}"
+        first, third = self.new_sticker(), self.new_sticker()
+        job_id, _state = self.encode_album(identifier, series, episode)
+        self.app.post(f"/job/{job_id}/assign", data={
+            "ruid": first, "series": series, "episode": episode, "category": "audio-play"})
+        self.app.post(f"/tonies/{first}/copy", data={"target": third})
+        model_id = self.check_tag(first, source).get("tonie_model")
+        self.check_tag(third, source, model_id)
+        # What replace_recovery needs, should the checks below fail.
+        self.state.update(long_album=identifier, long_series=series, long_episode=episode,
+                          long_stickers=[first])
+
+        copy, moved = self.new_sticker(), self.new_sticker()
+        job_id = self.start_replace(identifier, series, episode)
+        began = time.time()
+        aside = self.wait_aside(first, job_id)
+        self.app.post(f"/tonies/{first}/copy", data={"target": copy})
+        self.app.post(f"/tonies/{third}/copy", data={"target": moved, "move": "1"})
+        self.still_running(job_id, "the copy and the move were done")
+        if self.tc.content(copy).get("source") != aside:
+            raise FlowFailed(f"the copy {copy} plays {self.tc.content(copy).get('source')!r}, "
+                             f"not the replace's copy {aside!r}")
+        state = self.app.wait_job(job_id)
+        if state["state"] != "done":
+            raise FlowFailed(f"the replace failed: {state.get('error')}")
+        result.notes.append(f"copy and move done while the stickers played {aside.rsplit('/', 1)[-1]}; "
+                            f"replace took {time.time() - began:.0f} s")
+        for ruid in (first, copy, moved):
+            self.check_tag(ruid, source, model_id)
+        if third in self.tc.tags():
+            raise FlowFailed(f"the moved-from sticker {third} is in teddyCloud's tag index again")
+        asides = [entry["name"] for entry in self.tc.listing(f"/{series}") if ".new-" in entry["name"]]
+        if asides:
+            raise FlowFailed(f"the replace left copies behind: {asides}")
+        self.check_taf(target, chapters=1, seconds=LONG_SECONDS)
+        self.check_staging_empty()
+        self.state["long_stickers"] = [first, copy, moved]
+
+    def flow_replace_recovery(self, result: Result):
+        identifier, series = str(self.state["long_album"]), str(self.state["long_series"])
+        episode = str(self.state["long_episode"])
+        stickers = [str(ruid) for ruid in self.state["long_stickers"]]
+        target = f"/{series}/{episode}.taf"
+        source = f"lib://{target.lstrip('/')}"
+        job_id = self.start_replace(identifier, series, episode)
+        aside = self.wait_aside(stickers[0], job_id)
+        killed = time.time()
+        # teddyCloud goes on with the encode it was asked for.
+        self.crash_app()
+        self.expect(("LOG", r"is not complete; its stickers stay on"))
+        on_aside = [ruid for ruid in stickers if self.tc.content(ruid).get("source") == aside]
+        if on_aside:
+            offered = self.checkup_offers()
+            if ("delete_taf", target) in offered:
+                raise FlowFailed(f"the checkup offers deleting {target}, which the stickers on "
+                                 f"its copy are meant to play: {sorted(offered)}")
+        else:
+            result.notes.append("teddyCloud finished the target before the app was back; "
+                                "the checkup was not looked at with the stickers on the copy")
+        aside_size = (self.tc.library_entry("/" + aside[len("lib://"):]) or {}).get("size") or 0
+
+        def finished():
+            entry = self.tc.library_entry(target) or {}
+            return ((entry.get("tafHeader") or {}).get("valid")
+                    and (entry.get("size") or 0) >= aside_size)
+        wait_for("teddyCloud finishes the target", finished, 300)
+        result.notes.append(f"teddyCloud finished the target {time.time() - killed:.0f} s after "
+                            "the app was killed")
+        # Restarted once more: the recovery at start settles what is left.
+        self.app.stop()
+        self.app.start()
+        wait_for("the stickers play the target again", lambda: all(
+            self.tc.content(ruid).get("source") == source for ruid in stickers), 30)
+        for ruid in stickers:
+            self.check_tag(ruid, source)
+        wait_for("the copy beside the target deleted", lambda: not any(
+            ".new-" in entry["name"] for entry in self.tc.listing(f"/{series}")), 30)
+        self.check_taf(target, chapters=1, seconds=LONG_SECONDS)
+        wait_for("staging cleared at start", lambda: not self.tc.disk_list(
+            "/teddycloud/data/library/_tonie-studio-staging"))
+        if ("delete_taf", target) in self.checkup_offers():
+            raise FlowFailed(f"the checkup offers deleting {target} after the recovery")
+
+    def podcast_subscription(self, app: App, feed: str) -> dict:
+        found = [entry for entry in json.loads((app.data / "podcasts.json").read_text())
+                 if entry.get("feed") == feed]
+        if len(found) != 1:
+            raise FlowFailed(f"{len(found)} subscriptions to {feed}")
+        return found[0]
+
+    def flow_podcast_move(self, result: Result):
+        app, feeds = self.podcast_app()
+        shutil.copyfile(self.media.episodes[0], feeds / "episode3.mp3")
+        title, feed = "E2E Podcast Move", "https://podcast.e2e.invalid/move.xml"
+        episodes = [("e2e-move3", "Folge 3", "episode3.mp3", 4),
+                    ("e2e-move2", "Folge 2", "episode2.mp3", 3),
+                    ("e2e-move1", "Folge 1", "episode1.mp3", 4)]
+        (feeds / "move.xml").write_bytes(feed_xml(episodes[2:], title))
+        (feeds / "delay").unlink(missing_ok=True)
+        app.start()
+        try:
+            old = self.new_sticker()
+            answer = app.post("/podcasts", data={"feed": feed, "ruid": old, "keep": "2"})
+            state = app.wait_job(location(answer).rsplit("/", 1)[-1])
+            if state["state"] != "done":
+                raise FlowFailed(f"first refresh failed: {state.get('error')}")
+            subscription = self.podcast_subscription(app, feed)
+
+            # A new episode, fetched slowly; the tonie moved meanwhile.
+            (feeds / "move.xml").write_bytes(feed_xml(episodes[1:], title))
+            (feeds / "delay").write_text("3")
+            answer = app.post(f"/podcasts/{subscription['id']}/refresh")
+            job_id = location(answer).rsplit("/", 1)[-1]
+            wait_for("refresh running", lambda: app.get(f"/api/job/{job_id}").json()["state"]
+                     != "queued")
+            new = self.new_sticker()
+            moved = app.post(f"/tonies/{old}/copy", data={"target": new, "move": "1"})
+            if location(moved) != f"/tonies/{new}":
+                raise FlowFailed(f"move went to {location(moved)!r}")
+            if app.get(f"/api/job/{job_id}").json()["state"] != "running":
+                raise FlowFailed("the refresh ended before the move; the check proves nothing")
+            (feeds / "delay").unlink()
+            state = app.wait_job(job_id)
+            if state["state"] != "done":
+                raise FlowFailed(f"the refresh during the move failed: {state.get('error')}")
+            stored = self.podcast_subscription(app, feed)
+            if stored["ruid"] != new:
+                raise FlowFailed(f"the subscription names sticker {stored['ruid']}, the tonie "
+                                 f"was moved to {new}")
+            playing = self.tc.content(new).get("source") or ""
+            self.check_tag(new, playing)
+            self.check_taf("/" + playing[len("lib://"):], chapters=2, seconds=7)
+            if old in self.tc.tags():
+                raise FlowFailed(f"the moved-from sticker {old} is in teddyCloud's tag index again")
+
+            # And the next refresh goes to the new sticker as well.
+            (feeds / "move.xml").write_bytes(feed_xml(episodes, title))
+            answer = app.post(f"/podcasts/{subscription['id']}/refresh")
+            state = app.wait_job(location(answer).rsplit("/", 1)[-1])
+            if state["state"] != "done":
+                raise FlowFailed(f"the refresh after the move failed: {state.get('error')}")
+            again = self.tc.content(new).get("source") or ""
+            if again == playing:
+                raise FlowFailed("the refresh after the move left the sticker as it was")
+            self.check_taf("/" + again[len("lib://"):], chapters=2, seconds=7)
+            if old in self.tc.tags():
+                raise FlowFailed(f"the refresh after the move brought {old} back")
+            self.check_staging_empty()
+            self.state.update(move_subscription=subscription["id"], move_ruid=new)
+        finally:
+            (feeds / "delay").unlink(missing_ok=True)
+            app.stop()
+
+    def flow_failed_jobs(self, result: Result):
+        app, feeds = self.podcast_app()
+        feed = "https://podcast.e2e.invalid/failing.xml"
+        (feeds / "failing.xml").write_bytes(feed_xml([("e2e-fail1", "Folge 1", "episode1.mp3", 4)],
+                                                     "E2E Podcast Failing"))
+        app.start()
+        ruid, playing = self.new_sticker(), ""
+        try:
+            answer = app.post("/podcasts", data={"feed": feed, "ruid": ruid, "keep": "1"})
+            state = app.wait_job(location(answer).rsplit("/", 1)[-1])
+            if state["state"] != "done":
+                raise FlowFailed(f"first refresh failed: {state.get('error')}")
+            subscription = self.podcast_subscription(app, feed)["id"]
+            playing = self.tc.content(ruid).get("source") or ""
+            # Given other audio: every refresh refuses the sticker, after
+            # asking teddyCloud about it.
+            self.tc.set_tag(ruid, source="lib://E2E Elsewhere/other.taf")
+            self.expect(("LOG", r"job \w+ \(E2E Podcast Failing\) failed"), ("LOG", r"^Traceback"))
+            began = time.time()
+            for number in range(FAILED_JOBS):
+                answer = app.post(f"/podcasts/{subscription}/refresh", timeout=60)
+                job_id = location(answer).rsplit("/", 1)[-1]
+                deadline = time.time() + 60
+                while app.get(f"/api/job/{job_id}", timeout=60).json()["state"] not in (
+                        "done", "failed"):
+                    if time.time() > deadline:
+                        raise FlowFailed(f"refresh {number + 1} did not end within 60 s")
+                    time.sleep(0.2)
+                state = app.get(f"/api/job/{job_id}", timeout=60).json()
+                if state["state"] != "failed":
+                    raise FlowFailed(f"refresh {number + 1} did not fail: {state}")
+            result.notes.append(f"{FAILED_JOBS} refreshes failed in {time.time() - began:.0f} s")
+            for name, ask in (("teddyCloud", lambda: self.tc.http.get(
+                                  f"{TC_URL}/api/getTagIndex", timeout=QUICK_ANSWER)),
+                              ("the podcast app", lambda: app.get("/tonies", timeout=QUICK_ANSWER)),
+                              ("the app", lambda: self.app.get("/tonies", timeout=QUICK_ANSWER))):
+                started = time.time()
+                try:
+                    ask()
+                except requests.RequestException as error:
+                    raise FlowFailed(f"{name} does not answer within {QUICK_ANSWER} s after "
+                                     f"{FAILED_JOBS} failed jobs: {type(error).__name__}") from error
+                result.notes.append(f"{name} answered in {time.time() - started:.1f} s")
+            app.post(f"/podcasts/{subscription}/delete")
+        finally:
+            app.stop()
+            if playing:
+                self.tc.set_tag(ruid, source=playing)
 
 
 # --- report ---------------------------------------------------------------

@@ -211,6 +211,33 @@ class TestPrintFromTonie:
         assert 'value="0:fill:TS-0001"' in page
 
 
+class TestSheetNamesWhatItCannotPrint:
+    """Sent here for several tonies, the sheet says which of them it has no picture for."""
+
+    def test_a_requested_model_without_a_picture_is_named(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "Ohne", "episodes": "Bild",
+                                        "pic": "", "tracks": []})
+
+        page = client.get("/sheet?model=TS-0001&model=TS-0042").text
+
+        assert 'value="1:fill:TS-0001"' in page
+        assert "Ohne - Bild" in page.split('class="warn"', 1)[1].split("</div>", 1)[0]
+
+    def test_a_model_teddycloud_does_not_hold_is_named_by_its_id(self, client, runner,
+                                                                  teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/sheet?model=TS-0001&model=TS-9999").text
+
+        assert "TS-9999" in page.split('class="warn"', 1)[1].split("</div>", 1)[0]
+
+    def test_says_nothing_while_every_one_can_be_printed(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        assert 'class="warn"' not in client.get("/sheet?model=TS-0001").text
+
+
 class TestOverviewSheet:
     def test_lists_the_tonies_on_stickers(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

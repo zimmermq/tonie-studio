@@ -24,6 +24,9 @@
 </p>
 {% endfor %}
 
+{% if unprintable %}
+<div class="warn">{{ t("sheet.unprintable", names=unprintable | join(", ")) }}</div>
+{% endif %}
 {% if images_cached == false %}
 <div class="warn">{{ t("covers.cache_off") }}</div>
 {% endif %}
@@ -176,5 +179,5 @@
 
 
 
-{{ page_script("sheet", {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.sheets", "sheet.nothing_chosen", "list.shown_of"), "backFade": back_fade}) }}
+{{ page_script("sheet", {"layouts": layout_sizes, "mostCopies": most_copies, "words": t.strings("sheet.total", "sheet.backs", "sheet.pictures", "sheet.sheets", "sheet.nothing_chosen", "list.shown_of"), "backFade": back_fade}) }}
 {% endblock %}

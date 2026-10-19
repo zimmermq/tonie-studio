@@ -138,6 +138,12 @@ def publish_stream(
         raise TonieError("tonie.not_a_url", url=url)
     if not url.lower().startswith(("http://", "https://")):
         raise TonieError("tonie.only_http")
+    # Private and local addresses are allowed on purpose, unlike for a
+    # podcast feed: a radio in the home network, such as an Icecast, is a
+    # stream worth having. The podcast guard exists because this app fetches
+    # a feed itself; a stream it only stores, and teddyCloud fetches it for
+    # the box. Only someone past the login in front of the app can set one.
+    # Refusing private addresses here would break those home radios.
     require_tag(client, ruid)
 
     with WRITING:

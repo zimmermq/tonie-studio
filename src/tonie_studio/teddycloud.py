@@ -34,17 +34,37 @@ from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import ReadTimeoutError
 from urllib3.util.retry import Retry
 
 log = logging.getLogger(__name__)
 
-# Long enough for a NAS that is spinning up, short enough to fail a request
-# while someone is watching the page it belongs to.
-REQUEST_TIMEOUT = 30
+# How long, in seconds, opening a connection may take. teddyCloud sits on the
+# same network and accepts at once when it runs at all.
+CONNECT_TIMEOUT = 3
+
+# How long, in seconds, an ordinary call may wait for teddyCloud's answer.
+# Pages ask teddyCloud while someone waits, often behind a gateway that gives
+# up after 15 s; the connection and the answer together have to fit in that,
+# or the reader sees the gateway's error instead of this app's. Every
+# ordinary call answers well within a second, so this only ends a teddyCloud
+# that is paused or hung, and one waiting for a disk to spin up.
+REQUEST_TIMEOUT = 10
 
 # ffmpeg decodes and re-encodes every track in one blocking request, so a long
 # album legitimately takes minutes. teddyCloud reports no progress meanwhile.
 ENCODE_TIMEOUT = 1800
+
+# How long, in seconds, an upload may wait for teddyCloud's answer: a base, plus
+# an allowance per megabyte for writing a large file out to a slow disk. One
+# job worker sends every upload, so a teddyCloud that stops reading must not
+# hold it for the half hour an encode may take.
+UPLOAD_TIMEOUT = 30
+UPLOAD_SECONDS_PER_MB = 1
+
+# What teddyCloud 0.7.0 answers, at 500, when its library is full or an
+# upload's body stopped arriving before the end.
+NOT_STORED = "OK"
 
 # How long, in seconds, a taf download may go quiet before it counts as lost.
 # teddyCloud passes the taf on from the Tonies cloud as it arrives and caches it
@@ -89,13 +109,15 @@ class TeddyCloudError(RuntimeError):
     a 4xx status, a 500 - teddyCloud 0.7.0 answers that when it cannot delete
     a file or its library is full - or a command endpoint's error text, which
     comes at 200 and so has to be said explicitly. A gateway's 502-504 means
-    teddyCloud itself did not answer.
+    teddyCloud itself did not answer. ``body`` is what came with a status
+    that was not a success, and empty otherwise.
     """
 
     def __init__(self, message: str, status: Optional[int] = None,
-                 refused: Optional[bool] = None):
+                 refused: Optional[bool] = None, body: str = ""):
         super().__init__(message)
         self.status = status
+        self.body = body
         self.refused = (refused if refused is not None
                         else bool(status) and 400 <= status <= 500)
 
@@ -116,7 +138,7 @@ class TeddyCloudClient:
         self.session = requests.Session()
         # Only idempotent verbs are retried: a repeated fileEncode would write
         # a second taf, and a repeated upload a second copy.
-        retrying = HTTPAdapter(max_retries=Retry(
+        retrying = HTTPAdapter(max_retries=_AskOnce(
             total=2, backoff_factor=1, status_forcelist=[502, 503, 504],
             allowed_methods=["GET"],
         ))
@@ -182,10 +204,15 @@ class TeddyCloudClient:
                     params=self._params(path=path, special=special),
                     data=body,
                     headers={"Content-Type": content_type, "Connection": "close"},
-                    timeout=ENCODE_TIMEOUT,
+                    timeout=(CONNECT_TIMEOUT,
+                             UPLOAD_TIMEOUT + UPLOAD_SECONDS_PER_MB * len(body) / 1048576),
                 )
                 break
             except TeddyCloudError as error:
+                if error.status == 500 and error.body.strip() == NOT_STORED:
+                    raise TeddyCloudError(
+                        "teddyCloud could not store the file (library full or upload cut off)",
+                        status=error.status) from error
                 dropped = isinstance(error.__cause__, requests.exceptions.ConnectionError)
                 if not dropped or attempt == UPLOAD_ATTEMPTS:
                     raise
@@ -214,7 +241,7 @@ class TeddyCloudClient:
             "/api/fileEncode",
             params=self._params(special=special),
             data=[("source", source) for source in sources] + [("target", target)],
-            timeout=ENCODE_TIMEOUT,
+            timeout=(CONNECT_TIMEOUT, ENCODE_TIMEOUT),
         )
         self._expect_ok(response, "/api/fileEncode")
 
@@ -291,7 +318,7 @@ class TeddyCloudClient:
         size = 0
         try:
             with self.downloads.get(url, params=self._params(), stream=True,
-                                    timeout=(self.timeout, DOWNLOAD_READ_TIMEOUT)) as response:
+                                    timeout=(CONNECT_TIMEOUT, DOWNLOAD_READ_TIMEOUT)) as response:
                 if not 200 <= response.status_code < 300:
                     raise TeddyCloudError(
                         f"teddyCloud answered {response.status_code} for the download of "
@@ -370,7 +397,7 @@ class TeddyCloudClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         url = f"{self.base_url}{path}"
-        kwargs.setdefault("timeout", self.timeout)
+        kwargs.setdefault("timeout", (CONNECT_TIMEOUT, self.timeout))
 
         try:
             response = self.session.request(method, url, **kwargs)
@@ -386,7 +413,7 @@ class TeddyCloudClient:
         if not 200 <= response.status_code < 300:
             raise TeddyCloudError(
                 f"teddyCloud answered {response.status_code} for {path}: {response.text[:200]}",
-                status=response.status_code,
+                status=response.status_code, body=response.text or "",
             )
         return response
 
@@ -397,6 +424,22 @@ class TeddyCloudClient:
         if body != COMMAND_OK:
             raise TeddyCloudError(f"teddyCloud refused {path}: {body[:200] or 'empty answer'}",
                                   refused=True)
+
+
+class _AskOnce(Retry):
+    """Retries that never repeat a request teddyCloud took and left unanswered.
+
+    A refused or reset connection fails at once and is what a restarting
+    teddyCloud looks like, so it is worth another try. A read that timed out
+    is a teddyCloud that is paused or hung: asking again would only multiply
+    the wait of the page behind it, past what a gateway in front of this app
+    waits for.
+    """
+
+    def increment(self, *args: Any, error: Optional[Exception] = None, **kwargs: Any) -> Retry:
+        if isinstance(error, ReadTimeoutError):
+            raise error
+        return super().increment(*args, error=error, **kwargs)
 
 
 # Stands in for the file while requests frames the form around it.

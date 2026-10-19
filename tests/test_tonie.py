@@ -351,6 +351,17 @@ class TestPublishStream:
             publish_stream(teddycloud, "7ab4ed0e500304e0",
                            "rtsp://radio.example/kinder", series="K")
 
+    @pytest.mark.parametrize("url", ["http://192.168.0.20:8000/kinder.mp3",
+                                     "http://localhost:8000/stream", "http://radio.local/live"])
+    def test_takes_a_stream_from_the_home_network(self, teddycloud, url):
+        # A radio in the home network, such as an Icecast, is meant to work.
+        # Unlike a podcast feed, this app never fetches the stream itself;
+        # teddyCloud does, so there is nothing here a private address could
+        # be used against.
+        publish_stream(teddycloud, "7ab4ed0e500304e0", url, series="Hausradio")
+
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] == url
+
     def test_refuses_a_tag_the_box_has_never_seen(self, teddycloud):
         with pytest.raises(TonieError):
             publish_stream(teddycloud, "ffffffffffffffff",

@@ -589,6 +589,10 @@
  "sheet.back_to_sheet": "Back to the print page",
  "sheet.back_tracks": "Print the track names",
  "sheet.back_tracks_hint": "- what does not fit is counted",
+ "sheet.backs": {
+  "one": "{count} back side",
+  "other": "{count} back sides"
+ },
  "sheet.choose_pictures": "Choose pictures",
  "sheet.download": "Download the PDF",
  "sheet.extra": "Extra pictures",
@@ -624,6 +628,10 @@
  "sheet.overview": "Overview for the tin",
  "sheet.overview_hint": "Every tonie on one A4 sheet: cover, name, year, playing time.",
  "sheet.overview_pdf": "Overview as PDF",
+ "sheet.pictures": {
+  "one": "{count} extra picture",
+  "other": "{count} extra pictures"
+ },
  "sheet.search": "Find tonies or stickers",
  "sheet.search_hint": "Name, series or UID - several UIDs separated by spaces or commas",
  "sheet.sheets": {
@@ -635,6 +643,7 @@
   "one": "{count} cover",
   "other": "{count} covers"
  },
+ "sheet.unprintable": "No picture, so not on the sheet: {names}. Give them a cover on their tonie page.",
  "shop.chapters_differ": "{shop} chapters, your audio has {taf}",
  "shop.chapters_match": {
   "one": "{count} chapter, matches",

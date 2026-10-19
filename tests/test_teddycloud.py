@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-from tonie_studio.teddycloud import (DOWNLOAD_READ_TIMEOUT, REQUEST_TIMEOUT, TeddyCloudClient,
-                                     TeddyCloudError)
+from tonie_studio.teddycloud import (CONNECT_TIMEOUT, DOWNLOAD_READ_TIMEOUT, ENCODE_TIMEOUT,
+                                     REQUEST_TIMEOUT, TeddyCloudClient, TeddyCloudError)
 
 
 def _ok():
@@ -180,6 +180,54 @@ class TestUpload:
         request_mock.assert_not_called()
 
 
+class TestUploadTimeout:
+    @staticmethod
+    def _timeout(client, request_mock, size):
+        import io
+
+        request_mock.return_value = _ok()
+        client.upload(io.BytesIO(b"x" * size), "a.flac", path="/", special="library")
+        connect, read = request_mock.call_args.kwargs["timeout"]
+        assert connect == CONNECT_TIMEOUT
+        return read
+
+    def test_a_small_file_is_not_waited_on_like_an_encode(self, client, request_mock):
+        # One job worker sends every upload; a teddyCloud that stalls must
+        # not hold it for the half hour an encode may take.
+        assert self._timeout(client, request_mock, 1000) <= 60
+
+    def test_a_larger_file_is_given_longer(self, client, request_mock):
+        small = self._timeout(client, request_mock, 1000)
+        large = self._timeout(client, request_mock, 20 * 1048576)
+
+        assert small < large < ENCODE_TIMEOUT
+
+
+class TestUploadNotStored:
+    def test_a_500_saying_ok_is_told_in_words(self, client):
+        # teddyCloud 0.7.0 answers so when its library is full or the body
+        # stopped arriving; "answered 500: OK" reads as a contradiction.
+        import io
+
+        with patch.object(client.session, "request", return_value=Mock(status_code=500, text="OK")):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+        assert str(raised.value) == (
+            "teddyCloud could not store the file (library full or upload cut off)")
+        assert raised.value.status == 500 and raised.value.refused
+
+    def test_another_500_keeps_what_teddycloud_said(self, client):
+        import io
+
+        with patch.object(client.session, "request",
+                          return_value=Mock(status_code=500, text="disk full")):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.upload(io.BytesIO(b"audio"), "001.flac", path="/s", special="library")
+
+        assert "disk full" in str(raised.value)
+
+
 class TestEncode:
     def test_keeps_the_source_order_because_each_source_is_a_chapter(self, client, request_mock):
         request_mock.return_value = _ok()
@@ -209,7 +257,8 @@ class TestEncode:
 
         client.encode("/a.taf", ["/b.flac"])
 
-        assert request_mock.call_args.kwargs["timeout"] > client.timeout
+        assert request_mock.call_args.kwargs["timeout"] == (CONNECT_TIMEOUT, ENCODE_TIMEOUT)
+        assert ENCODE_TIMEOUT > client.timeout
 
     def test_refuses_an_empty_source_list(self, client, request_mock):
         with pytest.raises(ValueError):
@@ -341,7 +390,7 @@ class TestCacheContent:
         with patch.object(client.downloads, "get", return_value=_download()) as get:
             client.cache_content("11DFC517", "500304E0")
 
-        assert get.call_args.kwargs["timeout"] == (REQUEST_TIMEOUT, DOWNLOAD_READ_TIMEOUT)
+        assert get.call_args.kwargs["timeout"] == (CONNECT_TIMEOUT, DOWNLOAD_READ_TIMEOUT)
 
     def test_a_refusal_carries_the_status(self, client):
         with patch.object(client.downloads, "get", return_value=_download(status=410)):
@@ -506,6 +555,62 @@ class TestRetries:
         retries = client.session.get_adapter("https://teddycloud.test").max_retries
 
         assert "POST" not in retries.allowed_methods
+
+
+class TestFailingFast:
+    """A paused teddyCloud has to give its error page before a gateway gives up (15 s)."""
+
+    def test_an_ordinary_call_waits_briefly(self, client):
+        with patch.object(client.session, "request", return_value=_json({"tags": []})) as sent:
+            client.tags()
+
+        assert sent.call_args.kwargs["timeout"] == (CONNECT_TIMEOUT, REQUEST_TIMEOUT)
+        assert CONNECT_TIMEOUT + REQUEST_TIMEOUT < 15
+
+    def test_a_teddycloud_that_takes_the_request_and_never_answers_is_asked_once(self):
+        import socket
+        import threading
+        import time
+
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(8)
+        server.settimeout(0.1)
+        accepted, stop = [], threading.Event()
+
+        def accept():
+            while not stop.is_set():
+                try:
+                    accepted.append(server.accept()[0])
+                except OSError:
+                    continue
+
+        thread = threading.Thread(target=accept, daemon=True)
+        thread.start()
+        client = TeddyCloudClient(f"http://127.0.0.1:{server.getsockname()[1]}", timeout=0.3)
+        try:
+            started = time.monotonic()
+            with pytest.raises(TeddyCloudError):
+                client.tags()
+            took = time.monotonic() - started
+        finally:
+            stop.set()
+            thread.join()
+            for connection in accepted:
+                connection.close()
+            server.close()
+
+        assert len(accepted) == 1
+        assert took < 1.5
+
+    def test_a_connection_that_fails_at_once_is_still_tried_again(self, client):
+        # A refused or reset connection costs nothing to retry and is what a
+        # teddyCloud restarting looks like for a moment.
+        from urllib3.exceptions import ConnectTimeoutError
+
+        retries = client.session.get_adapter("http://teddycloud.test").max_retries
+
+        assert retries.increment("GET", "/api/getTagIndex", error=ConnectTimeoutError()).total == 1
 
 
 class TestTwin:

@@ -50,7 +50,8 @@
 <div class="card row">
   <div class="grow truncate">
     <a href="/job/{{ job.id }}">{{ job.label }}</a>
-    <div class="muted">{{ t("job.state." ~ job.state.value) }}{% if job.step %} - {{ describe_progress(job, t) }}{% endif %}</div>
+    {%- set progress = describe_progress(job, t) if job.step else "" %}
+    <div class="muted">{{ t("job.state." ~ job.state.value) }}{% if progress %} - {{ progress }}{% endif %}</div>
   </div>
   {% if job.state.value == 'failed' %}<span class="state-failed">{{ t("job.state.failed") }}</span>
   {% elif job.state.value == 'done' %}<span class="state-done">{{ t("job.state.done") }}</span>{% endif %}

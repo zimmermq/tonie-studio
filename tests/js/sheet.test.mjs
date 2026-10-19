@@ -112,3 +112,91 @@ const ROWS = () => [
   layouts[1].fire('change');
   assert.equal(elements.total.textContent, '16 covers, 2 sheets');
 }
+
+// The total counts what the PDF holds: a text side per cover while those are
+// printed too, and every extra picture once, so the count of sheets is right.
+// The text side's preview follows every change of what is ticked.
+function steppable(model, name, count = 0) {
+  const row = sticker(model, name, count);
+  const minus = element('', '', { dataset: { step: '-1' } });
+  const plus = element('', '', { dataset: { step: '1' } });
+  row.querySelector = selector => ({ '.want': row.want, '.times': element(''),
+                                     '.count': element(''), strong: element('', name),
+                                     'input[name=picks]': row.pick })[selector] || null;
+  row.querySelectorAll = selector => (selector === 'button[data-step]' ? [minus, plus] : []);
+  return Object.assign(row, { minus, plus });
+}
+
+async function backPage(rows, { back = false, files = 0 } = {}) {
+  for (const row of rows) {
+    row.want = element('');
+    row.pick = element('', '', { dataset: { model: row.dataset.search } });
+    row.pick.value = `${row.count}:fill:${row.dataset.search}`;
+  }
+  const find = Object.assign(element('find'), { value: '' });
+  const disc = Object.assign(element('backdisc'), { parentElement: { style: {} }, innerHTML: '' });
+  const wantback = Object.assign(element('wantback'), { checked: back });
+  const wanttracks = Object.assign(element('wanttracks'), { checked: true });
+  const extras = Object.assign(element(''), { files: Array.from({ length: files }, () => ({})) });
+  const answers = Object.fromEntries(rows.map(row => [
+    `/api/sheet/back?model=${row.dataset.search}&layout=sheet`, { tracks: [], plain: [] }]));
+  const elements = await runPage(['app.js', 'sheet.js'], {
+    ids: ['total', 'onlyticked', 'shown', 'nohits', 'tickshown', 'untick', 'fillsheet', 'backwho'],
+    prepared: { find, backdisc: disc, wantback, wanttracks },
+    queries: { '.sticker': rows },
+    found: { 'input[name=files]': extras },
+    answers,
+    pageData: { layouts: { sheet: { perPage: 20, diameterMm: 46 } }, mostCopies: 99, backFade: 0.5,
+                words: { 'sheet.total': '{count} covers', 'sheet.sheets': '{count} sheets',
+                         'sheet.backs': '{count} backs', 'sheet.pictures': '{count} pictures',
+                         'sheet.nothing_chosen': 'none', 'list.shown_of': '{shown} of {count}' } },
+  });
+  // Lets a redraw of the text side finish.
+  const settle = async () => {
+    for (let round = 0; round < 10; round++) await new Promise(done => setImmediate(done));
+  };
+  return { elements, disc, wantback, extras, settle };
+}
+
+function row(model, count = 0) {
+  return Object.assign(steppable(model, model), { count });
+}
+
+{
+  const { elements, wantback, extras } = await backPage([row('A', 12), row('B', 1)], { files: 2 });
+  assert.equal(elements.total.textContent, '13 covers, 2 pictures, 1 sheets');
+  wantback.checked = true;
+  wantback.fire('change');
+  assert.equal(elements.total.textContent, '13 covers, 13 backs, 2 pictures, 2 sheets');
+  extras.files = [];
+  extras.fire('change');
+  assert.equal(elements.total.textContent, '13 covers, 13 backs, 2 sheets');
+}
+
+// Extra pictures alone are something to print as well.
+{
+  const { elements } = await backPage([row('A')], { files: 3 });
+  assert.equal(elements.total.textContent, '3 pictures, 1 sheets');
+}
+
+{
+  const rows = [row('A'), row('B')];
+  const { elements, disc, settle } = await backPage(rows, { back: true });
+  assert.equal(elements.backwho.textContent, 'A');
+  rows[1].plus.fire('click');
+  await settle();
+  assert.equal(elements.backwho.textContent, 'B');
+  rows[1].minus.fire('click');
+  await settle();
+  assert.equal(elements.backwho.textContent, 'A');
+  rows[1].plus.fire('click');
+  await settle();
+  elements.untick.fire('click');
+  await settle();
+  assert.equal(elements.backwho.textContent, 'A');
+  disc.innerHTML = 'stale';
+  elements.fillsheet.fire('click');
+  await settle();
+  assert.equal(disc.innerHTML, '');
+}
+console.log('sheet.test: totals and back ok');

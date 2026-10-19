@@ -343,9 +343,10 @@ class TestProgressInWords:
         from types import SimpleNamespace
 
         from tonie_studio.i18n import Translator
+        from tonie_studio.jobs import JobState
         from tonie_studio.pages.common import describe_progress
 
-        job = SimpleNamespace(step=step, done_count=done, total=total)
+        job = SimpleNamespace(step=step, done_count=done, total=total, state=JobState.RUNNING)
         return describe_progress(job, Translator("de"))
 
     def test_an_encode_counts_minutes_not_seconds(self):

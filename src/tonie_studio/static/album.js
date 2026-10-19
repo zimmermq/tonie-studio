@@ -1,6 +1,11 @@
 // The script of the album page; see templates/album.html.
 const data = pageData();
 
+// Whether leaving the page would throw work away; see the end of this file.
+// The crop is set from script, which fires no input event, so everything
+// that moves it says so itself.
+let changed = false;
+
 // The preview mirrors what the server will render: the cover scaled inside
 // the circle and shifted, with the same arithmetic on both sides. A CSS
 // background position of 0 percent is the window the server cuts at
@@ -41,6 +46,7 @@ if (coverimg) {
     const span = circle.clientWidth * (z - 1) / z / 2;
     cx.value = clamp(dragging.cx - (event.clientX - dragging.x) / span).toFixed(3);
     cy.value = clamp(dragging.cy - (event.clientY - dragging.y) / span).toFixed(3);
+    changed = true;
     paint();
   });
   for (const done of ['pointerup', 'pointercancel']) {
@@ -66,6 +72,7 @@ if (coverimg) {
     if (pinch === null) { pinch = { gap, zoom: +zoom.value }; return; }
     // The slider's own limits, so a pinch reaches exactly what the slider does.
     zoom.value = Math.max(+zoom.min, Math.min(+zoom.max, pinch.zoom * gap / pinch.gap));
+    changed = true;
     paint();
   });
   for (const done of ['pointerup', 'pointercancel', 'pointerleave']) {
@@ -74,7 +81,7 @@ if (coverimg) {
 
   zoom.addEventListener('input', paint);
   document.getElementById('coverreset').addEventListener('click', () => {
-    zoom.value = 1; cx.value = 0; cy.value = 0; paint();
+    zoom.value = 1; cx.value = 0; cy.value = 0; changed = true; paint();
   });
   document.querySelectorAll('.pick').forEach(pick => {
     pick.addEventListener('click', () => {
@@ -85,6 +92,7 @@ if (coverimg) {
       pick.classList.add('chosen');
       pick.setAttribute('aria-pressed', 'true');
       index.value = pick.dataset.index;
+      changed = true;
       paint();
     });
   });
@@ -179,13 +187,15 @@ document.getElementById('form').addEventListener('submit', () => {
 });
 
 // Leaving by "Cancel" after changing titles, order or the crop throws all of
-// it away; asked first, as every other page asks before losing work.
-let changed = false;
+// it away; asked first, as every other page asks before losing work. Another
+// language draws the page again from the album itself, so it loses the same.
 const form = document.getElementById('form');
 form.addEventListener('input', () => { changed = true; });
 form.addEventListener('change', () => { changed = true; });
 list.addEventListener('click', event => { if (event.target.closest('[data-move]')) changed = true; });
-document.getElementById('cancel').addEventListener('click', event => {
+const askBeforeLeaving = event => {
   if (changed && !window.confirm(words['album.discard'])) event.preventDefault();
-});
+};
+document.getElementById('cancel').addEventListener('click', askBeforeLeaving);
+document.querySelectorAll('.languages a').forEach(link => link.addEventListener('click', askBeforeLeaving));
 

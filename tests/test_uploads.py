@@ -83,7 +83,7 @@ class TestHousekeepingRepeats:
 
         from tonie_studio import web
 
-        rounds, staging = [], []
+        rounds, staging, recovered = [], [], []
         stop = threading.Event()
 
         def tidy(_upload_dir, _keep_days):
@@ -94,12 +94,14 @@ class TestHousekeepingRepeats:
 
         monkeypatch.setattr(web, "remove_old_uploads", tidy)
         monkeypatch.setattr(web, "remove_orphaned_staging", lambda _client: staging.append(1) or 0)
-        monkeypatch.setattr(web, "recover_asides", lambda _client: 0)
+        monkeypatch.setattr(web, "recover_asides", lambda _client: recovered.append(1) or 0)
         monkeypatch.setattr(web, "HOUSEKEEPING_EVERY", 0.01)
 
         web._housekeeping(settings, lambda: None, stop)
 
-        assert len(rounds) == 3 and len(staging) == 1
+        # A replace interrupted while teddyCloud was still writing its taf
+        # can only be finished once teddyCloud is done: every round tries.
+        assert len(rounds) == 3 and len(staging) == 1 and len(recovered) == 3
 
     def test_a_round_that_fails_is_followed_by_the_next(self, settings, monkeypatch):
         import threading
@@ -153,6 +155,36 @@ class TestSpool:
 
         assert sorted(str(path.relative_to(path.parents[1])) for path in albums) == [
             "A/Best", "A/Best (2)"]
+
+    def test_one_picked_folder_keeps_its_name(self, tmp_path):
+        # An untagged album is called after its folder; the folder the upload
+        # is kept in is a random name nobody chose.
+        albums = spool(tmp_path, self.sent("Gute Nacht/01-a.mp3", "Gute Nacht/02-b.mp3"))
+
+        assert [path.name for path in albums] == ["Gute Nacht"]
+        assert albums[0].parent.parent == tmp_path
+
+    def test_one_picked_folder_below_a_series_keeps_both_names(self, tmp_path):
+        albums = spool(tmp_path, self.sent("Bibi/Folge 1/01.mp3"))
+
+        assert [(path.parent.name, path.name) for path in albums] == [("Bibi", "Folge 1")]
+
+    def test_single_files_are_named_after_the_first_one(self, tmp_path):
+        albums = spool(tmp_path, self.sent("02-zwei.mp3", "01-eins.mp3", "cover.jpg"))
+
+        assert [path.name for path in albums] == ["Eins"]
+        assert sorted(path.name for path in albums[0].iterdir()) == [
+            "01-eins.mp3", "02-zwei.mp3", "cover.jpg"]
+
+    def test_single_files_next_to_a_folder_are_named_after_their_first(self, tmp_path):
+        albums = spool(tmp_path, self.sent("01-lose.mp3", "Hits/01-a.mp3"))
+
+        assert sorted(path.name for path in albums) == ["Hits", "Lose"]
+
+    def test_a_folder_name_cannot_hide_the_album(self, tmp_path):
+        albums = spool(tmp_path, self.sent(".Hits/01.mp3"))
+
+        assert [path.name for path in albums] == ["Hits"]
 
     def test_a_name_cannot_climb_out_of_its_folder(self, tmp_path):
         spool(tmp_path, self.sent("x/..\\..\\evil.mp3"))
