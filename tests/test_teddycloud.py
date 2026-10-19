@@ -451,8 +451,12 @@ class TestEncoding:
 
 
 class TestRefusedOrAway:
-    @pytest.mark.parametrize("status, refused", [(404, True), (400, True), (500, False),
-                                                 (503, False), (None, False)])
+    # teddyCloud 0.7.0 answers 500 when it cannot delete a file or its library
+    # is full: it is there and said no. A gateway's 502-504, or no answer at
+    # all, is what an outage looks like.
+    @pytest.mark.parametrize("status, refused", [(404, True), (400, True), (500, True),
+                                                 (502, False), (503, False), (504, False),
+                                                 (None, False)])
     def test_a_status_says_which_it_is(self, status, refused):
         assert TeddyCloudError("x", status=status).refused is refused
 
@@ -644,4 +648,3 @@ class TestUploadKeepsTheFormHeadWithItsFile:
         assert all(len(piece) == 8192 for piece in pieces[:-1])
         assert content[:100] in pieces[0]
         assert b"".join(pieces).count(content) == 1
-

@@ -42,7 +42,12 @@
 {% endblock %}
 
 {% block body %}
-{% if silent %}
+{% if other_spelling %}
+<div class="warn row wrap gap-10 items-center">
+  <span class="grow">{{ t("tonie.silent_spelling") }}</span>
+  <a class="button primary" href="/checkup">{{ t("nav.checkup") }}</a>
+</div>
+{% elif silent %}
 <div class="warn row wrap gap-10 items-center">
   <span class="grow">{{ t("tonie.silent") }}</span>
   {% if remake %}<a class="button primary" href="/batch?ids={{ remake | urlencode }}">{{ t("tonie.remake") }}</a>
@@ -119,14 +124,19 @@
 
 {% if removal %}
 {% call danger(t("tonie.remove_title")) %}
-  <p class="muted mt-0">{{ t("tonie.remove_hint") }}</p>
+  {#- Audio from the Tonies cloud is in no album of the archive: deleting it
+      is final, and the page says so rather than promising a remake. #}
+  <p class="muted mt-0">{{ t("tonie.remove_hint_lost" if removal.lost else "tonie.remove_hint") }}</p>
   <ul class="muted">
     <li>{{ t("tonie.removes_sticker", uid=tag.uid) }}</li>
     {% if removal.model %}<li>{{ t("tonie.removes_model", model=removal.model) }}</li>{% endif %}
-    {% if removal.taf %}<li>{{ t("tonie.removes_taf", taf=removal.taf) }}</li>{% endif %}
+    {% if removal.taf and removal.lost %}<li>{{ t("tonie.removes_lost_audio", path=removal.taf) }}</li>
+    {% elif removal.taf %}<li>{{ t("tonie.removes_taf", taf=removal.taf) }}</li>{% endif %}
+    {% if removal.cached %}<li>{{ t("tonie.removes_lost_audio", path=removal.cached) }}</li>{% endif %}
   </ul>
   <form method="post" action="/tonies/{{ tag.ruid }}/delete"
-        data-confirm="{{ t('tonie.confirm_remove') }}">
+        data-confirm="{{ t('tonie.confirm_remove_lost', path=removal.taf or removal.cached) if removal.lost
+                         else t('tonie.confirm_remove') }}">
     <button class="danger" type="submit">{{ t("tonie.remove_button") }}</button>
   </form>
 {% endcall %}

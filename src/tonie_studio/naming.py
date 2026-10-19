@@ -21,7 +21,8 @@ catalogue has since listed is replaced by the official model, which describes
 the recording at least as well and brings the official cover and track names.
 And models an earlier tool made under the NFC- prefix are moved into this
 app's namespace, so every model it did not get from the catalogue is one it
-looks after.
+looks after. A model of this app's that lacks the audio its sticker plays,
+as an upkeep cut short leaves it, gets that audio back (see apply).
 
 Names are matched with umlauts folded to ae, oe, ue and ss, since dump folders
 spell them out that way. An episode that matches more than one model is not
@@ -56,6 +57,9 @@ LANGUAGE = "de-de"
 LIBRARY_PREFIX = "lib://by/audioID/"
 LIBRARY_FOLDER = "/by/audioID"
 
+# How a tag's source names a taf in the library.
+LIBRARY_SOURCE = "lib://"
+
 # The prefix of the models an earlier command-line tool made for imported tonies.
 OLD_PREFIX = "NFC-"
 
@@ -69,6 +73,7 @@ REUSE = "reuse"        # link to the custom model that already carries the audio
 PROMOTE = "promote"    # replace a custom model the catalogue now covers
 RENAME = "rename"      # move an NFC- model into this app's namespace
 RETITLE = "retitle"    # give a model of ours the better name the rules find now
+REPAIR = "repair"      # give a model of ours the audio its sticker plays
 
 # How long a copy of the catalogue is used before it is fetched again. It
 # changes a few times a week and is several megabytes.
@@ -258,7 +263,9 @@ def fingerprint(todo: Plan) -> str:
 def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
          by_audio: AudioIndex, models: List[Model],
          headers: Mapping[str, Mapping[str, Any]], migrate: bool = False,
-         relink: bool = True, retitle: bool = False, highest: int = 0) -> Plan:
+         relink: bool = True, retitle: bool = False, highest: int = 0,
+         repair: bool = True,
+         source_headers: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Plan:
     """What naming the tonies in ``dumps`` (``{ruid: dump path}``) takes.
 
     ``tags`` is teddyCloud's tag index, whose model is the one teddyCloud names
@@ -269,7 +276,10 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
     this app's namespace too; with ``retitle`` a model of this app named after
     a dump in ``dumps`` is renamed when the rules now find a better name, such
     as a set figure's official title. New ids go above ``highest``, the
-    highest number ever handed out.
+    highest number ever handed out. With ``repair`` a model of this app's
+    without audio, on any sticker, gets the audio that sticker plays (see
+    _repairs); ``source_headers`` holds the taf headers of such stickers
+    outside ``by/audioID``, by source.
     """
     tags = list(tags)
     by_ruid = {tag.ruid: tag for tag in tags}
@@ -303,9 +313,68 @@ def plan(tags: Iterable[TonieTag], dumps: Mapping[str, str], catalog: Catalog,
             available.append(step.new_model)
             handled.add(ruid)
 
+    if repair:
+        # A renamed model no tag moves onto is only deleted, never written.
+        unwritten = ({model.id for model in renamed.values()}
+                     - {step.model_id for step in result.steps if step.kind == RENAME})
+        kept = [model for model in available if model.id not in unwritten]
+        result.steps.extend(_repairs(tags, dumps, handled, kept, headers, source_headers or {}))
     if retitle:
-        result.steps.extend(_retitles(by_ruid, dumps, handled, catalog, by_audio, models, headers))
+        retitles = _retitles(by_ruid, dumps, handled, catalog, by_audio, models, headers)
+        _fold_repairs(result, retitles)
+        result.steps.extend(retitles)
     return result
+
+
+def _repairs(tags: List[TonieTag], dumps: Mapping[str, str], handled: set,
+             available: List[Model], headers: Mapping[str, Mapping[str, Any]],
+             source_headers: Mapping[str, Mapping[str, Any]]) -> List[Step]:
+    """Audio for this app's models that lack the audio their sticker plays.
+
+    apply writes new models without audio and adds it last, so an upkeep cut
+    short in between leaves such a model, and nothing else would ever add it.
+    A model is only given audio no other model keeps after the plan
+    (``available``, which holds the plan's own new models too): teddyCloud
+    refuses two custom models with the same audio id and hash, and a model of
+    a sticker given audio another model already carries rightly has none. A
+    stream, or a taf whose header is unknown, has no audio to add.
+    """
+    carried = {(str(audio_id), str(sha1).upper()) for model in available
+               for audio_id in model.audio_ids for sha1 in model.hashes}
+    bare = {model.id: model for model in available
+            if model.id.startswith(MODEL_PREFIX) and not (model.audio_ids and model.hashes)}
+    steps = []
+    for tag in tags:
+        model = bare.get(tag.model)
+        if model is None or tag.ruid in handled:
+            continue
+        audio = _audio_of(tag, headers) or _audio_from(source_headers.get(tag.source))
+        if audio is None or audio in carried:
+            continue
+        carried.add(audio)
+        del bare[model.id]
+        steps.append(Step(REPAIR, tag.ruid, model.id, path=dumps.get(tag.ruid, ""),
+                          label=tag.label,
+                          new_model=replace(model, audio_ids=[audio[0]], hashes=[audio[1]])))
+    return steps
+
+
+def _fold_repairs(result: Plan, retitles: List[Step]) -> None:
+    """Give a retitled model the audio a repair adds, and drop the repair.
+
+    Both write the whole model, so of two steps for one model the later
+    would undo the earlier.
+    """
+    retitled = {step.model_id: step for step in retitles}
+    kept = []
+    for step in result.steps:
+        target = retitled.get(step.model_id) if step.kind == REPAIR else None
+        if target is None:
+            kept.append(step)
+            continue
+        target.new_model = replace(target.new_model, audio_ids=step.new_model.audio_ids,
+                                   hashes=step.new_model.hashes)
+    result.steps = kept
 
 
 class _Ids:
@@ -349,6 +418,10 @@ def _audio_of(tag: TonieTag, headers: Mapping[str, Mapping[str, Any]]
     """The tag's audio as (audio id, upper-case hash), from the library's taf headers."""
     header = (headers.get(tag.source[len(LIBRARY_PREFIX):])
               if tag.source.startswith(LIBRARY_PREFIX) else None)
+    return _audio_from(header)
+
+
+def _audio_from(header: Optional[Mapping[str, Any]]) -> Optional[Tuple[str, str]]:
     if not header:
         return None
     return str(header["audioId"]), str(header["sha1Hash"]).upper()
@@ -429,13 +502,15 @@ def apply(client: TeddyCloudClient, todo: Plan,
     their audio first and get it only at the end. No tonie is ever without
     its model on the way. Should a write fail in between, a new model lacks
     its audio, which only stops teddyCloud from recognising that audio on a
-    tonie that has no model set; every tonie linked here has one.
+    tonie that has no model set; every tonie linked here has one. The next
+    plan adds the missing audio (see _repairs).
     """
+    whole = (RETITLE, REPAIR)
     new_models = [step.new_model for step in todo.steps
-                  if step.new_model and step.kind != RETITLE]
-    linked = [step for step in todo.steps if step.kind != RETITLE]
+                  if step.new_model and step.kind not in whole]
+    linked = [step for step in todo.steps if step.kind not in whole]
     with_audio = [model for model in new_models if model.audio_ids and model.hashes]
-    retitled = [step for step in todo.steps if step.kind == RETITLE]
+    retitled = [step for step in todo.steps if step.kind in whole]
     total = len(new_models) + len(linked) + bool(todo.retired) + len(with_audio) + len(retitled)
     count = iter(range(total))
 
@@ -455,11 +530,43 @@ def apply(client: TeddyCloudClient, todo: Plan,
     for model in with_audio:
         next_call()
         client.upsert_custom_tonie(model.to_json())
-    # A renamed model keeps its id and audio, so it is written in one go.
+    # A retitled model keeps its id and audio, and a repaired one only gains
+    # audio nothing else carries, so each is written in one go, after the
+    # models that held any of it are gone.
     for step in retitled:
         next_call()
         client.upsert_custom_tonie(step.new_model.to_json())
     log.info("named %d tonie(s), deleted %d model(s)", len(todo.steps), len(todo.retired))
+
+
+def source_headers(client: TeddyCloudClient, tags: Iterable[TonieTag],
+                   models: Iterable[Model]) -> Dict[str, Mapping[str, Any]]:
+    """The taf headers, by source, of stickers whose model of ours has no audio.
+
+    Only for tafs outside ``by/audioID``, whose headers library_headers has
+    already. Such stickers are rare, so their folders are listed one by one.
+    """
+    bare = {model.id for model in models
+            if model.id.startswith(MODEL_PREFIX) and not (model.audio_ids and model.hashes)}
+    wanted: Dict[str, Dict[str, str]] = {}
+    for tag in tags:
+        if tag.model not in bare or not tag.source.startswith(LIBRARY_SOURCE) \
+                or tag.source.startswith(LIBRARY_PREFIX):
+            continue
+        folder, _, name = ("/" + tag.source[len(LIBRARY_SOURCE):]).rpartition("/")
+        wanted.setdefault(folder or "/", {})[name] = tag.source
+    found = {}
+    for folder, names in wanted.items():
+        try:
+            entries = (client.list_dir("/", special="library") if folder == "/"
+                       else list_folder(client, folder))
+        except TeddyCloudError:
+            continue
+        for entry in entries:
+            header = entry.get("tafHeader") or {}
+            if entry.get("name") in names and header.get("valid"):
+                found[names[entry["name"]]] = header
+    return found
 
 
 def library_headers(client: TeddyCloudClient) -> Dict[str, Mapping[str, Any]]:
@@ -505,9 +612,11 @@ class Namer:
         """
         client = self.client()
         catalog, by_audio = self.catalog()
-        return plan(list_tags(client), self.dumps(), catalog, by_audio, list_models(client),
+        tags, models = list_tags(client), list_models(client)
+        return plan(tags, self.dumps(), catalog, by_audio, models,
                     library_headers(client), migrate=migrate, retitle=migrate,
-                    highest=highest_id_used(self.data_dir))
+                    highest=highest_id_used(self.data_dir),
+                    source_headers=source_headers(client, tags, models))
 
     def upkeep(self, migrate: bool = False, expect: Optional[str] = None,
                progress: Optional[Callable[[str, int, int], None]] = None) -> Plan:
@@ -536,7 +645,7 @@ class Namer:
             client = self.client()
             todo = plan(list_tags(client), {ruid: path}, catalog, by_audio, list_models(client),
                         library_headers(client), relink=False,
-                        highest=highest_id_used(self.data_dir))
+                        highest=highest_id_used(self.data_dir), repair=False)
             if not todo.empty:
                 self._note_ids(todo)
                 apply(client, todo)

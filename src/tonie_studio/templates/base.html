@@ -19,13 +19,16 @@
   {#- Grouped by what one is doing: making tonies is always in view, the
       extras and the upkeep sit behind a menu each. Every entry lists the
       path prefixes of the pages that belong to it, so a page deeper down
-      still marks where it is; the prefixes must not overlap. -#}
-  {%- set path = request.url.path %}
-  {%- set making = [("/", "nav.albums", ("/album", "/batch", "/upload", "/job", "/parts")),
+      still marks where it is; the prefixes must not overlap. A top-level
+      ``set`` here lands in the context every child block renders with, so
+      these names carry a ``nav_`` prefix: a plain ``path`` would replace the
+      page's own variable of that name. -#}
+  {%- set nav_path = request.url.path %}
+  {%- set nav_making = [("/", "nav.albums", ("/album", "/batch", "/upload", "/job", "/parts")),
                     ("/tonies", "nav.tonies", ("/tonies",)),
                     ("/library", "nav.library", ("/library",)),
                     ("/sheet", "nav.sheet", ("/sheet",))] %}
-  {%- set menus = [("nav.extras", [("/radio", "nav.radio", ("/radio",)),
+  {%- set nav_menus = [("nav.extras", [("/radio", "nav.radio", ("/radio",)),
                                    ("/podcasts", "nav.podcasts", ("/podcasts",)),
                                    ("/import", "nav.import", ("/import",)),
                                    ("/listening", "nav.listening", ("/listening",))]),
@@ -33,17 +36,17 @@
                                    ("/backup", "nav.backup", ("/backup", "/restore"))])] %}
   <a class="brand" href="/">tonie-studio</a>
   <nav class="mainnav">
-    {%- for href, key, prefixes in making %}
-    <a href="{{ href }}" {% if path == href or path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
+    {%- for href, key, prefixes in nav_making %}
+    <a href="{{ href }}" {% if nav_path == href or nav_path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
     {%- endfor %}
-    {%- for label, entries in menus %}
+    {%- for label, entries in nav_menus %}
     {%- set ns = namespace(here=false) %}
-    {%- for href, key, prefixes in entries %}{% if path == href or path.startswith(prefixes) %}{% set ns.here = true %}{% endif %}{% endfor %}
+    {%- for href, key, prefixes in entries %}{% if nav_path == href or nav_path.startswith(prefixes) %}{% set ns.here = true %}{% endif %}{% endfor %}
     <details class="menu">
       <summary {% if ns.here %}aria-current="true"{% endif %}>{{ t(label) }}</summary>
       <div class="menulist">
         {%- for href, key, prefixes in entries %}
-        <a href="{{ href }}" {% if path == href or path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
+        <a href="{{ href }}" {% if nav_path == href or nav_path.startswith(prefixes) %}aria-current="page"{% endif %}>{{ t(key) }}</a>
         {%- endfor %}
       </div>
     </details>

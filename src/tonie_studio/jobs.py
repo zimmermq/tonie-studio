@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -139,8 +140,9 @@ class JobRunner:
     def shutdown(self) -> int:
         """Stop taking work and drop what has not started; returns how many were dropped.
 
-        A running job is left to finish. The dropped ones end as failed, so a
-        page still watching one says it stopped rather than waiting for it.
+        A running job goes on; ``finish`` waits for it. The dropped ones end
+        as failed, so a page still watching one says it stopped rather than
+        waiting for it.
         """
         self._pool.shutdown(wait=False, cancel_futures=True)
         with self._lock:
@@ -151,6 +153,20 @@ class JobRunner:
             job.state = JobState.FAILED
             job.done.set()
         return len(dropped)
+
+    def finish(self, timeout: float) -> List[Job]:
+        """Wait up to ``timeout`` seconds for the running jobs; returns those still running.
+
+        Meant for after ``shutdown``, when the process is about to end: the
+        server re-raises the stop signal once the app has shut down, and that
+        ends the process at once, whatever a job was in the middle of.
+        """
+        deadline = time.monotonic() + timeout
+        with self._lock:
+            running = [self._jobs[job_id] for job_id, future in self._futures.items()
+                       if not future.done() and job_id in self._jobs]
+        return [job for job in running
+                if not job.done.wait(max(0.0, deadline - time.monotonic()))]
 
     # --- internals --------------------------------------------------------
 
@@ -164,7 +180,7 @@ class JobRunner:
             # would leave the page with a job that stopped for no stated reason.
             log.exception("job %s (%s) failed", job.id, job.label)
             job.error = str(error) or error.__class__.__name__
-            job.exception = error
+            job.exception = _without_frames(error)
             # Kept whole when a person is meant to read it, so a page can say
             # it in the reader's language; ``error`` is the log's version.
             job.problem = error if isinstance(error, Problem) else None
@@ -200,6 +216,27 @@ class JobRunner:
             self._jobs.pop(job_id, None)
             self._futures.pop(job_id, None)
             self._order.remove(job_id)
+
+
+def _without_frames(error: BaseException) -> BaseException:
+    """``error`` and every exception it was raised from, stripped of their tracebacks.
+
+    A failed job is kept for its page long after the work stopped, and a
+    traceback keeps every frame of that work alive: the teddyCloud client in
+    it, and with it the client's open keep-alive connection. teddyCloud serves
+    only a few dozen connections, so a few dozen failed jobs would hold all of
+    them. The log has already written the traceback down.
+    """
+    seen = set()
+    pending: List[Optional[BaseException]] = [error]
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        current.__traceback__ = None
+        pending += [current.__cause__, current.__context__]
+    return error
 
 
 # How many groups are kept, newest first; older ones let their jobs go.

@@ -94,6 +94,7 @@ class TestHousekeepingRepeats:
 
         monkeypatch.setattr(web, "remove_old_uploads", tidy)
         monkeypatch.setattr(web, "remove_orphaned_staging", lambda _client: staging.append(1) or 0)
+        monkeypatch.setattr(web, "recover_asides", lambda _client: 0)
         monkeypatch.setattr(web, "HOUSEKEEPING_EVERY", 0.01)
 
         web._housekeeping(settings, lambda: None, stop)
@@ -117,6 +118,7 @@ class TestHousekeepingRepeats:
 
         monkeypatch.setattr(web, "remove_old_uploads", flaky)
         monkeypatch.setattr(web, "remove_orphaned_staging", lambda _client: 0)
+        monkeypatch.setattr(web, "recover_asides", lambda _client: 0)
         monkeypatch.setattr(web, "HOUSEKEEPING_EVERY", 0.01)
 
         web._housekeeping(settings, lambda: None, stop)

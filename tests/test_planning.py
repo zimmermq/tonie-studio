@@ -108,3 +108,66 @@ class TestExpectedTargets:
 
         assert expected_targets(summary, tmp_path / "archive", tmp_path / "uploads") == [
             "/Autor/Lang - Teil 1 von 2.taf", "/Autor/Lang - Teil 2 von 2.taf"]
+
+
+class TestDiscsOfOneRelease:
+    def test_the_series_of_a_disc_is_the_folder_above_its_release(self, tmp_path):
+        album = Album(path=tmp_path / "archive" / "Bobo" / "Gute Nacht" / "CD2",
+                      title="Gute Nacht (CD 2)", artist=None, year=None, tracks=[], cover=None)
+
+        assert suggest_series(album, tmp_path / "archive", tmp_path / "uploads") == "Bobo"
+
+    def test_a_release_right_in_the_archive_has_no_series(self, tmp_path):
+        album = Album(path=tmp_path / "archive" / "Gute Nacht" / "CD2",
+                      title="Gute Nacht (CD 2)", artist=None, year=None, tracks=[], cover=None)
+
+        assert suggest_series(album, tmp_path / "archive", tmp_path / "uploads") == ""
+
+    def test_the_discs_of_one_release_land_in_different_tafs(self, tmp_path):
+        from tonie_studio.album import AlbumSummary
+        from tonie_studio.planning import expected_targets
+
+        targets = [expected_targets(AlbumSummary(
+            id=str(disc), path=tmp_path / "archive" / "Gute Nacht" / f"CD{disc}",
+            name=f"Gute Nacht/CD{disc}", track_count=10, has_cover=False,
+            title=f"Gute Nacht (CD {disc})", artist="Bobo"), tmp_path / "archive",
+            tmp_path / "uploads") for disc in (1, 2)]
+
+        assert targets == [["/Bobo/Gute Nacht (CD 1).taf"], ["/Bobo/Gute Nacht (CD 2).taf"]]
+
+
+class TestOneBatchNeverAimsTwiceAtOneTaf:
+    def _album(self, path, title):
+        return Album(path=path, title=title, artist="Bobo", year=None,
+                     tracks=[_track(1), _track(2)], cover=None)
+
+    def test_albums_suggesting_the_same_name_tell_themselves_apart_by_folder(self, tmp_path):
+        # Two folders whose tracks carry the same album tag and no disc name:
+        # one taf for both, and the second could never be made.
+        from fake_teddycloud import FakeTeddyCloud
+
+        from tonie_studio.planning import plan_batch
+
+        archive = tmp_path / "archive"
+        albums = [("a", self._album(archive / "Gute Nacht" / "Erster Teil", "Gute Nacht")),
+                  ("b", self._album(archive / "Gute Nacht" / "Zweiter Teil", "Gute Nacht"))]
+
+        rows = plan_batch(FakeTeddyCloud(), albums, archive, tmp_path / "uploads")
+
+        assert sorted(row.episode for row in rows) == [
+            "Gute Nacht (Erster Teil)", "Gute Nacht (Zweiter Teil)"]
+        assert len({row.targets[0] for row in rows}) == 2
+
+    def test_names_the_page_sent_are_taken_as_they_are(self, tmp_path):
+        from fake_teddycloud import FakeTeddyCloud
+
+        from tonie_studio.planning import plan_batch
+
+        archive = tmp_path / "archive"
+        albums = [("a", self._album(archive / "X" / "Eins", "Gute Nacht")),
+                  ("b", self._album(archive / "X" / "Zwei", "Gute Nacht"))]
+
+        rows = plan_batch(FakeTeddyCloud(), albums, archive, tmp_path / "uploads",
+                          episodes={"a": "Mein Name", "b": "Mein Name 2"})
+
+        assert sorted(row.episode for row in rows) == ["Mein Name", "Mein Name 2"]

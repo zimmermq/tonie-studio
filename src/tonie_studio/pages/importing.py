@@ -17,7 +17,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..teddycloud import TeddyCloudError
 from ..times import from_seconds
-from ..importing import (CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, SKIPPED,
+from ..importing import (BROKE_OFF, CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, SKIPPED,
                          UNREADABLE, ImportProblem, Pace, Run, remove_skip, skip_list)
 from .. import naming
 from ..jobs import JobState
@@ -30,8 +30,8 @@ STATES = (PENDING, IMPORTED, CACHED, FAILED, SKIPPED, DUPLICATE, UNREADABLE)
 RECENT = 10
 
 # The order the naming steps are listed in.
-KINDS = (naming.RENAME, naming.PROMOTE, naming.RETITLE, naming.NEW, naming.REUSE,
-         naming.OFFICIAL)
+KINDS = (naming.RENAME, naming.PROMOTE, naming.RETITLE, naming.REPAIR, naming.NEW,
+         naming.REUSE, naming.OFFICIAL)
 
 
 # The job kind of writing the names a person looked at.
@@ -49,6 +49,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         run = importer.current()
         return templates.TemplateResponse(request, "import.html", {
             "run": run,
+            # Why the run asks nobody anything now; see Importer.held.
+            "held": importer.held if run else None,
+            "broke_off": BROKE_OFF,
             "states": STATES,
             "counts": _counts(run) if run else {},
             "failed": _problems(run) if run else [],

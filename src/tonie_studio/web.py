@@ -10,12 +10,14 @@ rules about staging and cleanup hold no matter which page started the work.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from fastapi import FastAPI
 from fastapi.responses import Response
@@ -27,7 +29,7 @@ from .boxstate import BoxWatcher
 from .cache import BackgroundCache
 from .catalogue import Catalogue
 from .compress import CompressMiddleware
-from .encode import list_tafs, remove_orphaned_staging
+from .encode import list_tafs, recover_asides, remove_orphaned_staging
 from .importing import Importer
 from .naming import Namer
 from .shop import Shop
@@ -62,6 +64,12 @@ HOUSEKEEPING_EVERY = 86400.0
 # page view starts a refresh. Walking the library is one request per folder.
 LIBRARY_TTL = 60.0
 
+# How long, in seconds, a stopping app waits for the jobs still running. The
+# process ends right after, cutting off whatever is left; Kubernetes kills it
+# 30 seconds after asking it to stop, and the server needs some of those to
+# close its connections first.
+SHUTDOWN_GRACE = 20.0
+
 def create_app(
     settings: Settings,
     client_factory: Optional[Callable[[], TeddyCloudClient]] = None,
@@ -71,12 +79,14 @@ def create_app(
     importer: Optional[Importer] = None,
     shop: Optional[Shop] = None,
     background: bool = True,
+    shutdown_grace: float = SHUTDOWN_GRACE,
 ) -> FastAPI:
     """Build the app. The dependencies are injected so tests can replace them.
 
     ``background`` false starts none of the loops that work on their own -
     housekeeping, podcasts, the importer, the naming - for a test that changes
-    teddyCloud while the app runs and must not race them.
+    teddyCloud while the app runs and must not race them. ``shutdown_grace``
+    is how long a stopping app waits for running jobs; see SHUTDOWN_GRACE.
     """
     templates = Jinja2Templates(directory=str(TEMPLATES), context_processors=[page_context])
     templates.env.filters["cover_name"] = cover_name
@@ -150,6 +160,8 @@ def create_app(
             if dropped:
                 log.warning("shutting down: %d job(s) that had not started are dropped", dropped)
             stopping.set()
+            # Off the event loop: waiting on a thread is blocking work.
+            await asyncio.to_thread(_finish_jobs, (jobs, prints), shutdown_grace)
 
     app = FastAPI(title="tonie-studio", lifespan=lifespan)
     app.add_middleware(CompressMiddleware)
@@ -171,16 +183,32 @@ def create_app(
     return app
 
 
+def _finish_jobs(runners: Sequence[JobRunner], grace: float) -> None:
+    """Give the running jobs up to ``grace`` seconds in all, and log each one cut off.
+
+    Whatever a cut-off job was writing is left half done - a staging folder,
+    a taf without its sticker - and the log is the one place that says which.
+    """
+    deadline = time.monotonic() + grace
+    for runner in runners:
+        for job in runner.finish(max(0.0, deadline - time.monotonic())):
+            log.warning("shutting down: job %s (%s, %s) was still running and is cut off",
+                        job.id, job.kind, job.label)
+
+
 def _housekeeping(settings: Settings, client: Callable[[], TeddyCloudClient],
                   stop: threading.Event) -> None:
     """Clear what an earlier run left lying about, then keep the volume tidy until ``stop``."""
     # Whatever was mid-encode when the process died is nobody's job now, and
     # it is holding hundreds of megabytes in teddyCloud's library. Only at
     # startup: once jobs run, a staging folder is usually one of theirs.
+    # A replace stopped the same way leaves its stickers on the copy beside
+    # the taf; nothing else points them back.
     try:
         removed = remove_orphaned_staging(client())
         if removed:
             log.info("cleared %d abandoned staging folder(s)", removed)
+        recover_asides(client())
     except TeddyCloudError as error:
         # teddyCloud being down is no reason for this app not to start; the
         # pages that need it will say so themselves.

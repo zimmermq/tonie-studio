@@ -180,6 +180,51 @@ class TestEditTonie:
         assert 'class="warn ' in page
         assert 'href="/batch?ids=' in page
 
+    def test_a_tonie_naming_the_other_spelling_of_its_file_is_silent(self, client, teddycloud):
+        # teddyCloud's file system tells the composed and the decomposed
+        # umlaut apart: the sticker plays nothing, though the file is there.
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files["/Lichterkinder/B\u00e4renlied.taf"] = b"taf"
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Lichterkinder/Ba\u0308renlied.taf"
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert 'class="warn ' in page
+        assert "anderen Schreibweise" in page and 'href="/checkup"' in page
+
+    def test_an_official_tonie_says_its_audio_is_gone_for_good(self, client, teddycloud):
+        # Nothing in the archive made it: deleting it is final, and the page
+        # must not promise it can be made again.
+        teddycloud.dirs.update({"/by", "/by/audioID"})
+        teddycloud.files["/by/audioID/1786524025.taf"] = b"taf"
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(
+            source="lib://by/audioID/1786524025.taf", tonie_model="10000001")
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "daraus l\u00e4sst sich der Tonie neu machen" not in page
+        assert "aus der Cloud" in page
+        assert re.search(r'data-confirm="[^"]*/by/audioID/1786524025.taf', page)
+
+    def test_an_official_tonie_cached_beside_its_sticker_is_freed_for_good(self, client, teddycloud):
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(tonie_model="10000001", exists=True)
+        teddycloud.files["/7AB4ED0E/500304E0"] = b"taf"
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+        response = client.post("/tonies/7ab4ed0e500304e0/delete", follow_redirects=False)
+
+        assert "/7AB4ED0E/500304E0" in page and "aus der Cloud" in page
+        assert response.status_code == 303
+        assert "/7AB4ED0E/500304E0" not in teddycloud.files
+
+    def test_a_tonie_made_here_still_points_at_its_album(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+
+        assert "daraus l\u00e4sst sich der Tonie neu machen" in page
+        assert "aus der Cloud" not in page
+
     def test_a_tonie_with_its_audio_does_not_warn(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)
 
@@ -237,6 +282,21 @@ class TestLibraryPage:
         page = client.get("/library").text
 
         assert 'href="/tonies/7ab4ed0e500304e0">Lichterkinder - Halloween</a>' in page
+
+    def test_a_sticker_naming_the_other_spelling_does_not_count_as_playing(self, client, teddycloud):
+        # teddyCloud's file system tells the two spellings of an umlaut apart:
+        # that sticker plays nothing. The file stays out of "unused" all the
+        # same, since the checkup's repair points the sticker back at it.
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files["/Lichterkinder/B\u00e4renlied.taf"] = b"taf"
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Lichterkinder/Ba\u0308renlied.taf"
+
+        row = self.row(client.get("/library").text, "/Lichterkinder/B\u00e4renlied.taf")
+
+        assert 'href="/tonies/7ab4ed0e500304e0"' in row and "andere Schreibweise" in row
+        assert "unused" not in row.split(">", 1)[0]
+        assert 'name="players" value="7ab4ed0e500304e0"' in row
+        assert "/library/assign" not in row
 
     @staticmethod
     def imported(teddycloud, name="1636444326.taf", info=None, ruid="11dfc517500304e0"):
@@ -358,6 +418,30 @@ class TestLibraryPage:
         assert response.status_code == 303
         entry = teddycloud.tag_entries["deb4ed0e500304e0"]
         assert entry["source"] == "lib://Lichterkinder/Halloween.taf" and entry["tonie_model"]
+
+    def test_the_assign_form_posts_the_path_it_was_opened_for(self, client, runner, teddycloud):
+        # The form is posted as the page renders it: a value the page itself
+        # got wrong would never reach the route in a test that types it in.
+        encode_and_assign_page(client, runner)
+
+        page = client.get("/library/assign", params={"path": "/Lichterkinder/Halloween.taf"}).text
+        posted = re.search(r'<input type="hidden" name="path" value="([^"]*)"', page).group(1)
+        response = client.post("/library/assign", data={
+            "path": posted, "ruid": "deb4ed0e500304e0",
+            "series": "Lichterkinder", "episode": "Halloween", "category": "music"},
+            follow_redirects=False)
+
+        assert posted == "/Lichterkinder/Halloween.taf"
+        assert '<p class="sub">/Lichterkinder/Halloween.taf - ' in page
+        assert response.status_code == 303
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"] == "lib://Lichterkinder/Halloween.taf"
+
+    def test_the_menu_still_marks_the_library_on_the_assign_page(self, client, runner):
+        encode_and_assign_page(client, runner)
+
+        page = client.get("/library/assign", params={"path": "/Lichterkinder/Halloween.taf"}).text
+
+        assert '<a href="/library" aria-current="page">' in page
 
     def test_imported_audio_goes_on_a_sticker_as_the_official_tonie(self, client, teddycloud):
         # A model of our own would carry the official audio, and the nightly
@@ -639,6 +723,22 @@ class TestMoveOntoAnotherSticker:
 
         assert [entry.ruid for entry in load_subscriptions(settings.data_dir)] == [
             "deb4ed0e500304e0"]
+
+    def test_the_podcast_moves_in_one_step_with_its_sticker(self, client, runner, teddycloud,
+                                                            monkeypatch):
+        # A refresh publishing between the two would find its sticker gone.
+        import tonie_studio.pages.tonies as tonies
+        from tonie_studio.models import WRITING
+
+        publish_album(client, runner, teddycloud)
+        held = []
+        monkeypatch.setattr(tonies, "move_subscriptions",
+                            lambda *args: held.append(WRITING._is_owned()))
+
+        client.post("/tonies/7ab4ed0e500304e0/copy",
+                    data={"target": "deb4ed0e500304e0", "move": "1"}, follow_redirects=False)
+
+        assert held == [True]
 
     def test_copying_still_keeps_both(self, client, runner, teddycloud):
         publish_album(client, runner, teddycloud)

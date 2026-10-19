@@ -37,6 +37,9 @@
   {% if run.error or run.error_key %}
   <div class="warn">{{ error_text(run) }}</div>
   {% endif %}
+  {% if held %}
+  <div class="warn" role="alert">{{ t(held.key, **held.params) }}</div>
+  {% endif %}
   <div class="list">
   {% for state in states %}
     <div class="item">
@@ -88,7 +91,8 @@
         {{- error_text(item) -}}
       </span>
     </span>
-    {% if item.state == "failed" %}
+    {#- A download whose connection to teddyCloud broke is no refusal by the cloud. #}
+    {% if item.state == "failed" and item.error_key != broke_off %}
     {% if item.ruid in listed %}
     <span class="pill">{{ t("import.skip.listed") }}</span>
     {% else %}

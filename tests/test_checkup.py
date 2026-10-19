@@ -204,6 +204,19 @@ class TestLeftovers:
         assert found.fix is None
 
 
+class TestAReplaceLeftHalfDone:
+    def test_its_taf_is_not_offered_for_deletion_while_its_copy_plays(self, cloud):
+        # Stopped before it pointed the stickers back, a replace leaves them on
+        # the copy beside its taf; the taf is the audio they should play.
+        cloud.files["/Lichterkinder/Neu.taf"] = b"taf"
+        cloud.files["/Lichterkinder/Neu.new-0badf00d.taf"] = b"taf"
+        cloud.add_tag(BOBO, source="lib://Lichterkinder/Neu.new-0badf00d.taf", nocloud=True)
+
+        found = examine(cloud)
+
+        assert "/Lichterkinder/Neu.taf" not in [f.target for f in found if f.kind == "orphan_taf"]
+
+
 class TestOrder:
     def test_errors_come_before_warnings_before_notes(self, cloud):
         cloud.files["/Lichterkinder/Alt.taf"] = b"x"
@@ -325,3 +338,116 @@ class TestApplyingRepairs:
         assert waits_for_writing(
             lambda: apply_fix(cloud, tmp_path, "delete_taf", "/Lichterkinder/Alt.taf"))
 
+
+
+class TestEmptyingIsCheckedAgain:
+    """Emptying a sticker looks once more, under the writers' lock, right before it writes."""
+
+    def test_a_sticker_given_new_audio_meanwhile_is_not_emptied(self, cloud, tmp_path):
+        # The checks saw it pointing at nothing; since then a tonie was made
+        # on it again. Emptying it now would take that new tonie away.
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", nocloud=True)
+        assert next(f for f in examine(cloud) if f.target == BOBO).fix == "empty_sticker"
+        cloud.files["/Lichterkinder/Neu.taf"] = b"taf"
+        cloud.tag_entries[BOBO].update(source="lib://Lichterkinder/Neu.taf", tonie_model="TS-0007")
+
+        with pytest.raises(TonieError) as caught:
+            apply_fix(cloud, tmp_path, "empty_sticker", BOBO)
+
+        assert caught.value.key == "checkup.now_playing"
+        assert cloud.tag_entries[BOBO]["source"] == "lib://Lichterkinder/Neu.taf"
+        assert cloud.tag_entries[BOBO]["tonie_model"] == "TS-0007"
+
+    def test_a_sticker_still_pointing_at_nothing_is_emptied(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", tonie_model="TS-0002",
+                      nocloud=True)
+
+        apply_fix(cloud, tmp_path, "empty_sticker", BOBO)
+
+        assert (cloud.tag_entries[BOBO]["source"], cloud.tag_entries[BOBO]["tonie_model"]) == ("", "")
+
+    def test_a_sticker_given_a_stream_meanwhile_is_not_emptied(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        cloud.add_tag(BOBO, source="https://radio.example/stream", nocloud=True)
+
+        with pytest.raises(TonieError) as caught:
+            apply_fix(cloud, tmp_path, "empty_sticker", BOBO)
+
+        assert caught.value.key == "checkup.now_playing"
+        assert cloud.tag_entries[BOBO]["source"] == "https://radio.example/stream"
+
+    def test_emptying_checks_and_writes_under_the_writers_lock(self, cloud, tmp_path):
+        from web_helpers import waits_for_writing
+
+        from tonie_studio.checkup import apply_fix
+
+        cloud.add_tag(BOBO, source="lib://Markus_Osterwald/Weg.taf", nocloud=True)
+
+        assert waits_for_writing(lambda: apply_fix(cloud, tmp_path, "empty_sticker", BOBO))
+
+
+class TestSpellingsOfAnUmlaut:
+    """teddyCloud's file system tells the two spellings of an umlaut apart.
+
+    A share hands back decomposed umlauts ("a" and a combining diaeresis),
+    most other sources composed ones ("\u00e4"). Both look the same, but a
+    sticker naming one spelling does not play a file stored under the other.
+    """
+
+    COMPOSED = "/Lichterkinder/B\u00e4renlied.taf"
+    DECOMPOSED = "lib://Lichterkinder/Ba\u0308renlied.taf"
+
+    def test_a_sticker_naming_the_other_spelling_plays_nothing(self, cloud):
+        cloud.files[self.COMPOSED] = b"taf"
+        cloud.add_tag(BOBO, source=self.DECOMPOSED, tonie_model="TS-0001", nocloud=True)
+
+        found = next(f for f in examine(cloud) if f.target == BOBO)
+
+        assert found.kind == "missing_taf" and found.severity == "error"
+        assert found.fix == "repair_source"
+        assert found.detail == "checkup.other_spelling"
+        assert found.preview == f"source: {self.DECOMPOSED} \u2192 lib:/{self.COMPOSED}"
+
+    def test_its_file_is_not_offered_for_deletion(self, cloud):
+        # The repair makes the sticker play it; deleting it would leave
+        # nothing to repair to.
+        cloud.files[self.COMPOSED] = b"taf"
+        cloud.add_tag(BOBO, source=self.DECOMPOSED, tonie_model="TS-0001", nocloud=True)
+
+        assert "orphan_taf" not in kinds(examine(cloud))
+
+    def test_the_repair_writes_the_spelling_the_library_has(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+
+        cloud.files[self.COMPOSED] = b"taf"
+        cloud.add_tag(BOBO, source=self.DECOMPOSED, tonie_model="TS-0001", nocloud=True)
+
+        apply_fix(cloud, tmp_path, "repair_source", BOBO)
+
+        assert cloud.tag_entries[BOBO]["source"] == "lib:/" + self.COMPOSED
+        assert examine(cloud) == []
+
+    def test_a_sticker_naming_the_exact_spelling_is_healthy(self, cloud):
+        cloud.files[self.COMPOSED] = b"taf"
+        cloud.add_tag(BOBO, source="lib:/" + self.COMPOSED, tonie_model="TS-0001", nocloud=True)
+
+        assert examine(cloud) == []
+
+    def test_emptying_leaves_a_sticker_whose_file_turned_up_in_its_spelling(self, cloud, tmp_path):
+        from tonie_studio.checkup import apply_fix
+        from tonie_studio.tags import TonieError
+
+        cloud.files[self.COMPOSED] = b"taf"
+        cloud.add_tag(BOBO, source="lib:/" + self.COMPOSED, tonie_model="TS-0001", nocloud=True)
+
+        with pytest.raises(TonieError):
+            apply_fix(cloud, tmp_path, "empty_sticker", BOBO)
+
+        assert cloud.tag_entries[BOBO]["source"] == "lib:/" + self.COMPOSED

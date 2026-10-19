@@ -24,10 +24,11 @@ from typing import Optional, Sequence, Union
 
 from .albumnotes import forget_model
 from .encode import EncodeResult, delete_taf, taf_exists
-from .library import is_library, path_of, same
+from .library import is_library, listed_path, path_of, same
 from .models import (DEFAULT_CATEGORY, DEFAULT_LANGUAGE, WRITING, find_model,
                      find_model_by_audio, new_model, next_model_id, release_from_year,
                      remove_model, upload_cover)
+from .naming import LIBRARY_FOLDER
 from .runtimes import forget
 from .tags import TonieError, find_tag, list_tags, require_tag
 from .teddycloud import TeddyCloudClient
@@ -217,12 +218,25 @@ class Removal:
 
     ``model`` and ``taf`` name what is deleted, or are None where nothing is:
     there was none, another sticker still uses it, or the model is not one of
-    this app's own.
+    this app's own. ``cached`` is the audio teddyCloud keeps beside the
+    sticker's content JSON, in the content tree, or None where there is none.
     """
 
     ruid: str
     model: Optional[str] = None
     taf: Optional[str] = None
+    cached: Optional[str] = None
+
+    @property
+    def lost(self) -> bool:
+        """Whether audio fetched from the Tonies cloud goes, which nothing here can make again.
+
+        No album in the archive holds it; only fetching it from the cloud
+        once more, as an import of the tonie's dump does, brings it back.
+        """
+        official = self.taf is not None and \
+            same(self.taf).startswith(same(LIBRARY_FOLDER) + "/")
+        return official or self.cached is not None
 
 
 def delete_model(client: TeddyCloudClient, model_id: str, data_dir: Path) -> None:
@@ -251,17 +265,33 @@ def plan_removal(client: TeddyCloudClient, ruid: str) -> Removal:
             and find_model(client, tag.model) is not None:
         model = tag.model
 
+    # Another sticker naming the same file in either spelling of an umlaut
+    # keeps it. The file is deleted under the name the library lists:
+    # teddyCloud refuses to delete the other spelling, which it has no file of.
     taf = None
     if is_library(tag.source) and not any(same(other.source) == same(tag.source)
                                           for other in others):
-        path = path_of(tag.source)
-        if taf_exists(client, path):
-            taf = path
-    return Removal(ruid=ruid, model=model, taf=taf)
+        taf = listed_path(client, path_of(tag.source))
+    return Removal(ruid=ruid, model=model, taf=taf,
+                   cached=_cached_audio(client, ruid) if tag.exists else None)
+
+
+def _cached_audio(client: TeddyCloudClient, ruid: str) -> Optional[str]:
+    """The audio teddyCloud cached beside the sticker's content JSON, if it did.
+
+    It sits in the sticker's content folder, named after the second half of
+    the sticker's id without an extension. teddyCloud names the sticker after
+    that audio's tonie whatever its entry says, so a sticker is only free
+    once it is gone.
+    """
+    folder, name = f"/{ruid[:8].upper()}", ruid[8:].upper()
+    found = any(not entry.get("isDir") and entry.get("name") == name
+                for entry in client.list_dir(folder))
+    return f"{folder}/{name}" if found else None
 
 
 def remove_tonie(client: TeddyCloudClient, ruid: str, data_dir: Path) -> Removal:
-    """Free a sticker, and delete its model and taf where nothing else uses them.
+    """Free a sticker, and delete its model and audio where nothing else uses them.
 
     The sticker is emptied first: should a deletion after it fail, nothing
     points at audio that is gone, and the leftover shows up in the checkup.
@@ -273,5 +303,8 @@ def remove_tonie(client: TeddyCloudClient, ruid: str, data_dir: Path) -> Removal
             delete_model(client, removal.model, data_dir)
         if removal.taf:
             delete_taf(client, removal.taf)
-    log.info("tag %s emptied; deleted model %s, taf %s", ruid, removal.model, removal.taf)
+        if removal.cached:
+            client.delete(removal.cached)
+    log.info("tag %s emptied; deleted model %s, taf %s, cached audio %s",
+             ruid, removal.model, removal.taf, removal.cached)
     return removal

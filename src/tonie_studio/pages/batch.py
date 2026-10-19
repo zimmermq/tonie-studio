@@ -51,11 +51,10 @@ def register(app: FastAPI, ctx: Context) -> None:
                               series, episodes, models=models, tonies=known, busy=busy)
         except Problem as problem:
             raise refused(problem) from problem
-        # A tonie found by its track list, which the album list's name guess
-        # missed, is written down: from then on the list marks that album too.
-        for row in rows:
-            if row.tonie and row.identifier not in known:
-                remember_made(settings.data_dir, row.identifier, row.tonie)
+        # A tonie found by its track list is only shown, never written down
+        # here: this runs for every look at the page, and a guess recorded
+        # then would mark its album done for good. It is recorded once a
+        # tonie is actually made from the album.
         return rows
 
     @app.get("/batch", response_class=HTMLResponse)
@@ -87,8 +86,11 @@ def register(app: FastAPI, ctx: Context) -> None:
             year=row.album.year, album=row.identifier)
 
         def republish(outcome: Outcome) -> None:
-            refill(client(), settings.data_dir, row.rebuild_ruid, outcome, row.tonie,
-                   source_of(part.target))
+            # The tonie may have been known by its tracks alone; now that it
+            # is made from this album, the album list may mark the album.
+            if refill(client(), settings.data_dir, row.rebuild_ruid, outcome, row.tonie,
+                      source_of(part.target)):
+                remember_made(settings.data_dir, row.identifier, row.tonie)
 
         return jobs.submit("encode", part.target, work=encode_job(
             client, part.tracks, part.target, details, after=republish))

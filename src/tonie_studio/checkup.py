@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .encode import Taf, aside_of, delete_taf, list_tafs
-from .library import is_library, path_of, played, same, source_of
+from .library import is_library, listed_path, path_of, played, same, source_of
 from .models import MODEL_PREFIX, WRITING, Model, find_model, list_models, update_model
 from .tags import TonieError, TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -134,7 +134,11 @@ def examine(client: TeddyCloudClient, busy: Iterable[str] = (),
 
 def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]], busy: set) -> List[Finding]:
     findings = []
-    present = played(taf.source for taf in tafs) if tafs is not None else None
+    # A sticker plays a file only under the exact name the library lists;
+    # see library. The same file under the other spelling of an umlaut is
+    # what a repair points the sticker at instead.
+    present = {taf.source for taf in tafs} if tafs is not None else None
+    spellings = {same(taf.source): taf.source for taf in tafs or []}
 
     for tag in tags:
         source = tag.source
@@ -144,14 +148,15 @@ def _tag_findings(tags: List[TonieTag], tafs: Optional[List[Taf]], busy: set) ->
 
         # Audio an encode is about to write - a rebuild of this very tonie,
         # say - is on its way rather than missing.
-        missing = present is not None and same(source) not in present
+        missing = present is not None and source not in present
         if missing and same(path_of(source)) not in busy:
             fixed = repaired(source)
-            if fixed and same(fixed) in present:
+            listed = spellings.get(same(fixed)) if fixed else spellings.get(same(source))
+            if listed:
                 findings.append(Finding(
                     kind="missing_taf", severity=ERROR, subject=name, target=ruid,
-                    detail="checkup.garbled_path",
-                    fix="repair_source", preview=f"source: {source} \u2192 {fixed}",
+                    detail="checkup.garbled_path" if fixed else "checkup.other_spelling",
+                    fix="repair_source", preview=f"source: {source} \u2192 {listed}",
                 ))
             else:
                 findings.append(Finding(
@@ -226,10 +231,16 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
     findings = []
     playing = played(tag.source for tag in tags)
     named = {tag.model.lower() for tag in tags}
+    # Targets of replaces stopped before they pointed their stickers back:
+    # the stickers play the copy, and the target is the audio meant for them.
+    meant = {same(aside_of(taf.path) or "") for taf in tafs or []
+             if same(taf.source) in playing}
 
     for taf in tafs or []:
         path = same(taf.path)
         if same(taf.source) in playing or path in busy or path.startswith(busy_folders):
+            continue
+        if path in meant:
             continue
         # The copy a running replace encodes beside its target is in use too.
         if same(aside_of(taf.path) or "") in busy:
@@ -260,19 +271,18 @@ def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -
     """Make one repair a finding offered.
 
     The caller runs the checks again first, or a repair could undo something
-    done in the meantime. The deletions check once more under the lock every
-    model and tag write shares, right before deleting: a sticker given that
-    taf or model since must not lose it.
+    done in the meantime. What would lose something checks once more under
+    the lock every model and tag write shares, right before it writes: a
+    sticker given audio since must not be emptied, and a taf or model given
+    to a sticker since must not be deleted. Flipping ``nocloud`` and
+    repairing a name only ever make a sticker or model more right, and a
+    repaired source is worked out from the sticker as it is now.
     """
     with WRITING:
         if fix == "nocloud":
             client.set_tag(target, nocloud=True)
         elif fix == "repair_source":
-            tag = find_tag(client, target)
-            fixed = repaired(tag.source if tag else None)
-            if not fixed:
-                raise TonieError("checkup.nothing_to_repair", target=target)
-            client.set_tag(target, source=fixed)
+            client.set_tag(target, source=_repaired_source(client, target))
         elif fix == "repair_model":
             model = find_model(client, target)
             if model is None:
@@ -281,10 +291,16 @@ def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -
             update_model(client, target, series=changes.get("series"),
                          episode=changes.get("episode"), tracks=changes.get("tracks"))
         elif fix == "empty_sticker":
-            # The link to the model goes too: without it, the empty sticker
-            # would still carry the old name and cover in teddyCloud. That
-            # link is also what a rebuild finds the sticker by, so the page
-            # offers making the tonie again before this.
+            # Only while it still names audio the library lacks: since the
+            # checks looked, the sticker may have been given a tonie again,
+            # and emptying would throw that away. The link to the model goes
+            # too: without it, the empty sticker would still carry the old
+            # name and cover in teddyCloud. That link is also what a rebuild
+            # finds the sticker by, so the page offers making the tonie
+            # again before this.
+            tag = find_tag(client, target)
+            if tag is None or not _plays_nothing(client, tag.source):
+                raise TonieError("checkup.now_playing", target=target)
             client.set_tag(target, source="", tonie_model="")
         elif fix == "delete_taf":
             if any(same(tag.source) == same(source_of(target)) for tag in list_tags(client)):
@@ -296,3 +312,32 @@ def apply_fix(client: TeddyCloudClient, data_dir: Path, fix: str, target: str) -
             delete_model(client, target, data_dir)
         else:
             raise ValueError(f"unknown repair {fix!r}")
+
+
+def _plays_nothing(client: TeddyCloudClient, source: str) -> bool:
+    """Whether ``source`` names library audio that is not there in that exact spelling."""
+    return is_library(source) and listed_path(client, path_of(source)) != path_of(source)
+
+
+def _repaired_source(client: TeddyCloudClient, ruid: str) -> str:
+    """The source the sticker ``ruid`` should have: its own, as the library spells it.
+
+    Read again here rather than taken from the finding, so a sticker given
+    other audio since is repaired to that, or left alone.
+    """
+    tag = find_tag(client, ruid)
+    source = tag.source if tag else ""
+    if is_library(source) and not _plays_nothing(client, source):
+        raise TonieError("checkup.nothing_to_repair", target=ruid)
+    for candidate in (source, repaired(source)):
+        if candidate and is_library(candidate):
+            listed = listed_path(client, path_of(candidate))
+            if listed and source_of(listed) != source:
+                return source_of(listed)
+    # Mangled, and the library does not have the repaired path either: the
+    # repair is still the one the finding showed, and the checkup then
+    # reports the sticker as missing its audio.
+    fixed = repaired(source)
+    if not fixed:
+        raise TonieError("checkup.nothing_to_repair", target=ruid)
+    return fixed

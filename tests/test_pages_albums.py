@@ -900,14 +900,20 @@ class TestTonieRecognisedByItsTracks:
         model["series"], model["episodes"] = "Ganz", "Anders"
         (settings.data_dir / "albums-made.json").unlink()
 
-    def test_opening_it_once_marks_the_album_for_good(self, client, runner, teddycloud,
-                                                       settings):
+    def test_the_batch_page_shows_it_without_writing_it_down(self, client, runner, teddycloud,
+                                                              settings):
+        # Opening a page is no decision: two albums with the same track names
+        # match one tonie, and a guess written down here would mark the wrong
+        # one done for good. It is recorded once a tonie is made from it.
+        from tonie_studio.albumnotes import made
+
         self._tonie_under_another_name(client, runner, teddycloud, settings)
+
+        batch = client.get("/batch", params={"ids": first_album_id(client)}).text
+
+        assert "hat schon einen Tonie" in batch
+        assert made(settings.data_dir) == {}
         assert "hat einen Tonie" not in client.get("/").text
-
-        client.get("/batch", params={"ids": first_album_id(client)})
-
-        assert "hat einen Tonie" in client.get("/").text
 
     def test_a_guess_by_name_is_not_written_down(self, client, runner, teddycloud, settings):
         from tonie_studio.albumnotes import made

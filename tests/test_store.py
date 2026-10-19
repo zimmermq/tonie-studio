@@ -34,6 +34,31 @@ class TestReadJson:
         assert (tmp_path / "record.json").stat().st_mode & 0o777 == 0o600
 
 
+class TestAFailedWrite:
+    """Most records are notes, so a failed write is logged and the caller carries on;
+    callers that must not carry on without their record are told."""
+
+    @staticmethod
+    def unwritable(tmp_path):
+        # A file where the folder belongs: no write below it can succeed.
+        (tmp_path / "data").write_text("", encoding="utf-8")
+        return tmp_path / "data" / "record.json"
+
+    def test_does_not_raise_and_says_it_failed(self, tmp_path):
+        from tonie_studio.store import write_json
+
+        assert write_json(self.unwritable(tmp_path), {"a": 1}) is False
+
+    def test_a_kept_record_says_so(self, tmp_path):
+        from tonie_studio.store import write_json
+
+        assert write_json(tmp_path / "record.json", {"a": 1}) is True
+
+    def test_a_change_that_cannot_be_written_is_carried_on_from(self, tmp_path):
+        with changing_json(self.unwritable(tmp_path), {}) as record:
+            record["a"] = 1
+
+
 class TestADamagedRecordIsKept:
     @pytest.mark.parametrize("content", ['{"half": ', "[1, 2]"])
     def test_it_is_set_aside_before_anything_is_written_over_it(self, tmp_path, content):

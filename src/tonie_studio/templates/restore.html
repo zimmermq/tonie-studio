@@ -19,6 +19,8 @@
 {% else %}
 {% if failed %}
 <div class="info state-failed" role="alert">{{ t("restore.failed", detail=failed) }}</div>
+{% elif unknown_run %}
+<div class="info" role="status">{{ t("restore.unknown_run") }}</div>
 {% endif %}
 {% set changing = steps | rejectattr("action", "equalto", "same") | list %}
 {% if not done %}

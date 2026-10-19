@@ -396,18 +396,38 @@ def _humanise(stem: str) -> str:
     return text[0].upper() + text[1:]
 
 
+# A folder holding one disc of a release: "CD1", "cd 2", "Disc_3", "Disk-04".
+DISC_FOLDER = re.compile(r"^(?:cd|disc|disk)[\s_-]*0*(\d{1,2})$", re.IGNORECASE)
+
+
+def disc_number(folder_name: str) -> Optional[int]:
+    """Which disc a folder holds, when its name says it is one disc of a release."""
+    match = DISC_FOLDER.match(folder_name.strip())
+    return int(match.group(1)) if match else None
+
+
 def _describe(path: Path, all_tags):
-    """The album's title, artist and year, from the tags or from the folder name."""
+    """The album's title, artist and year, from the tags or from the folder name.
+
+    The discs of one release carry the same album tag, and would read as the
+    same album twice: the same title, the same taf, so the second could never
+    be made. A disc folder's title therefore says which disc it is, and its
+    release is read from the folder above it.
+    """
     tags = list(all_tags)
     title = _common(tag.album for tag in tags)
     artist = _common(tag.albumartist for tag in tags) or _common(tag.artist for tag in tags)
     year = _year(_common(tag.date for tag in tags))
+    disc = disc_number(path.name)
+    release = path.parent if disc else path
 
-    if title and artist and year:
-        return title, artist, year
+    if not (title and artist and year):
+        parsed_title, parsed_artist, parsed_year = _parse_folder_name(release.name)
+        title, artist, year = title or parsed_title, artist or parsed_artist, year or parsed_year
 
-    parsed_title, parsed_artist, parsed_year = _parse_folder_name(path.name)
-    return title or parsed_title, artist or parsed_artist, year or parsed_year
+    if disc and not re.search(rf"\b(?:cd|disc|disk)[\s_-]*0*{disc}\b", title or "", re.IGNORECASE):
+        title = f"{title} (CD {disc})"
+    return title, artist, year
 
 
 def _common(values) -> Optional[str]:

@@ -6,14 +6,24 @@ is what the file browser and the encoder use; the source a tag points at,
 
 The same path can also arrive in two spellings. The archive share hands back
 decomposed umlauts and teddyCloud stores whatever it was given, so a tag can
-name a taf in a form that looks identical and compares unequal. Everything here
-that compares paths or sources compares them through ``same``.
+name a taf in a form that looks identical and compares unequal. Two questions
+treat that differently:
+
+- Whether a sticker *plays* a file compares exactly. teddyCloud's file system
+  takes a name byte for byte, so a sticker naming the other spelling plays
+  nothing; calling it healthy would hide exactly the silent tonie the
+  checkup is there to find. ``listed_path`` answers it.
+- Whether two names *mean* the same audio - a taf still wanted by a sticker,
+  an album already made, a search - compares through ``same``. Erring towards
+  "the same" there keeps a file from being deleted or made twice.
 """
 
 from __future__ import annotations
 
 import unicodedata
-from typing import Iterable, Set
+from typing import Iterable, Optional, Set
+
+from .teddycloud import TeddyCloudClient
 
 SCHEME = "lib://"
 
@@ -50,6 +60,31 @@ def safe_library_path(path: str) -> bool:
 def same(name: str) -> str:
     """A path, source or file name in the one spelling two of them compare in."""
     return unicodedata.normalize("NFC", name or "")
+
+
+def listed_path(client: TeddyCloudClient, path: str) -> Optional[str]:
+    """``path`` as the library spells it, or None when no file there matches it.
+
+    Only the spelling of umlauts may differ between ``path`` and the answer;
+    a caller that needs the file a sticker plays compares the two exactly.
+    Each folder is listed only once its parent has shown it: teddyCloud
+    answers a listing of a folder that is not there by dropping the
+    connection. A listing that fails raises TeddyCloudError rather than
+    reading as "not there", which would call audio missing that is not.
+    """
+    parts = path.strip("/").split("/")
+    spelled = ""
+    for index, part in enumerate(parts):
+        wanted_dir = index < len(parts) - 1
+        names = [entry.get("name") or "" for entry in
+                 client.list_dir(spelled or "/", special="library")
+                 if bool(entry.get("isDir")) == wanted_dir and entry.get("name") not in (".", "..")]
+        name = part if part in names else next(
+            (name for name in names if same(name) == same(part)), None)
+        if not part or name is None:
+            return None
+        spelled = f"{spelled}/{name}"
+    return spelled
 
 
 def played(sources: Iterable[str]) -> Set[str]:

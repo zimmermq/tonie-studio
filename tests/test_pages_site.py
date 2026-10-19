@@ -21,6 +21,22 @@ class TestStartup:
         eventually(lambda: teddycloud.files == {})
         assert started.get("/health").status_code == 200
 
+    def test_finishes_a_replace_an_earlier_run_was_stopped_in(self, make_site, teddycloud):
+        # Stopped during its final encode, a replace leaves the sticker on the
+        # copy beside its taf; nothing else would ever point it back.
+        teddycloud.create_dir("/S")
+        teddycloud.files["/S/a.new-0badf00d.taf"] = b"n" * 10
+        teddycloud.taf_headers["/S/a.new-0badf00d.taf"] = {"valid": True, "trackSeconds": [0, 5]}
+        teddycloud.files["/S/a.taf"] = b"n" * 10
+        teddycloud.taf_headers["/S/a.taf"] = {"valid": True, "trackSeconds": [0, 5]}
+        ruid = "7ab4ed0e500304e0"
+        teddycloud.tag_entries[ruid]["source"] = "lib://S/a.new-0badf00d.taf"
+
+        make_site(background=True)
+
+        eventually(lambda: teddycloud.tag_entries[ruid]["source"] == "lib://S/a.taf")
+        eventually(lambda: "/S/a.new-0badf00d.taf" not in teddycloud.files)
+
     def test_clears_uploads_nobody_came_back_for(self, make_site, settings):
         import os
         import time

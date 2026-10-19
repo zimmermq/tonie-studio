@@ -86,8 +86,10 @@ class TeddyCloudError(RuntimeError):
 
     ``status`` is the HTTP status teddyCloud answered with, or ``None`` when it
     did not answer at all. ``refused`` is true when it answered and said no:
-    a 4xx status, or a command endpoint's error text, which comes at 200 and
-    so has to be said explicitly.
+    a 4xx status, a 500 - teddyCloud 0.7.0 answers that when it cannot delete
+    a file or its library is full - or a command endpoint's error text, which
+    comes at 200 and so has to be said explicitly. A gateway's 502-504 means
+    teddyCloud itself did not answer.
     """
 
     def __init__(self, message: str, status: Optional[int] = None,
@@ -95,7 +97,7 @@ class TeddyCloudError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.refused = (refused if refused is not None
-                        else bool(status) and 400 <= status < 500)
+                        else bool(status) and 400 <= status <= 500)
 
 
 class TeddyCloudClient:

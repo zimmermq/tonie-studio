@@ -8,11 +8,12 @@ and the batch page only shows the plan.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from .album import Album, AlbumSummary, Track
+from .album import Album, AlbumSummary, Track, disc_number
 from .albumnotes import match_by_tracks
 from .batch import allocate, episode_order
 from .encode import existing_taf, library_path, taf_exists
@@ -174,11 +175,14 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
     series, episodes = series or {}, episodes or {}
     tags = list_tags(client)
     playing = played(tag.source for tag in tags)
+    names = {identifier: ((series[identifier] if identifier in series
+                           else suggest_series(album, archive_dir, upload_dir)).strip(),
+                          (episodes.get(identifier) or "").strip())
+             for identifier, album in albums}
+    _tell_apart(albums, names)
     rows = []
     for identifier, album in albums:
-        row_series = (series[identifier] if identifier in series
-                      else suggest_series(album, archive_dir, upload_dir)).strip()
-        episode = (episodes.get(identifier) or "").strip() or album.title
+        row_series, episode = names[identifier]
         chosen = [(track, track.title) for track in album.tracks if not track.extra]
         parts = plan_parts(chosen, row_series, episode, fewest_parts(len(chosen)))
         occupied = any(taf_exists(client, part.target) for part in parts)
@@ -187,12 +191,12 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
             identifier=identifier, album=album, series=row_series, episode=episode,
             chosen=chosen, parts=parts, occupied=occupied, in_use=in_use,
             reusable=occupied and not in_use and _tafs_fit(client, parts),
-            tonie=((tonies or {}).get(identifier)
-                   or match_by_tracks([track.title for track in album.tracks], models) or ""),
+            tonie=(tonies or {}).get(identifier) or "",
         ))
-        _plan_rebuild(client, rows[-1], tags)
-        rows[-1].busy = any(same(target) in {same(path) for path in busy}
-                            for target in rows[-1].targets)
+    _match_by_tracks(rows, models)
+    for row in rows:
+        _plan_rebuild(client, row, tags)
+        row.busy = any(same(target) in {same(path) for path in busy} for target in row.targets)
     # Grouped by series and in episode order within one, which is also the
     # order the stickers are handed out in.
     rows.sort(key=lambda row: (row.series.casefold(), episode_order(row.episode)))
@@ -202,6 +206,48 @@ def plan_batch(client: TeddyCloudClient, albums: Sequence[Tuple[str, Album]],
                                            free_tags(client)), strict=True):
         row.tags = tags
     return rows
+
+
+def _tell_apart(albums: Sequence[Tuple[str, Album]], names: Dict[str, Tuple[str, str]]) -> None:
+    """Fill in each album's suggested episode, told apart from the others' where they collide.
+
+    Albums whose tracks carry the same album tag - the parts of one release
+    in folders of their own - would be suggested the same name, and so the
+    same taf: the second could never be made. Such suggestions get their
+    folder's name added. A name the page sent is a person's choice and
+    stays as it is.
+    """
+    suggested = {identifier: album.title for identifier, album in albums
+                 if not names[identifier][1]}
+
+    def key(identifier: str, episode: str) -> Tuple[str, str]:
+        return same(names[identifier][0]).casefold(), same(episode).casefold()
+
+    counts = Counter(key(identifier, episode) for identifier, episode in suggested.items())
+    for identifier, album in albums:
+        series, episode = names[identifier]
+        if identifier in suggested:
+            episode = suggested[identifier]
+            if counts[key(identifier, episode)] > 1 and album.path is not None:
+                episode = f"{episode} ({album.path.name})"
+        names[identifier] = (series, episode)
+
+
+def _match_by_tracks(rows: Sequence[BatchRow], models: Sequence[Model]) -> None:
+    """Give rows without a recorded tonie the model whose track list is theirs.
+
+    Only where one row of the batch matches it: two albums with the same
+    track names - two editions of one recording - cannot both be that
+    tonie, and calling the wrong one done would keep it from ever being
+    made. A record names its tonie outright and is not second-guessed.
+    """
+    matched = {row.identifier: match_by_tracks([track.title for track in row.album.tracks], models)
+               for row in rows if not row.tonie}
+    counts = Counter(model_id for model_id in matched.values() if model_id)
+    for row in rows:
+        model_id = matched.get(row.identifier)
+        if model_id and counts[model_id] == 1:
+            row.tonie = model_id
 
 
 def _plan_rebuild(client: TeddyCloudClient, row: BatchRow, tags: Sequence) -> None:
@@ -247,11 +293,13 @@ def suggest_series(album: Union[Album, AlbumSummary], archive_dir: Path,
     Its artist when the tags name one; otherwise the folder holding it, the
     way a series is usually kept on disk. The archive and upload roots are
     not a name anyone chose, and neither is the folder an upload was spooled
-    into directly below the upload root.
+    into directly below the upload root. A disc folder ("CD2") counts from
+    its release's folder, which holds every disc.
     """
     if album.artist:
         return album.artist
-    parent = album.path.parent
+    folder = album.path.parent if disc_number(album.path.name) else album.path
+    parent = folder.parent
     if parent in (archive_dir, upload_dir) or parent.parent == upload_dir:
         return ""
     return parent.name

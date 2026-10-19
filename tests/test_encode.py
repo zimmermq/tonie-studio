@@ -632,3 +632,238 @@ class TestMissingFoldersAreNotAskedFor:
         encode_files(teddycloud, sources, "/Lichterkinder/Eins.taf")
 
         assert taf_exists(teddycloud, "/Lichterkinder/Eins.taf")
+
+
+S1, S2 = "7ab4ed0e500304e0", "7ab4ed0e500304e1"
+
+
+def _during_the_final_encode(teddycloud, target, action):
+    """Run ``action`` while the replace encodes ``target`` again under its own name."""
+    original = teddycloud.encode
+
+    def encode(path, sources, special="library"):
+        if path == target:
+            action()
+        return original(path, sources, special)
+
+    teddycloud.encode = encode
+
+
+def _plays_audio_that_is_there(teddycloud, ruid):
+    source = teddycloud.tag_entries[ruid]["source"]
+    return source.startswith("lib://") and taf_exists(teddycloud, "/" + source[len("lib://"):])
+
+
+class TestStickersChangedDuringAReplace:
+    """A replace runs for minutes; stickers can be copied and moved while it does."""
+
+    def test_a_sticker_copied_from_the_copy_beside_plays_the_new_taf(self, teddycloud, sources):
+        from tonie_studio.tonie import copy_tag
+
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag(S1, source="lib://a.taf")
+        teddycloud.add_tag(S2)
+        _during_the_final_encode(teddycloud, "/a.taf", lambda: copy_tag(teddycloud, S1, S2))
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://a.taf"
+        assert teddycloud.tag_entries[S2]["source"] == "lib://a.taf"
+        assert [path for path in teddycloud.files if path.endswith(".taf")] == ["/a.taf"]
+
+    def test_a_sticker_moved_away_stays_forgotten(self, teddycloud, sources):
+        from tonie_studio.tonie import move_tag
+
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag(S1, source="lib://a.taf")
+        teddycloud.add_tag(S2)
+        _during_the_final_encode(teddycloud, "/a.taf", lambda: move_tag(teddycloud, S1, S2))
+        written = []
+        original_set_tag = teddycloud.set_tag
+        teddycloud.set_tag = lambda ruid, **fields: (written.append(ruid),
+                                                     original_set_tag(ruid, **fields))
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert S1 not in teddycloud.tag_entries
+        assert written.count(S1) == 1  # pointed at the copy beside, never back
+        assert teddycloud.tag_entries[S2]["source"] == "lib://a.taf"
+        assert _plays_audio_that_is_there(teddycloud, S2)
+
+    def test_a_sticker_given_other_audio_meanwhile_keeps_it(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag(S1, source="lib://a.taf")
+
+        def reassign():
+            teddycloud.tag_entries[S1]["source"] = "lib://b.taf"
+
+        _during_the_final_encode(teddycloud, "/a.taf", reassign)
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://b.taf"
+
+
+class TestAnInterruptedReplaceIsRepaired:
+    """A replace stopped during its final encode leaves stickers on its copy beside."""
+
+    ASIDE = "/S/a.new-0badf00d.taf"
+
+    def _left_behind(self, teddycloud, target_size=10):
+        teddycloud.create_dir("/S")
+        teddycloud.files[self.ASIDE] = b"n" * 10
+        teddycloud.taf_headers[self.ASIDE] = {"valid": True, "trackSeconds": [0, 5]}
+        if target_size:
+            teddycloud.files["/S/a.taf"] = b"n" * target_size
+            teddycloud.taf_headers["/S/a.taf"] = {"valid": True, "trackSeconds": [0, 5]}
+        teddycloud.add_tag(S1, source="lib://S/a.new-0badf00d.taf")
+
+    def test_the_next_replace_takes_the_stickers_over(self, teddycloud, sources):
+        self._left_behind(teddycloud)
+
+        encode_files(teddycloud, sources, "/S/a.taf", replace=True)
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://S/a.taf"
+        assert sorted(path for path in teddycloud.files if path.endswith(".taf")) == ["/S/a.taf"]
+
+    def test_the_next_replace_takes_them_over_at_the_top_of_the_library(self, teddycloud, sources):
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.files["/a.new-0badf00d.taf"] = b"newer"
+        teddycloud.add_tag(S1, source="lib://a.new-0badf00d.taf")
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://a.taf"
+        assert [path for path in teddycloud.files if path.endswith(".taf")] == ["/a.taf"]
+
+    def test_recovery_points_the_stickers_back_and_deletes_the_copy(self, teddycloud):
+        from tonie_studio.encode import recover_asides
+
+        self._left_behind(teddycloud)
+
+        assert recover_asides(teddycloud) == 1
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://S/a.taf"
+        assert self.ASIDE not in teddycloud.files
+
+    def test_recovery_deletes_a_copy_nothing_plays(self, teddycloud):
+        from tonie_studio.encode import recover_asides
+
+        self._left_behind(teddycloud)
+        teddycloud.tag_entries[S1]["source"] = "lib://S/a.taf"
+
+        assert recover_asides(teddycloud) == 1
+
+        assert self.ASIDE not in teddycloud.files
+
+    def test_recovery_keeps_the_copy_when_the_target_is_gone(self, teddycloud):
+        from tonie_studio.encode import recover_asides
+
+        self._left_behind(teddycloud, target_size=0)
+
+        assert recover_asides(teddycloud) == 0
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://S/a.new-0badf00d.taf"
+        assert self.ASIDE in teddycloud.files
+
+    def test_recovery_keeps_the_copy_when_the_target_is_half_written(self, teddycloud):
+        # teddyCloud lists the header of a taf it is still writing as valid.
+        from tonie_studio.encode import recover_asides
+
+        self._left_behind(teddycloud, target_size=4)
+
+        assert recover_asides(teddycloud) == 0
+
+        assert teddycloud.tag_entries[S1]["source"] == "lib://S/a.new-0badf00d.taf"
+        assert self.ASIDE in teddycloud.files
+
+    def test_recovery_leaves_a_replace_that_is_running_alone(self, teddycloud, sources):
+        from tonie_studio.encode import recover_asides
+
+        teddycloud.files["/a.taf"] = b"older"
+        teddycloud.add_tag(S1, source="lib://a.taf")
+        seen = {}
+        original = teddycloud.encode
+
+        def encode(path, staged, special="library"):
+            original(path, staged, special)
+            if path == "/a.taf":
+                seen["recovered"] = recover_asides(teddycloud)
+
+        teddycloud.encode = encode
+
+        encode_files(teddycloud, sources, "/a.taf", replace=True)
+
+        assert seen["recovered"] == 0
+        assert teddycloud.tag_entries[S1]["source"] == "lib://a.taf"
+        assert [path for path in teddycloud.files if path.endswith(".taf")] == ["/a.taf"]
+
+
+class TestTheListedSpellingIsUsed:
+    """teddyCloud's filesystem holds a composed and a decomposed umlaut as two names."""
+
+    NFD_FOLDER, NFD = "/Ba\u0308ren", "/Ba\u0308ren/Ga\u0308ste.taf"
+    NFC = "/B\u00e4ren/G\u00e4ste.taf"
+
+    def _decomposed(self, teddycloud):
+        teddycloud.create_dir(self.NFD_FOLDER)
+        teddycloud.files[self.NFD] = b"older"
+        teddycloud.taf_headers[self.NFD] = {"valid": True, "audioId": 1, "sha1Hash": "aa" * 20,
+                                            "trackSeconds": [0]}
+
+    def test_an_existing_taf_is_named_as_it_is_listed(self, teddycloud):
+        from tonie_studio.encode import existing_taf
+
+        self._decomposed(teddycloud)
+
+        found = existing_taf(teddycloud, self.NFC)
+
+        assert found.source == "lib://Ba\u0308ren/Ga\u0308ste.taf"
+        assert found.target == self.NFD
+
+    def test_a_replace_writes_over_the_listed_file(self, teddycloud, sources):
+        self._decomposed(teddycloud)
+        teddycloud.add_tag(S1, source="lib://Ba\u0308ren/Ga\u0308ste.taf")
+
+        encode_files(teddycloud, sources, self.NFC, replace=True)
+
+        assert [path for path in teddycloud.files if path.endswith(".taf")] == [self.NFD]
+        assert teddycloud.files[self.NFD] != b"older"
+        assert teddycloud.tag_entries[S1]["source"] == "lib://Ba\u0308ren/Ga\u0308ste.taf"
+
+
+class TestTheProgressWatcherOutlivesAHiccup:
+    def test_keeps_watching_after_teddycloud_fails_to_answer(self, teddycloud, caplog):
+        import threading
+
+        import tonie_studio.encode as encode_module
+        from tonie_studio.encode import ENCODE_BYTES_PER_SECOND, _watch_growth
+
+        teddycloud.files["/a.taf"] = b"x" * int(ENCODE_BYTES_PER_SECOND * 120)
+        original = teddycloud.list_dir
+        failures = {"left": 3}
+
+        def flaky(path="/", special=None):
+            if failures["left"]:
+                failures["left"] -= 1
+                raise TeddyCloudError("teddyCloud at x is unreachable")
+            return original(path, special)
+
+        teddycloud.list_dir = flaky
+        seen = []
+        stop = threading.Event()
+        poll = encode_module.GROWTH_POLL
+        encode_module.GROWTH_POLL = 0.01
+        try:
+            thread = threading.Thread(
+                target=_watch_growth,
+                args=(teddycloud, "/a.taf", 600.0, lambda *a: seen.append(a), stop))
+            thread.start()
+            eventually(lambda: seen)
+            stop.set()
+            thread.join(2)
+        finally:
+            encode_module.GROWTH_POLL = poll
+
+        assert seen[0] == ("encode", 120, 600)
+        assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1

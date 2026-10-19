@@ -10,15 +10,26 @@ class FakeRequest {
   send(body) { this.body = body; }
 }
 
+// Reads a refusal page as a browser would, as far as the page looks at it:
+// the message is the text of ``main > .warn``.
+class FakeParser {
+  parseFromString(text) {
+    const match = /<main><div class="warn">([^<]*)<\/div>/.exec(text);
+    return { querySelector: selector => (selector === 'main > .warn' && match
+      ? { textContent: match[1] } : null) };
+  }
+}
+
 async function page() {
   const upload = element('upload');
   upload.querySelectorAll = () => [];
   const elements = await runPage(['app.js', 'index.js'], {
-    ids: ['loading', 'pick', 'pickcount', 'albums', 'picked', 'send', 'tickshown', 'untick'],
+    ids: ['loading', 'pick', 'pickcount', 'albums', 'picked', 'send', 'tickshown', 'untick',
+          'refusal'],
     prepared: { upload },
     pageData: { words: { 'upload.sending': 'sending {percent} %', 'upload.failed': 'failed',
                          'batch.picked': '{count}' }, slowPick: 3 },
-    globals: { XMLHttpRequest: FakeRequest },
+    globals: { XMLHttpRequest: FakeRequest, DOMParser: FakeParser },
   });
   return elements;
 }
@@ -44,15 +55,40 @@ async function page() {
   assert.equal(page_.location.href, '/batch?ids=u1');
 }
 
-// Refused - no audio in it, the disk full: the server's own page says why.
+// Refused - no audio in it, the disk full: the server's page says why, and
+// its message is shown on the album list. Written over this page instead, it
+// would run app.js a second time (whose top-level names then clash) and push
+// no history entry, so "back" would leave the album list as well.
+{
+  const page_ = await page();
+  page_.refusal.hidden = true;
+  page_.upload.fire('submit', { preventDefault: () => {} });
+  const request = FakeRequest.last;
+  request.status = 507;
+  request.responseText = '<html><body><main><div class="warn">Speicher voll</div></main></body></html>';
+  request.onload();
+  assert.equal(page_.document.written, null);
+  assert.equal(page_.refusal.textContent, 'Speicher voll');
+  assert.equal(page_.refusal.hidden, false);
+  assert.equal(page_.send.disabled, false);
+  assert.equal(page_.window.onbeforeunload, null);
+
+  // The next try starts without the old refusal in view.
+  page_.upload.fire('submit', { preventDefault: () => {} });
+  assert.equal(page_.refusal.hidden, true);
+}
+
+// A refusal that is not a page of this app still says the upload failed.
 {
   const page_ = await page();
   page_.upload.fire('submit', { preventDefault: () => {} });
   const request = FakeRequest.last;
-  request.status = 507;
-  request.responseText = '<html><div class="warn">Speicher voll</div></html>';
+  request.status = 413;
+  request.responseText = 'Request Entity Too Large';
   request.onload();
-  assert.equal(page_.document.written, request.responseText);
+  assert.equal(page_.document.written, null);
+  assert.equal(page_.refusal.textContent, 'failed');
+  assert.equal(page_.refusal.hidden, false);
 }
 
 // While it is being sent, leaving the page is asked about; not afterwards.

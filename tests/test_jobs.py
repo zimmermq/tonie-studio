@@ -1,11 +1,16 @@
 """Tests for the background job runner."""
 
+import gc
 import threading
+import weakref
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from web_helpers import eventually
 
+from tonie_studio import jobs as jobs_module
 from tonie_studio.jobs import JobRunner, JobState
+from tonie_studio.teddycloud import TeddyCloudClient, TeddyCloudError
 
 
 @pytest.fixture
@@ -71,6 +76,113 @@ class TestFailure:
             raise RuntimeError("nope")
 
         assert _wait(runner, runner.submit("encode", "a", work)).result is None
+
+
+class _KeepAlive(BaseHTTPRequestHandler):
+    """Answers every request with an empty listing and keeps the connection open.
+
+    ``open`` counts the connections a client still holds; teddyCloud serves
+    only a few dozen, and each one a client forgets is one fewer for everyone.
+    """
+
+    protocol_version = "HTTP/1.1"
+    # Long enough for any test, short enough that a leak cannot hang the run.
+    timeout = 10
+    open = 0
+    lock = threading.Lock()
+
+    def handle(self):
+        with self.lock:
+            type(self).open += 1
+        try:
+            super().handle()
+        finally:
+            with self.lock:
+                type(self).open -= 1
+
+    def do_GET(self):
+        body = b'{"files": []}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def keep_alive_server():
+    _KeepAlive.open = 0
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _KeepAlive)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture
+def unlogged(monkeypatch):
+    """The runner's failure log switched off.
+
+    The test's log capture keeps every record, and a failure's record holds
+    the traceback; that would keep alive exactly what these tests prove the
+    job itself lets go of. A real log handler writes the record and drops it.
+    """
+    monkeypatch.setattr(jobs_module.log, "disabled", True)
+
+
+class TestAFailedJobLetsGo:
+    """A failed job is kept for its page; what the work used must not be kept with it."""
+
+    def test_keeps_no_frame_of_the_work(self, runner, unlogged):
+        made = []
+
+        def work(progress):
+            client = TeddyCloudClient("http://teddycloud.test")
+            made.append(weakref.ref(client))
+            made.append(weakref.ref(client.session))
+            raise TeddyCloudError("teddyCloud answered 500", status=500)
+
+        job = _wait(runner, runner.submit("encode", "a", work))
+        gc.collect()
+
+        assert job.state is JobState.FAILED
+        assert isinstance(job.exception, TeddyCloudError)
+        assert [ref() for ref in made] == [None, None]
+
+    def test_keeps_no_frame_of_a_cause_either(self, runner, unlogged):
+        made = []
+
+        def work(progress):
+            client = TeddyCloudClient("http://teddycloud.test")
+            made.append(weakref.ref(client))
+            try:
+                raise OSError("connection reset")
+            except OSError as error:
+                raise RuntimeError("upload failed") from error
+
+        job = _wait(runner, runner.submit("encode", "a", work))
+        gc.collect()
+
+        assert isinstance(job.exception.__cause__, OSError)
+        assert made[0]() is None
+
+    def test_leaves_no_connection_open(self, runner, unlogged, keep_alive_server):
+        # Each failed job holding one keep-alive connection is how a few
+        # dozen failures took teddyCloud's every connection.
+        def work(progress):
+            client = TeddyCloudClient(keep_alive_server)
+            client.list_dir("/")
+            raise TeddyCloudError("teddyCloud refused /api/fileDelete", refused=True)
+
+        failed = [_wait(runner, runner.submit("encode", f"a{n}", work)) for n in range(3)]
+        gc.collect()
+
+        assert all(job.state is JobState.FAILED for job in failed)
+        eventually(lambda: _KeepAlive.open == 0)
 
 
 class TestProgress:
@@ -230,3 +342,82 @@ class TestShutdown:
 
         assert runner.get(job_id).state in (JobState.FAILED, JobState.DONE)
 
+
+    def test_a_running_job_is_given_time_to_finish(self):
+        # A pod stop ends the process right after the app shut down; the job
+        # a person is watching gets that time rather than being cut off.
+        runner = JobRunner()
+        started, release = threading.Event(), threading.Event()
+        job_id = runner.submit("encode", "running",
+                               lambda progress: started.set() or release.wait(5))
+        assert started.wait(5)
+        runner.shutdown()
+        threading.Timer(0.1, release.set).start()
+
+        cut_off = runner.finish(5)
+
+        assert cut_off == []
+        assert runner.get(job_id).state is JobState.DONE
+
+    def test_a_job_that_runs_on_is_named(self):
+        runner = JobRunner()
+        started, release = threading.Event(), threading.Event()
+        job_id = runner.submit("encode", "Gemeinsam.taf",
+                               lambda progress: started.set() or release.wait(5))
+        assert started.wait(5)
+        runner.shutdown()
+
+        cut_off = runner.finish(0.05)
+        release.set()
+
+        assert [job.id for job in cut_off] == [job_id]
+
+    def test_nothing_running_needs_no_wait(self):
+        runner = JobRunner()
+        _wait(runner, runner.submit("encode", "done", lambda progress: None))
+        runner.shutdown()
+
+        assert runner.finish(5) == []
+
+
+class TestTheAppStopping:
+    """What a pod stop does to the job a person is watching."""
+
+    @staticmethod
+    def started_app(settings, teddycloud, box, runner, **options):
+        from fastapi.testclient import TestClient
+
+        from tonie_studio.web import create_app
+
+        site = TestClient(create_app(settings, client_factory=lambda: teddycloud, runner=runner,
+                                     watcher=box, background=False, **options))
+        return site.__enter__()
+
+    def test_waits_for_the_running_job(self, settings, teddycloud, box):
+        runner = JobRunner()
+        site = self.started_app(settings, teddycloud, box, runner, shutdown_grace=5)
+        started, release = threading.Event(), threading.Event()
+        job_id = runner.submit("encode", "running",
+                               lambda progress: started.set() or release.wait(5))
+        assert started.wait(5)
+        threading.Timer(0.1, release.set).start()
+
+        site.__exit__(None, None, None)
+
+        assert runner.get(job_id).state is JobState.DONE
+
+    def test_says_which_job_it_cut_off(self, settings, teddycloud, box, caplog):
+        runner = JobRunner()
+        site = self.started_app(settings, teddycloud, box, runner, shutdown_grace=0.05)
+        started, release = threading.Event(), threading.Event()
+        job_id = runner.submit("encode", "/Lichterkinder/Halloween.taf",
+                               lambda progress: started.set() or release.wait(5))
+        assert started.wait(5)
+
+        with caplog.at_level("WARNING", logger="tonie_studio.web"):
+            site.__exit__(None, None, None)
+        release.set()
+
+        assert any(job_id in record.getMessage()
+                   and "/Lichterkinder/Halloween.taf" in record.getMessage()
+                   for record in caplog.records)

@@ -1,7 +1,8 @@
 """Tests for naming imported tonies after the catalogue or their dump's file name."""
 
 from tonie_studio.models import Model
-from tonie_studio.naming import (NEW, OFFICIAL, PROMOTE, RENAME, RETITLE, REUSE, Catalog, Name,
+from tonie_studio.naming import (NEW, OFFICIAL, PROMOTE, RENAME, REPAIR, RETITLE, REUSE, Catalog,
+                                 Name,
                                  fingerprint, norm, official_by_audio, plan, promotions)
 from tonie_studio.tags import TonieTag
 
@@ -283,6 +284,70 @@ class TestPlan:
         assert result.steps == [] and result.retired == []
 
 
+class TestRepairs:
+    """A model of ours on a sticker, without the audio that sticker plays, gets it back.
+
+    An upkeep that stopped half way leaves exactly that: it writes new models
+    without audio and adds it last. teddyCloud then no longer finds a model
+    by that audio, which every tonie of the same audio needs.
+    """
+
+    def test_a_model_left_without_its_audio_gets_it_back(self):
+        tags = [tag(ruid("00000001"), lib(7), "TS-0003")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]), [model("TS-0003")],
+                      {"7.taf": header(7, "77")})
+
+        (step,) = result.steps
+        assert (step.kind, step.model_id) == (REPAIR, "TS-0003")
+        assert (step.new_model.audio_ids, step.new_model.hashes) == (["7"], ["77"])
+
+    def test_not_while_another_model_carries_that_audio(self):
+        # teddyCloud refuses two custom models with the same audio id and hash;
+        # a sticker given audio another model has keeps a model without it.
+        tags = [tag(ruid("00000001"), lib(7), "TS-0003")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]),
+                      [model("TS-0003"), model("TS-0004", 7, "77")], {"7.taf": header(7, "77")})
+
+        assert result.steps == []
+
+    def test_one_model_per_audio_when_two_lack_the_same(self):
+        tags = [tag(ruid("00000001"), lib(7), "TS-0003"), tag(ruid("00000002"), lib(7), "TS-0004")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]),
+                      [model("TS-0003"), model("TS-0004")], {"7.taf": header(7, "77")})
+
+        assert [step.model_id for step in result.steps] == ["TS-0003"]
+
+    def test_a_stream_or_audio_of_unknown_header_is_left(self):
+        tags = [tag(ruid("00000001"), "http://radio/stream", "TS-0003"),
+                tag(ruid("00000002"), lib(8), "TS-0004")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]),
+                      [model("TS-0003"), model("TS-0004")], {})
+
+        assert result.steps == []
+
+    def test_audio_outside_the_cloud_folder_is_known_by_its_source(self):
+        tags = [tag(ruid("00000001"), "lib://Hoerspiele/Alt.taf", "TS-0003")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]), [model("TS-0003")], {},
+                      source_headers={"lib://Hoerspiele/Alt.taf": header(5, "55")})
+
+        (step,) = result.steps
+        assert (step.kind, step.new_model.audio_ids) == (REPAIR, ["5"])
+
+    def test_not_right_after_an_import(self):
+        # Naming one tonie looks at that tonie only.
+        tags = [tag(ruid("00000001"), lib(7), "TS-0003")]
+
+        result = plan(tags, {}, Catalog([]), official_by_audio([]), [model("TS-0003")],
+                      {"7.taf": header(7, "77")}, repair=False)
+
+        assert result.steps == []
+
+
 class TestRetitling:
     eule = [{"model": "11003994", "series": "Eule", "episodes": "Eule Set", "language": "de-de",
              "tracks": ["Eule - Mit Gefühl", "Eule - Auf Reisen"],
@@ -533,3 +598,73 @@ class TestNamer:
 
         assert fake.custom_models == []
         assert fake.tag_entries[ruid("00000001")]["tonie_model"] == "10000077"
+
+    def test_an_upkeep_cut_short_before_the_audio_is_repaired_by_the_next(self):
+        import pytest
+
+        from tonie_studio.naming import Namer
+
+        class Killed(BaseException):
+            pass
+
+        fake = self.teddycloud_with(7, "77", ruid("00000001"), model_id="NFC-0004")
+        fake.custom_models.append({"model": "NFC-0004", "series": "Comics", "episodes": "Fledermaus",
+                                   "audio_id": ["7"], "hash": ["77"]})
+        upsert = fake.upsert_custom_tonie
+
+        def killed_at_the_audio(made):
+            if made.get("audio_id"):
+                raise Killed()
+            upsert(made)
+        fake.upsert_custom_tonie = killed_at_the_audio
+        namer = Namer(lambda: fake, dict)
+        with pytest.raises(Killed):
+            namer.upkeep(migrate=True)
+        fake.upsert_custom_tonie = upsert
+
+        namer.upkeep()
+
+        (made,) = fake.custom_models
+        assert (made["model"], made["audio_id"], made["hash"]) == ("TS-0001", ["7"], ["77"])
+
+    def test_the_repair_reads_a_taf_outside_the_cloud_folder(self):
+        from tonie_studio.naming import Namer
+
+        fake = self.teddycloud_with(7, "77", ruid("00000001"))
+        fake.dirs.add("/Hoerspiele")
+        fake.files["/Hoerspiele/Alt.taf"] = b"taf"
+        fake.taf_headers["/Hoerspiele/Alt.taf"] = header(5, "55")
+        fake.add_tag(ruid("00000002"), source="lib://Hoerspiele/Alt.taf", tonie_model="TS-0003")
+        fake.custom_models.append({"model": "TS-0003", "series": "Alt", "episodes": "Alt"})
+        namer = Namer(lambda: fake, dict)
+
+        namer.upkeep()
+
+        made = next(m for m in fake.custom_models if m["model"] == "TS-0003")
+        assert (made["audio_id"], made["hash"]) == (["5"], ["55"])
+
+    def test_cut_short_before_the_old_model_went_the_renaming_repairs_in_one_go(self):
+        import pytest
+
+        from tonie_studio.naming import Namer
+
+        class Killed(BaseException):
+            pass
+
+        fake = self.teddycloud_with(7, "77", ruid("00000001"), model_id="NFC-0004")
+        fake.custom_models.append({"model": "NFC-0004", "series": "Comics", "episodes": "Fledermaus",
+                                   "audio_id": ["7"], "hash": ["77"]})
+        delete = fake.delete_custom_tonies
+
+        def killed(models):
+            raise Killed()
+        fake.delete_custom_tonies = killed
+        namer = Namer(lambda: fake, dict)
+        with pytest.raises(Killed):
+            namer.upkeep(migrate=True)
+        fake.delete_custom_tonies = delete
+
+        namer.upkeep(migrate=True)
+
+        (made,) = fake.custom_models
+        assert (made["model"], made["audio_id"], made["hash"]) == ("TS-0001", ["7"], ["77"])

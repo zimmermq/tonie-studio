@@ -237,6 +237,38 @@ class TestWatching:
         assert "Sammlung/Wolf.nfc" in page and "410" in page
 
 
+class TestAHeldRun:
+    def test_a_run_that_cannot_write_its_record_says_so(self, site, importer, monkeypatch,
+                                                        settings):
+        from tonie_studio import importing
+
+        site.post("/import/github", data=GITHUB)
+        monkeypatch.setattr(importing, "write_json", lambda path, value: False)
+        importer.step()
+
+        page = site.get("/import").text
+
+        assert say("import.cannot_save", folder=str(settings.data_dir)) in page
+
+    def test_a_download_cut_short_is_not_offered_for_the_skip_list(self, site, importer,
+                                                                    teddycloud):
+        # Its connection to teddyCloud broke; the cloud said nothing against the dump.
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        def broken(folder, file):
+            raise TeddyCloudError("download broke off after 0 bytes")
+        teddycloud.cache_content = broken
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        for _ in range(3):
+            importer.step()
+
+        page = site.get("/import").text
+
+        assert say("import.download_broke") in page
+        assert 'action="/import/skip"' not in page
+
+
 class TestControls:
     def test_pause_resume_and_stop(self, site, importer):
         site.post("/import/github", data=GITHUB)
@@ -276,6 +308,20 @@ class TestNames:
         assert say("names.kind.rename") in page and "NFC-0004" in page and "TS-0001" in page
         assert "Comics - Fledermaus" in page
         assert teddycloud.custom_models[0]["model"] == "NFC-0004"
+
+    def test_a_model_left_without_its_audio_is_offered_a_repair(self, site, teddycloud):
+        teddycloud.dirs.update({"/by", "/by/audioID"})
+        teddycloud.files["/by/audioID/7.taf"] = b"taf"
+        teddycloud.taf_headers["/by/audioID/7.taf"] = {"audioId": 7, "sha1Hash": "77",
+                                                       "valid": True}
+        teddycloud.add_tag("1d577820500304e0", source="lib://by/audioID/7.taf",
+                           tonie_model="TS-0001")
+        teddycloud.custom_models.append({"model": "TS-0001", "series": "Comics",
+                                         "episodes": "Fledermaus"})
+
+        page = site.get("/import/names").text
+
+        assert say("names.kind.repair") in page and "TS-0001" in page
 
     def test_a_refusal_from_teddycloud_is_said_as_one(self, site, teddycloud):
         from tonie_studio.teddycloud import TeddyCloudError

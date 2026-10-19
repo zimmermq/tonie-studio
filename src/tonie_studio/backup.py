@@ -43,7 +43,7 @@ from .podcast import Subscription, add_subscription, is_subscription_id, load_su
 from .runtimes import FILE_NAME as TIMES_FILE
 from .runtimes import add_missing
 from .store import from_record, sweep
-from .tags import TonieTag, list_tags
+from .tags import TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
@@ -383,7 +383,8 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
         changed = {field: value for field, value in wanted.items() if current.get(field) != value}
         steps.append(_attempt(write and bool(changed), TAG, label,
                               CHANGES if changed else SAME,
-                              lambda ruid=ruid, changed=changed: _set_tag(client, ruid, changed),
+                              lambda ruid=ruid, current=current, changed=changed:
+                              _set_tag(client, ruid, current, changed),
                               note))
 
     steps += _restore_times(backup, data_dir, write)
@@ -397,10 +398,26 @@ def _restore(client: TeddyCloudClient, backup: Backup, data_dir: Path, write: bo
     return steps
 
 
-def _set_tag(client: TeddyCloudClient, ruid: str, changed: Dict) -> None:
-    """One sticker of a restore, written under the lock tag writes share."""
+# The fields of a sticker a restore compares and writes; the backup's names.
+TAG_FIELDS = ("source", "tonie_model", "nocloud", "live")
+
+
+def _set_tag(client: TeddyCloudClient, ruid: str, seen: Dict, changed: Dict) -> bool:
+    """One sticker of a restore, written under the lock tag writes share.
+
+    ``seen`` is the sticker as the restore read it, which was before any
+    sticker was written: hundreds of them take minutes. It is read again
+    under the lock, and one that was given something else since is left
+    alone and False returned; writing ``changed`` would overwrite what a
+    person chose a moment ago with what the restore planned before that.
+    """
     with WRITING:
+        now = find_tag(client, ruid)
+        if now is None or any(_tag_record(now)[field] != seen.get(field) for field in TAG_FIELDS):
+            log.info("restore: sticker %s changed while the restore ran; left as it is", ruid)
+            return False
         client.set_tag(ruid, **changed)
+        return True
 
 
 def _attempt(write: bool, what: str, name: str, action: str, apply, note: str = "") -> Step:
@@ -408,14 +425,18 @@ def _attempt(write: bool, what: str, name: str, action: str, apply, note: str = 
 
     Every item stands on its own. A restore that stops at the first refusal
     leaves nobody knowing what came back; this one goes on and lists it.
+    ``apply`` returning False means it found the item changed since it was
+    read and left it, which the step reports as kept.
     """
     if not write:
         return Step(what, name, action, note)
     try:
-        apply()
+        applied = apply()
     except (TeddyCloudError, ValueError) as error:
         log.warning("restore: %s %s failed: %s", what, name, error)
         return Step(what, name, FAILED, "restore.note.failed", str(error))
+    if applied is False:
+        return Step(what, name, KEPT, "restore.note.changed_meanwhile")
     return Step(what, name, action, note)
 
 

@@ -335,6 +335,30 @@ class TestBackupPages:
         assert teddycloud.custom_models
         assert 'http-equiv="refresh"' not in client.get(f"/restore/{token}/done").text
 
+    def test_after_a_restart_the_parked_backup_is_offered_again(self, make_site, runner,
+                                                                teddycloud):
+        # The run lived in the old process; the uploaded file is still parked,
+        # and confirming it works, so the page must not say it is gone.
+        first = make_site()
+        publish_album(first, runner, teddycloud)
+        data = first.get("/backup/download").content
+        teddycloud.custom_models.clear()
+        page = first.post("/restore", files={"file": ("b.zip", data, "application/zip")}).text
+        token = page.split('action="/restore/', 1)[1].split('"', 1)[0]
+        restarted = make_site()
+
+        response = restarted.get(f"/restore/{token}/done")
+
+        assert response.status_code == 200
+        assert f'action="/restore/{token}"' in response.text
+        assert 'http-equiv="refresh"' not in response.text
+        assert "Neustart" in response.text
+        _restore(restarted, token)
+        assert teddycloud.custom_models
+
+    def test_a_result_page_without_run_or_backup_is_gone(self, client):
+        assert client.get("/restore/abc123/done").status_code == 404
+
     def test_refuses_a_file_that_is_not_a_backup(self, client):
         response = client.post("/restore", files={"file": ("x.zip", b"nope", "application/zip")})
 
@@ -385,6 +409,49 @@ class TestCheckupSparesWork:
         page = client.get("/checkup").text
 
         assert job.label not in page
+
+    @staticmethod
+    def leftover(teddycloud, path):
+        """A taf in the library that no sticker plays."""
+        teddycloud.create_dir(path.rsplit("/", 1)[0])
+        teddycloud.files[path] = b"x"
+        teddycloud.taf_headers[path] = {"valid": True}
+        return f'href="/library/assign?path={path}"'
+
+    def test_a_running_encode_spares_its_taf(self, client, runner, teddycloud):
+        offer = self.leftover(teddycloud, "/Lichterkinder/Halb.taf")
+        release = threading.Event()
+        job_id = runner.submit("encode", "/Lichterkinder/Halb.taf",
+                               lambda progress: release.wait(5))
+        try:
+            assert offer not in client.get("/checkup").text
+        finally:
+            release.set()
+            runner.get(job_id).done.wait(5)
+
+    def test_a_failed_encode_leaves_its_taf_to_the_checkup(self, client, runner, teddycloud):
+        # Half written by an encode that stopped: nothing will come for it, and
+        # hiding it until the next restart hides what the checkup is for.
+        offer = self.leftover(teddycloud, "/Lichterkinder/Halb.taf")
+
+        def fail(progress):
+            raise RuntimeError("teddyCloud went away")
+
+        job = runner.get(runner.submit("encode", "/Lichterkinder/Halb.taf", fail))
+        assert job.done.wait(5)
+
+        assert offer in client.get("/checkup").text
+
+    def test_an_encode_already_on_a_sticker_spares_nothing(self, client, runner, teddycloud):
+        job, _page = encode_and_assign_page(client, runner)
+        client.post(f"/job/{job.id}/assign", data={
+            "ruid": "7ab4ed0e500304e0", "series": "Lichterkinder",
+            "episode": "Halloween", "category": "music",
+        }, follow_redirects=False)
+        # The sticker was given something else since; the taf plays nowhere.
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = ""
+
+        assert f'href="/library/assign?path={job.label}"' in client.get("/checkup").text
 
 
 class TestBackupPageSizes:

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from .i18n import Problem
-from .library import same, source_of
+from .library import is_library, path_of, same, source_of
 from .models import WRITING, list_models
 from .tags import list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -222,6 +222,10 @@ def encode_files(
     replacing = _find_entry(client, target) is not None
     if replacing and not replace:
         raise EncodeError("encode.exists", target=target)
+    # Written, replaced and pointed at in the spelling the library already
+    # has: teddyCloud's filesystem holds a composed and a decomposed umlaut as
+    # two different names, so the requested spelling could name nothing.
+    target = _as_listed(client, target)
 
     job = uuid.uuid4().hex[:12]
     with _OURS_LOCK:
@@ -293,31 +297,150 @@ def _replace(client: TeddyCloudClient, staged: Sequence[str], target: str,
     pointed back. Whenever the process is stopped, every tag plays audio that
     exists; should the second encode fail, they keep the copy beside it and
     the error says where it is.
+
+    Stickers still on the copy an earlier, interrupted replace of the same
+    target left beside it are taken over as well, and that copy deleted: the
+    new audio supersedes it.
     """
     # A name of its own each time: a copy an earlier failed replace left
-    # behind may be what the stickers play now, and is not this one's to delete.
+    # behind may be what the stickers play now, and is not this one's to delete
+    # until nothing plays it.
     aside = f"{target[:-len(TAF_SUFFIX)]}{ASIDE_MARK}{uuid.uuid4().hex[:8]}{TAF_SUFFIX}"
     old_header = (_find_entry(client, target) or {}).get("tafHeader") or {}
-    _encode(client, staged, aside, progress, total_seconds)
-
-    with WRITING:
-        playing = [tag.ruid for tag in list_tags(client)
-                   if same(tag.source) == same(source_of(target))]
-        for ruid in playing:
-            client.set_tag(ruid, source=source_of(aside))
-
-    log.info("replacing the taf at %s", target)
-    client.delete(target, special="library")
+    with _OURS_LOCK:
+        _REPLACING.add(same(aside))
     try:
-        client.encode(target, staged, special="library")
-    except TeddyCloudError as error:
-        raise EncodeError("encode.replace_kept", target=target, kept=aside) from error
-    with WRITING:
-        for ruid in playing:
-            client.set_tag(ruid, source=source_of(target))
-        _carry_models(client, old_header,
-                      (_find_entry(client, target) or {}).get("tafHeader") or {})
-    _delete(client, aside)
+        _encode(client, staged, aside, progress, total_seconds)
+
+        with WRITING:
+            for tag in list_tags(client):
+                if same(tag.source) == same(source_of(target)) or _plays_aside_of(tag.source, target):
+                    client.set_tag(tag.ruid, source=source_of(aside))
+            # Deleted under the lock, so no sticker is given the old taf
+            # between the stickers moving off it and it going.
+            log.info("replacing the taf at %s", target)
+            client.delete(target, special="library")
+
+        try:
+            client.encode(target, staged, special="library")
+        except TeddyCloudError as error:
+            raise EncodeError("encode.replace_kept", target=target, kept=aside) from error
+
+        with WRITING:
+            # Which stickers play the copy is read again here, not carried
+            # over from before the encode: a sticker copied from one of them
+            # meanwhile plays it too, one moved away no longer exists and
+            # would be brought back by a write, and one given other audio
+            # keeps that.
+            _settle(client, target, [aside] + _earlier_asides(client, target))
+            _carry_models(client, old_header,
+                          (_find_entry(client, target) or {}).get("tafHeader") or {})
+    finally:
+        with _OURS_LOCK:
+            _REPLACING.discard(same(aside))
+
+
+def _plays_aside_of(source: str, target: str) -> bool:
+    """Whether ``source`` names a copy an earlier replace of ``target`` left beside it."""
+    if not is_library(source) or same(aside_of(path_of(source)) or "") != same(target):
+        return False
+    with _OURS_LOCK:
+        return same(path_of(source)) not in _REPLACING
+
+
+def _earlier_asides(client: TeddyCloudClient, target: str) -> List[str]:
+    """The copies beside ``target`` that no replace of this process is using."""
+    folder = _split(target)[0]
+    entries = client.list_dir(folder, special="library") if folder == "/" else list_folder(client, folder)
+    found = []
+    for entry in entries:
+        path = _join(folder, entry.get("name") or "")
+        if entry.get("isDir") or same(aside_of(path) or "") != same(target):
+            continue
+        with _OURS_LOCK:
+            if same(path) in _REPLACING:
+                continue
+        found.append(path)
+    return found
+
+
+def _settle(client: TeddyCloudClient, target: str, asides: Sequence[str]) -> None:
+    """Point every sticker on one of ``asides`` at ``target``, then delete them.
+
+    Under WRITING, with the stickers read here: once they are pointed away
+    nothing plays the copies, and nothing can be given one before they go.
+    Only stickers that exist are written; teddyCloud would make a sticker it
+    has forgotten up again from a write.
+    """
+    sources = {same(source_of(aside)) for aside in asides}
+    for tag in list_tags(client):
+        if same(tag.source) in sources:
+            client.set_tag(tag.ruid, source=source_of(target))
+            log.info("tag %s plays %s again", tag.ruid, target)
+    for aside in asides:
+        _delete(client, aside)
+
+
+def recover_asides(client: TeddyCloudClient, tafs: Optional[Sequence[Taf]] = None) -> int:
+    """Finish what interrupted replaces left undone; returns how many copies went.
+
+    A replace stopped during its final encode - the app killed, teddyCloud
+    restarted - leaves its stickers on the copy beside the target for good,
+    and the target looks unused. Wherever the target is complete, the
+    stickers are pointed back at it and the copy is deleted; a copy nothing
+    plays goes as soon as a valid target is there.
+
+    A copy whose target is missing, or smaller than the copy, stays with its
+    stickers: teddyCloud lists a taf it is still writing, or stopped writing,
+    with a valid header, and the copy may be the only whole audio there is.
+    Both encodes read the same files with the same settings, so a complete
+    target is never smaller than its copy. Copies of a replace this process
+    is running are left to it. Safe to run at any time; ``tafs`` spares the
+    walk through the library to a caller that has just listed it.
+    """
+    recovered = 0
+    for taf in (list_tafs(client) if tafs is None else tafs):
+        target = aside_of(taf.path)
+        if target is None:
+            continue
+        try:
+            with WRITING:
+                if _recover(client, taf.path, target):
+                    recovered += 1
+        except TeddyCloudError as error:
+            log.warning("cannot recover %s: %s", taf.path, error)
+    if recovered:
+        log.info("recovered %d copies left beside their taf by a replace", recovered)
+    return recovered
+
+
+def _recover(client: TeddyCloudClient, aside: str, target: str) -> bool:
+    """Settle one copy beside its target if that is safe; under WRITING."""
+    with _OURS_LOCK:
+        if same(aside) in _REPLACING:
+            return False
+    aside_entry = _find_entry(client, aside)
+    found = _locate(client, *_split(target))
+    if aside_entry is None or found is None:
+        return False
+    target, target_entry = found
+    header = target_entry.get("tafHeader") or {}
+    if not header.get("valid"):
+        return False
+    playing = same(source_of(aside)) in {same(tag.source) for tag in list_tags(client)}
+    if playing and not _complete(target_entry, aside_entry):
+        log.warning("%s is not complete; its stickers stay on %s", target, aside)
+        return False
+    _settle(client, target, [aside])
+    return True
+
+
+def _complete(target: dict, aside: dict) -> bool:
+    """Whether the taf listed as ``target`` holds all the audio of its copy ``aside``."""
+    target_header = target.get("tafHeader") or {}
+    aside_header = aside.get("tafHeader") or {}
+    return (len(target_header.get("trackSeconds") or []) == len(aside_header.get("trackSeconds") or [])
+            and (target.get("size") or 0) >= (aside.get("size") or 0))
 
 
 def _carry_models(client: TeddyCloudClient, old: dict, new: dict) -> None:
@@ -350,10 +473,13 @@ def existing_taf(client: TeddyCloudClient, target: str) -> Optional[EncodeResult
     For a taf that was encoded but never put on a tag, so it can be put on
     one without encoding it again. None when there is no valid taf there.
     """
-    header = (_find_entry(client, target) or {}).get("tafHeader") or {}
+    found = _locate(client, *_split(target))
+    header = (found[1].get("tafHeader") or {}) if found else {}
     if not header.get("valid"):
         return None
-    return _result(target, header, tracks=len(header.get("trackSeconds") or []))
+    # The listed name, not the requested one: the two may differ in how an
+    # umlaut is composed, and a sticker given the requested one plays nothing.
+    return _result(found[0], header, tracks=len(header.get("trackSeconds") or []))
 
 
 def _result(target: str, header: dict, tracks: int) -> EncodeResult:
@@ -366,6 +492,11 @@ def _result(target: str, header: dict, tracks: int) -> EncodeResult:
         sha1=header.get("sha1Hash"),
     )
 
+
+# The copies beside their target that a replace of this process is encoding
+# or about to point stickers away from, in same() spelling. A recovery or
+# another replace deleting one would leave those stickers silent.
+_REPLACING: set = set()
 
 # The staging folders this process made. Jobs do not outlive the process, so
 # any other folder under the staging root belongs to a run that was
@@ -483,7 +614,17 @@ def _find_entry(client: TeddyCloudClient, path: str) -> Optional[dict]:
 
 def _entry(client: TeddyCloudClient, parent: str, name: str,
            directory: bool = False) -> Optional[dict]:
-    """The entry ``name`` in the listing of ``parent``; None if it is not there.
+    """The entry ``name`` in the listing of ``parent``; None if it is not there."""
+    found = _locate(client, parent, name, directory)
+    return found[1] if found else None
+
+
+def _locate(client: TeddyCloudClient, parent: str, name: str,
+            directory: bool = False) -> Optional[Tuple[str, dict]]:
+    """The path ``parent``/``name`` as the library lists it, and its entry.
+
+    Names are compared across the two spellings an umlaut has, and every
+    folder on the way is listed under the name the library gave it.
 
     ``parent`` is only listed once its own parent shows it, up to the root:
     teddyCloud answers a listing of a folder that is not there by closing the
@@ -493,13 +634,30 @@ def _entry(client: TeddyCloudClient, parent: str, name: str,
     moment of teddyCloud being away would say audio is missing that is not.
     """
     if parent != "/":
-        grandparent, folder = _split(parent)
-        if _entry(client, grandparent, folder, directory=True) is None:
+        folder = _locate(client, *_split(parent), directory=True)
+        if folder is None:
             return None
+        parent = folder[0]
     entries = client.list_dir(parent, special="library")
-    return next((entry for entry in entries
-                 if bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)),
-                None)
+    entry = next((entry for entry in entries
+                  if bool(entry.get("isDir")) == directory and _same_name(entry.get("name"), name)),
+                 None)
+    return (_join(parent, entry["name"]), entry) if entry is not None else None
+
+
+def _as_listed(client: TeddyCloudClient, path: str, directory: bool = False) -> str:
+    """``path`` in the spelling the library lists it in, as far as it exists."""
+    parent, name = _split(path)
+    found = _locate(client, parent, name, directory)
+    if found is not None:
+        return found[0]
+    if parent == "/":
+        return path
+    return _join(_as_listed(client, parent, directory=True), name)
+
+
+def _join(folder: str, name: str) -> str:
+    return f"{folder.rstrip('/')}/{name}"
 
 
 def _split(path: str) -> Tuple[str, str]:
@@ -565,8 +723,18 @@ def _watch_growth(
     second short is honest, a bar that sits at 100 percent while ffmpeg is
     still running is not.
     """
+    # A moment of teddyCloud not answering, while it is busy encoding, is no
+    # reason to stop: the bar would freeze for the rest of the encode. Said
+    # once, not every few seconds for as long as it lasts.
+    said = False
     while not stop.wait(GROWTH_POLL):
-        entry = _find_entry(client, target)
+        try:
+            entry = _find_entry(client, target)
+        except TeddyCloudError as error:
+            if not said:
+                log.warning("cannot see how far the encode of %s is: %s", target, error)
+                said = True
+            continue
         if entry is None:
             continue
         written = entry.get("size") or 0

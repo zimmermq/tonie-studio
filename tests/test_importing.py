@@ -669,3 +669,261 @@ class TestFromGitHub:
         github_importer(teddycloud, tmp_path, clock, fetch).step()
 
         assert fetch.tokens == ["secret"]
+
+
+class Disk:
+    """Stands in for the data volume's writes: working, full, or losing what it is given."""
+
+    OK, FULL, LOSSY = "ok", "full", "lossy"
+
+    def __init__(self, real):
+        self.real = real
+        self.mode = self.OK
+
+    def __call__(self, path, value):
+        if self.mode == self.FULL:
+            return False
+        if self.mode == self.LOSSY:
+            return True
+        return self.real(path, value)
+
+
+@pytest.fixture
+def disk(monkeypatch):
+    from tonie_studio import importing, store
+
+    stand_in = Disk(store.write_json)
+    monkeypatch.setattr(importing, "write_json", stand_in)
+    monkeypatch.setattr(store, "write_json", stand_in)
+    return stand_in
+
+
+def count_lookups(teddycloud):
+    """Counts every question to teddyCloud about a tonie's entry or a folder."""
+    asked = []
+    for name in ("content_entry", "list_dir"):
+        original = getattr(teddycloud, name)
+
+        def counted(*args, _original=original, **kwargs):
+            asked.append(args)
+            return _original(*args, **kwargs)
+        setattr(teddycloud, name, counted)
+    return asked
+
+
+class TestARunThatCannotBeSaved:
+    """A run whose record cannot be written asks nobody anything until it can.
+
+    Every step works from the stored run, so a result that is not stored is
+    worked out again at once: without a hold that is teddyCloud asked
+    thousands of times a minute, and the Tonies cloud asked again and again
+    for a tonie it refused.
+    """
+
+    def test_a_refused_tonie_is_not_asked_for_again_and_again(self, importer, teddycloud, clock,
+                                                              disk):
+        from tonie_studio.importing import HOLD_SECONDS
+
+        teddycloud.cloud_refusing.add(WOLF_RUID)
+        importer.begin([WOLF, FEST], STEADY, "test")
+        importer.step()
+        disk.mode = Disk.FULL
+        asked = count_lookups(teddycloud)
+
+        waits = [importer.step() for _ in range(50)]
+
+        assert teddycloud.cloud_requests == []
+        assert all(wait >= HOLD_SECONDS for wait in waits)
+        assert len(asked) <= 2  # the one look before the start could not be noted
+
+    def test_the_check_is_not_repeated_either(self, importer, teddycloud, disk):
+        importer.begin([WOLF, FEST], STEADY, "test")
+        disk.mode = Disk.FULL
+        asked = count_lookups(teddycloud)
+
+        importer.step()
+        once = len(asked)
+        for _ in range(50):
+            importer.step()
+
+        assert len(asked) == once
+
+    def test_the_page_is_told_why(self, importer, disk):
+        importer.begin([WOLF], STEADY, "test")
+        disk.mode = Disk.FULL
+
+        importer.step()
+
+        assert importer.held.key == "import.cannot_save"
+
+    def test_it_carries_on_once_the_record_can_be_written_again(self, importer, teddycloud,
+                                                               clock, disk):
+        importer.begin([WOLF], STEADY, "test")
+        disk.mode = Disk.FULL
+        importer.step()
+
+        disk.mode = Disk.OK
+        run_until_idle(importer, clock)
+
+        assert importer.held is None
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+        assert states(importer) == {"Wolf.nfc": IMPORTED}
+
+    def test_a_result_that_could_not_be_noted_is_not_fetched_again_before_its_time(
+            self, importer, teddycloud, clock, disk):
+        teddycloud.cloud_refusing.add(WOLF_RUID)
+        importer.begin([WOLF, FEST], STEADY, "test")
+        importer.step()
+        refuse = teddycloud.cache_content
+
+        def disk_fills_meanwhile(folder, file):
+            disk.mode = Disk.FULL
+            return refuse(folder, file)
+        teddycloud.cache_content = disk_fills_meanwhile
+        importer.step()
+
+        disk.mode = Disk.OK
+        wait = importer.step()
+
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+        assert wait >= 360
+
+    def test_the_pace_holds_even_when_the_record_loses_what_it_was_given(self, importer,
+                                                                        teddycloud, clock, disk):
+        # The worker keeps the pace in memory too, so no answer from the disk
+        # makes it ask the cloud sooner than the pace allows.
+        teddycloud.cloud_refusing.add(WOLF_RUID)
+        importer.begin([WOLF, FEST], STEADY, "test")
+        importer.step()
+        disk.mode = Disk.LOSSY
+
+        importer.step()
+        wait = importer.step()
+
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+        assert wait == pytest.approx(360)
+
+    def test_a_run_that_cannot_be_noted_does_not_start(self, importer, disk):
+        disk.mode = Disk.FULL
+
+        with pytest.raises(ImportProblem) as raised:
+            importer.begin([WOLF], STEADY, "test")
+
+        assert raised.value.key == "import.cannot_save"
+
+
+class Killed(BaseException):
+    """The app going away in the middle of a download."""
+
+
+class TestAKillDuringADownload:
+    """teddyCloud carries on with a download the app stopped waiting for."""
+
+    def _killed(self, importer, teddycloud, clock):
+        importer.begin([WOLF, FEST], STEADY, "test")
+        importer.step()
+        fetch = teddycloud.cache_content
+
+        def killed(folder, file):
+            raise Killed()
+        teddycloud.cache_content = killed
+        with pytest.raises(Killed):
+            importer.step()
+        teddycloud.cache_content = fetch
+
+    def test_a_restart_does_not_fetch_the_same_tonie_again_at_once(self, importer, teddycloud,
+                                                                  tmp_path, clock):
+        self._killed(importer, teddycloud, clock)
+
+        again = Importer(lambda: teddycloud, tmp_path, clock=clock, rng=random.Random(1),
+                         sleep=lambda s: None)
+        wait = again.step()
+
+        assert wait >= 360 and teddycloud.cloud_requests == []
+
+    def test_after_the_pause_it_is_fetched_again_if_teddycloud_has_nothing(self, importer,
+                                                                          teddycloud, tmp_path,
+                                                                          clock):
+        self._killed(importer, teddycloud, clock)
+        again = Importer(lambda: teddycloud, tmp_path, clock=clock, rng=random.Random(1),
+                         sleep=lambda s: None)
+
+        clock.now += again.step()
+        run_until_idle(again, clock)
+
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+        assert states(again)["Wolf.nfc"] == IMPORTED
+
+    def test_audio_teddycloud_finished_meanwhile_counts_as_imported(self, importer, teddycloud,
+                                                                   tmp_path, clock):
+        self._killed(importer, teddycloud, clock)
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/3.taf", cloud_auth=AUTH,
+                               nocloud=False)
+        seen = []
+        again = Importer(lambda: teddycloud, tmp_path, clock=clock, rng=random.Random(1),
+                         sleep=lambda s: None,
+                         after_import=lambda ruid, path: seen.append(path))
+
+        again.step()
+
+        assert states(again)["Wolf.nfc"] == IMPORTED
+        assert seen == ["Wolf.nfc"] and teddycloud.cloud_requests == []
+        assert TestCloudOffOnceThere.nocloud(teddycloud, WOLF_RUID) is True
+
+
+def cut_short(teddycloud, finished):
+    """teddyCloud's connection breaks during the download; ``finished``: it completes it anyway."""
+    from tonie_studio.teddycloud import TeddyCloudError
+
+    fetch = teddycloud.cache_content
+
+    def broken(folder, file):
+        if finished:
+            fetch(folder, file)
+        else:
+            teddycloud.cloud_requests.append(f"{folder}{file}".lower())
+        raise TeddyCloudError(f"download of {folder}/{file} from teddyCloud broke off "
+                              "after 0 bytes: Connection broken")
+    teddycloud.cache_content = broken
+
+
+class TestADownloadCutShort:
+    def test_audio_teddycloud_finished_anyway_is_imported(self, teddycloud):
+        cut_short(teddycloud, finished=True)
+
+        where = import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None)
+
+        assert where.startswith("lib://by/audioID/")
+        assert TestCloudOffOnceThere.nocloud(teddycloud, WOLF_RUID) is True
+
+    def test_otherwise_it_fails_with_a_reason_a_person_reads(self, teddycloud):
+        cut_short(teddycloud, finished=False)
+
+        with pytest.raises(ImportProblem) as raised:
+            import_one(teddycloud, WOLF_RUID, AUTH, sleep=lambda s: None)
+
+        assert raised.value.key == "import.download_broke"
+
+    def test_teddycloud_is_given_time_to_finish(self, teddycloud):
+        cut_short(teddycloud, finished=False)
+        slept = []
+
+        def finishes_later(seconds):
+            slept.append(seconds)
+            if len(slept) == 3:
+                teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/8.taf",
+                                       cloud_auth=AUTH)
+
+        assert import_one(teddycloud, WOLF_RUID, AUTH, sleep=finishes_later) == \
+            "lib://by/audioID/8.taf"
+
+    def test_it_is_no_refusal_by_the_cloud(self, importer, teddycloud, clock, tmp_path):
+        cut_short(teddycloud, finished=False)
+        importer.begin([WOLF, FEST], Pace(per_hour=10, jitter=0, max_failures=1), "test")
+
+        run_until_idle(importer, clock)
+
+        run = importer.current()
+        assert run.phase != GIVEN_UP and run.streak == 0
+        assert run.items[0].error_key == "import.download_broke"
+        assert skip_list(tmp_path) == []

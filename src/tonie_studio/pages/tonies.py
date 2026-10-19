@@ -12,11 +12,11 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..albumnotes import made
-from ..encode import EncodeError, taf_exists
-from ..library import is_library, path_of
+from ..encode import EncodeError
+from ..library import is_library, listed_path, path_of
 from ..listing import Column, filters
-from ..models import (CATEGORIES, DEFAULT_CATEGORY, find_model, images_cached, picture_suffix,
-                      release_year, update_model)
+from ..models import (CATEGORIES, DEFAULT_CATEGORY, WRITING, find_model, images_cached,
+                      picture_suffix, release_year, update_model)
 from ..podcast import LARGEST_IMAGE, FeedError, move_subscriptions, unsubscribe
 from ..tags import TonieError, list_tags
 from ..tonie import copy_tag, move_tag, plan_removal, remove_tonie
@@ -80,12 +80,16 @@ def register(app: FastAPI, ctx: Context) -> None:
         elif model is not None and model.shop_link:
             about = ctx.shop.lookup(model.shop_link)
         # Audio the sticker points at but the library no longer has: the tonie
-        # looks like any other and plays nothing.
-        silent = is_library(tag.source) and not taf_exists(connection, path_of(tag.source))
+        # looks like any other and plays nothing. The same goes for a file
+        # the library has under another spelling of its umlauts, which
+        # teddyCloud's file system tells apart; the checkup repairs that.
+        listed = listed_path(connection, path_of(tag.source)) if is_library(tag.source) else None
+        silent = is_library(tag.source) and listed != path_of(tag.source)
         return templates.TemplateResponse(request, "tonie.html", {
             "tag": tag,
             "model": model,
             "silent": silent,
+            "other_spelling": silent and listed is not None,
             "remake": _album_of(settings.data_dir, tag.model) if silent else None,
             "entry": entry,
             "about": about,
@@ -149,9 +153,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         """Make another sticker play this tonie; with ``move``, this sticker is then forgotten."""
         with refusing(TonieError):
             if move:
-                move_tag(client(), ruid, target)
-                # A podcast on it keeps refreshing the sticker it is on now.
-                move_subscriptions(settings.data_dir, ruid, target)
+                # A podcast on it keeps refreshing the sticker it is on now. In
+                # one step with the move: a refresh publishing in between would
+                # find its sticker gone.
+                with WRITING:
+                    move_tag(client(), ruid, target)
+                    move_subscriptions(settings.data_dir, ruid, target)
             else:
                 copy_tag(client(), ruid, target)
         return RedirectResponse(f"/tonies/{target}" if move else "/tonies", 303)

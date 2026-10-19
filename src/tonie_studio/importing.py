@@ -17,6 +17,11 @@ Nothing is fetched twice. Before a run starts and again right before each
 tonie, teddyCloud is asked whether it already has the audio, so a tonie put on
 the box meanwhile, or imported by a previous run, is skipped and costs no wait.
 
+The run file is what keeps the pace: when the next tonie is due, and that a
+download was asked for, are written before the download starts. A run whose
+file cannot be written therefore stops asking anybody anything (see
+Importer.held) until it can, rather than repeat work it cannot note as done.
+
 A run from a GitHub repository starts by reading the repository, which for
 hundreds of dumps takes minutes and therefore happens on the worker, not in
 the request that starts it. The access token, if one was given, is kept only
@@ -98,6 +103,22 @@ BESIDE_GRACE_SECONDS = 5
 # A pause after an unexpected error in the worker, so a fault that repeats
 # does not spin.
 RETRY_SECONDS = 60
+
+# How long the worker waits before trying again to write a run file it could
+# not write, such as on a full data volume. Until it can, it asks neither
+# teddyCloud nor the cloud anything; every control wakes it sooner.
+HOLD_SECONDS = 1800
+
+# How long after a download was asked for the same tonie may be asked for
+# again when the app went away before it ended. teddyCloud finishes such a
+# download on its own; asking again before it is done would fetch the tonie
+# from the cloud a second time at once.
+RESUME_SECONDS = 600
+
+# The failure of a download whose connection to teddyCloud broke. teddyCloud
+# carries on with the download by itself, so this says nothing about the
+# cloud: it does not count towards giving up and is no reason to skip a dump.
+BROKE_OFF = "import.download_broke"
 
 
 @dataclass
@@ -190,6 +211,10 @@ class Item:
     # When the run imported it, failed at it, or found it cached at its turn,
     # as seconds since 1970; 0 for one teddyCloud had before the run began.
     settled_at: float = 0.0
+    # When its download was asked for, written before the download starts; 0
+    # before. A pending item with one was cut off by the app going away, and
+    # audio teddyCloud has for it at its next turn is that download's.
+    asked_at: float = 0.0
 
 
 @dataclass
@@ -313,16 +338,47 @@ def import_one(client: TeddyCloudClient, ruid: str, auth: str,
     if written.lower() != auth.lower():
         raise ImportProblem("import.entry_not_written")
 
-    if client.cache_content(folder, file) == 0:
-        raise ImportProblem("import.no_taf")
-
-    for waited in range(SETTLE_SECONDS):
-        where = cached_at(client, ruid)
-        if where and (not where.startswith(BESIDE) or waited >= BESIDE_GRACE_SECONDS):
+    try:
+        size = client.cache_content(folder, file)
+    except TeddyCloudError as error:
+        if error.status is not None:
+            raise
+        # The connection to teddyCloud broke, not the one to the cloud:
+        # teddyCloud reads the download to the end by itself and keeps it.
+        where = _kept(client, ruid, sleep, tolerant=True)
+        if where:
+            log.info("download of %s broke off, but teddyCloud finished it", ruid)
             cloud_off(client, ruid, {})
             return where
-        sleep(1)
+        raise ImportProblem(BROKE_OFF) from error
+    if size == 0:
+        raise ImportProblem("import.no_taf")
+
+    where = _kept(client, ruid, sleep)
+    if where:
+        cloud_off(client, ruid, {})
+        return where
     raise ImportProblem("import.not_cached")
+
+
+def _kept(client: TeddyCloudClient, ruid: str, sleep: Callable[[float], None],
+          tolerant: bool = False) -> str:
+    """Where teddyCloud keeps the tonie's audio once it has settled, or "" after SETTLE_SECONDS.
+
+    ``tolerant`` takes a question teddyCloud does not answer as "not yet"
+    rather than raising, for when its connection just broke.
+    """
+    for waited in range(SETTLE_SECONDS):
+        try:
+            where = cached_at(client, ruid)
+        except TeddyCloudError:
+            if not tolerant:
+                raise
+            where = ""
+        if where and (not where.startswith(BESIDE) or waited >= BESIDE_GRACE_SECONDS):
+            return where
+        sleep(1)
+    return ""
 
 
 # --- a run ------------------------------------------------------------------
@@ -359,8 +415,9 @@ def _load(data_dir: Path) -> Optional[Run]:
         return None
 
 
-def _save(data_dir: Path, run: Run) -> None:
-    write_json(data_dir / FILE_NAME, asdict(run))
+def _save(data_dir: Path, run: Run) -> bool:
+    """Write the run; returns whether it is stored."""
+    return write_json(data_dir / FILE_NAME, asdict(run))
 
 
 class Importer:
@@ -388,6 +445,13 @@ class Importer:
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        # Why the run asks nothing of anybody now, for the page: its file
+        # could not be written. Kept in memory, as it is what cannot be stored.
+        self.held: Optional[ImportProblem] = None
+        # (run id, when its next tonie is due), as the worker last set it.
+        # The run file says the same, unless it could not be written or lost
+        # what was written; this makes sure the cloud is never asked sooner.
+        self._paced: Tuple[str, float] = ("", 0.0)
 
     # --- what the pages call ------------------------------------------------
 
@@ -427,7 +491,9 @@ class Importer:
                 raise ImportProblem("import.busy")
             run = Run(id=uuid.uuid4().hex[:12], started_at=self.clock(), pace=pace,
                       items=items, source=source, phase=phase)
-            _save(self.data_dir, run)
+            if not _save(self.data_dir, run):
+                raise self._cannot_save()
+        self.held = None
         log.info("import %s started: %d dump(s) from %s", run.id, len(items), source["label"])
         self._wake.set()
         return run
@@ -479,7 +545,8 @@ class Importer:
             if run is None:
                 return
             change(run)
-            _save(self.data_dir, run)
+            if not _save(self.data_dir, run):
+                self._hold()
         self._wake.set()
 
     # --- the worker ---------------------------------------------------------
@@ -513,6 +580,17 @@ class Importer:
         run = self.current()
         if run is None or not run.active or run.paused:
             return IDLE_SECONDS
+        if self.held is not None:
+            # Rewriting the run as it stands tells whether the file can be
+            # written again, and asks nobody anything.
+            if not self._record(run.id, lambda current: None):
+                return HOLD_SECONDS
+            log.info("import %s can write its record again and carries on", run.id)
+            self.held = None
+        wait = self._work(run)
+        return HOLD_SECONDS if self.held is not None else wait
+
+    def _work(self, run: Run) -> float:
         if run.phase == FETCHING:
             self._fetch(run)
             return 0
@@ -588,6 +666,10 @@ class Importer:
         entry, where = lookup(client, item.ruid)
         if where:
             cloud_off(client, item.ruid, entry)
+            if item.asked_at:
+                # The download the app went away from: teddyCloud finished it.
+                self._imported(run.id, index, item, where)
+                return 0
             settled = self.clock()
             self._record(run.id,
                          lambda current: _settle_item(current.items[index], CACHED, where, settled))
@@ -601,10 +683,24 @@ class Importer:
             return 0
 
         now = self.clock()
-        if now < run.next_at:
-            return run.next_at - now
+        due = max(run.next_at, self._paced[1] if self._paced[0] == run.id else 0.0,
+                  item.asked_at + RESUME_SECONDS if item.asked_at else 0.0)
+        if now < due:
+            return due - now
 
+        # The pace and the start are written before the download: a restart
+        # in the middle of it keeps the pace and leaves teddyCloud time to
+        # finish, and a run that cannot write them asks the cloud nothing.
         started = now
+        next_at = started + run.pace.pause(self.rng)
+        self._paced = (run.id, next_at)
+
+        def asking(current: Run) -> None:
+            current.next_at = next_at
+            current.items[index].asked_at = started
+        if not self._record(run.id, asking):
+            return HOLD_SECONDS
+
         try:
             where = import_one(client, item.ruid, item.auth, sleep=self.sleep, entry=entry)
         except (TeddyCloudError, ImportProblem) as error:
@@ -618,8 +714,9 @@ class Importer:
                 target.settled_at = self.clock()
                 if isinstance(cause, Problem):
                     target.error_key, target.error_params = cause.key, cause.params
+                if getattr(cause, "key", "") == BROKE_OFF:
+                    return
                 current.streak += 1
-                current.next_at = started + current.pace.pause(self.rng)
                 if current.streak >= current.pace.max_failures and current.active:
                     current.phase = GIVEN_UP
             self._record(run.id, failed)
@@ -629,32 +726,48 @@ class Importer:
                                              added_at=self.clock()))
             return 0
 
+        self._imported(run.id, index, item, where)
+        return 0
+
+    def _imported(self, run_id: str, index: int, item: Item, where: str) -> None:
         log.info("imported %s as %s", item.path, where)
 
         def imported(current: Run) -> None:
             _settle_item(current.items[index], IMPORTED, where, self.clock())
             current.streak = 0
-            current.next_at = started + current.pace.pause(self.rng)
-        self._record(run.id, imported)
+        self._record(run_id, imported)
         if self.after_import:
             try:
                 self.after_import(item.ruid, item.path)
             except Exception:
                 log.exception("after the import of %s", item.path)
-        return 0
 
-    def _record(self, run_id: str, change: Callable[[Run], None]) -> None:
+    def _record(self, run_id: str, change: Callable[[Run], None]) -> bool:
         """Apply a result to the stored run, unless it was replaced meanwhile.
 
         A pause or stop made while a tonie was downloading is kept: only the
-        result is written into the run as it now stands.
+        result is written into the run as it now stands. Returns False when
+        the run could not be written, and holds the run (see held).
         """
         with LOCK:
             run = _load(self.data_dir)
             if run is None or run.id != run_id:
-                return
+                return True
             change(run)
-            _save(self.data_dir, run)
+            if _save(self.data_dir, run):
+                return True
+        self._hold()
+        return False
+
+    def _cannot_save(self) -> ImportProblem:
+        return ImportProblem("import.cannot_save", folder=str(self.data_dir))
+
+    def _hold(self) -> None:
+        """Ask nobody anything until the run file can be written again; see step."""
+        if self.held is None:
+            log.error("import cannot write %s; asking nobody anything until it can",
+                      self.data_dir / FILE_NAME)
+        self.held = self._cannot_save()
 
 
 def _settle_item(item: Item, state: str, where: str, when: float) -> None:

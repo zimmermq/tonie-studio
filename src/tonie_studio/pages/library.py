@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -63,7 +63,7 @@ def register(app: FastAPI, ctx: Context) -> None:
                and job.state in (JobState.QUEUED, JobState.RUNNING) for job in ctx.jobs.all()):
             raise Refused(409, "library.being_made")
         shown = set(filter(None, players.split(",")))
-        added = [tag for tag in item.played_by if tag.ruid not in shown]
+        added = [tag for tag in item.played_by + item.misspelled_by if tag.ruid not in shown]
         if added:
             raise Refused(409, "library.now_used",
                           used=", ".join(tag.label for tag in added))
@@ -148,12 +148,22 @@ def _imported(path: str) -> bool:
 
 
 def _shelve(tafs: List[Taf], tags: List[TonieTag]) -> List["Shelved"]:
-    """Each taf with its origin and the stickers that play it."""
+    """Each taf with its origin, the stickers that play it and those that only seem to.
+
+    A sticker plays a taf only when its source names the file exactly;
+    teddyCloud's file system tells the two spellings of an umlaut apart.
+    """
     users: Dict[str, List[TonieTag]] = {}
     for tag in tags:
         if tag.source:
             users.setdefault(same(tag.source), []).append(tag)
-    return [Shelved(taf, _origin(taf), users.get(same(taf.source), [])) for taf in tafs]
+    shelf = []
+    for taf in tafs:
+        naming = users.get(same(taf.source), [])
+        shelf.append(Shelved(taf, _origin(taf),
+                             [tag for tag in naming if tag.source == taf.source],
+                             [tag for tag in naming if tag.source != taf.source]))
+    return shelf
 
 
 def _origin(taf: Taf) -> str:
@@ -173,11 +183,17 @@ def _origin(taf: Taf) -> str:
 
 @dataclass
 class Shelved:
-    """A taf of the library as its page shows it: the file, its origin, who plays it."""
+    """A taf of the library as its page shows it: the file, its origin, who plays it.
+
+    ``misspelled_by`` are the stickers naming it with its umlauts spelled the
+    other way: they play nothing, but the checkup's repair points them back
+    at this file, so it is neither unused nor deleted without asking.
+    """
 
     taf: Taf
     origin: str
     played_by: List[TonieTag]
+    misspelled_by: List[TonieTag] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -198,5 +214,5 @@ class Shelved:
     @property
     def tags(self) -> List[str]:
         """What the filters match. The box's sounds are played by the box, never unused."""
-        unused = not self.played_by and self.origin != BOX
+        unused = not self.played_by and not self.misspelled_by and self.origin != BOX
         return [self.origin, UNUSED] if unused else [self.origin]

@@ -367,6 +367,71 @@ class TestRestoreOnlyAdds:
         assert cloud.tag_entries[TIERE]["nocloud"] is True
 
 
+class TestRestoreLeavesWhatChangedWhileItRan:
+    """A restore of hundreds of stickers takes minutes; the box is in use meanwhile."""
+
+    @staticmethod
+    def changing_on_the_way(backup, change):
+        """A progress callback that makes ``change`` once the restore reaches the stickers.
+
+        The restore reads every sticker before it writes the first, so this
+        is a person giving one sticker something else after that read.
+        """
+        def progress(step, done, total):
+            if done == total - len(backup.tags):
+                change()
+        return progress
+
+    def test_a_sticker_given_something_else_meanwhile_keeps_it(self, cloud, data_dir, tmp_path):
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+
+        def radio():
+            fresh.tag_entries[TIERE].update(source="http://radio.example/live", live=True)
+
+        steps = apply_restore(fresh, backup, tmp_path / "fresh-data",
+                              progress=self.changing_on_the_way(backup, radio))
+
+        assert fresh.tag_entries[TIERE]["source"] == "http://radio.example/live"
+        assert fresh.tag_entries[TIERE]["tonie_model"] == ""
+        (step,) = [step for step in steps if step.what == "tag"]
+        assert (step.action, step.note) == ("kept", "restore.note.changed_meanwhile")
+
+    def test_a_sticker_left_alone_meanwhile_is_restored(self, cloud, data_dir, tmp_path):
+        cloud.add_tag("deb4ed0e500304e0", source="http://radio.example/other")
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+        fresh.add_tag("deb4ed0e500304e0")
+
+        def other():
+            fresh.tag_entries["deb4ed0e500304e0"]["tonie_model"] = "TS-0001"
+
+        steps = apply_restore(fresh, backup, tmp_path / "fresh-data",
+                              progress=self.changing_on_the_way(backup, other))
+
+        assert fresh.tag_entries[TIERE]["source"] == cloud.tag_entries[TIERE]["source"]
+        actions = {step.name: step.action for step in steps if step.what == "tag"}
+        assert sorted(actions.values()) == ["changes", "kept"]
+
+    def test_the_sticker_is_read_again_under_the_lock(self, cloud, data_dir, tmp_path):
+        from tonie_studio.models import WRITING
+
+        backup = read_backup(create_backup(cloud, data_dir))
+        fresh = wiped(cloud)
+        reads = []
+        original = fresh.tags
+
+        def tags():
+            reads.append(WRITING._is_owned())
+            return original()
+
+        fresh.tags = tags
+
+        apply_restore(fresh, backup, tmp_path / "fresh-data")
+
+        assert reads[-1] is True
+
+
 class TestRestoreSaysHowFarItIs:
     def test_counts_every_model_cover_and_sticker_once(self, cloud, data_dir):
         backup = read_backup(create_backup(cloud, data_dir))

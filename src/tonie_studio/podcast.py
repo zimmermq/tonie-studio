@@ -374,7 +374,10 @@ def _put_on_sticker(client: TeddyCloudClient, subscription: Subscription, feed: 
         # Checked again right before writing, under the lock writes share: the
         # download and the encode took minutes, and the sticker may have been
         # given something else since, or be given it between check and write.
+        # Or the tonie was moved onto another sticker, and the subscription
+        # with it: that one is where the new episodes go.
         with WRITING:
+            _follow_move(data_dir, subscription)
             _check_sticker(client, subscription)
             return publish(
                 client, subscription.ruid, encoded, series=feed.title, episode=EPISODE_LINE,
@@ -385,6 +388,16 @@ def _put_on_sticker(client: TeddyCloudClient, subscription: Subscription, feed: 
     except Exception:
         _delete_quietly(client, encoded.target, subscription.id)
         raise
+
+
+def _follow_move(data_dir: Path, subscription: Subscription) -> None:
+    """Take on the sticker the stored subscription names now, if it was moved."""
+    with LOCK:
+        stored = next((entry for entry in _read(data_dir) if entry.id == subscription.id), None)
+    if stored is not None and stored.ruid != subscription.ruid:
+        log.info("podcast %s follows its tonie from %s to %s", subscription.id,
+                 subscription.ruid, stored.ruid)
+        subscription.ruid = stored.ruid
 
 
 def _check_sticker(client: TeddyCloudClient, subscription: Subscription) -> None:
@@ -510,17 +523,30 @@ def unsubscribe(data_dir: Path, ruid: str) -> None:
         _write(data_dir, [entry for entry in _read(data_dir) if entry.ruid != ruid])
 
 
-def update_subscription(data_dir: Path, subscription: Subscription) -> None:
-    """Store a changed subscription, but only if it still exists.
+# What a refresh changes on a subscription. The rest - the sticker, the feed,
+# how many episodes - is changed elsewhere while a refresh runs, by a move or
+# a person, and writing back the refresh's copy of it would undo that.
+REFRESHED = ("title", "model", "source", "guids", "checked", "updated",
+             "error", "error_key", "error_params")
 
-    A refresh works on its own copy for minutes. If the subscription was
-    removed meanwhile, writing that copy back would quietly undo the removal.
+
+def update_subscription(data_dir: Path, subscription: Subscription) -> None:
+    """Store what a refresh changed, but only if the subscription still exists.
+
+    A refresh works on its own copy for minutes. Only the fields it owns are
+    written onto the stored subscription, read here under the lock: writing
+    the whole copy back would undo a move of its sticker made meanwhile, and
+    every later refresh would look for a sticker that is gone. A subscription
+    removed meanwhile stays removed.
     """
     with LOCK:
         current = _read(data_dir)
-        if any(entry.id == subscription.id for entry in current):
-            _write(data_dir, [subscription if entry.id == subscription.id else entry
-                              for entry in current])
+        for entry in current:
+            if entry.id == subscription.id:
+                for name in REFRESHED:
+                    setattr(entry, name, getattr(subscription, name))
+                _write(data_dir, current)
+                return
 
 
 def _read(data_dir: Path) -> List[Subscription]:

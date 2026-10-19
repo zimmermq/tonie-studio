@@ -20,6 +20,7 @@ from ..encode import EncodeError, list_tafs
 from ..jobs import JobState
 from ..library import is_library, played, same
 from ..podcast import SERIES as PODCAST_SERIES
+from ..publishing import Outcome
 from ..tags import TonieError, list_tags
 from ..teddycloud import TeddyCloudClient, TeddyCloudError
 from .common import Context, Refused, refusing, translator
@@ -42,13 +43,21 @@ def register(app: FastAPI, ctx: Context) -> None:
     client = ctx.client
 
     def work_in_progress() -> Dict:
-        """What the checkup must not call left over: tafs jobs made or are making.
+        """What the checkup must not call left over: tafs jobs are making or made for a sticker.
 
-        Encode jobs are labelled with their target. A podcast refresh builds
-        its taf under a name only known once it runs, so while one is under
-        way the whole podcast folder is spared.
+        Encode jobs are labelled with their target. One queued or running is
+        writing it; one done whose taf is on no sticker yet waits for a person
+        to pick one. A failed encode and one already on its sticker spare
+        nothing: what is left of the first is exactly what the checkup is
+        for, and the second's taf is spared by the sticker playing it.
+
+        A podcast refresh builds its taf under a name only known once it
+        runs, so while one is under way the whole podcast folder is spared.
         """
-        busy = {job.label for job in ctx.jobs.all() if job.kind == "encode"}
+        busy = {job.label for job in ctx.jobs.all() if job.kind == "encode" and (
+            job.state in (JobState.QUEUED, JobState.RUNNING)
+            or (job.state is JobState.DONE and isinstance(job.result, Outcome)
+                and not job.result.model))}
         folders = {f"/{PODCAST_SERIES}"} if ctx.podcasts.refreshing else set()
         return {"busy": busy, "busy_folders": folders}
 
@@ -230,21 +239,26 @@ def register(app: FastAPI, ctx: Context) -> None:
             })
         run = restore_run(token)
         data = read_parked(settings.data_dir, token) if token.isalnum() else None
-        if run is None or data is None:
+        if data is None:
             raise Refused(404, "error.restore_gone")
-        backup = read_backup(data)
-        if run.state is not JobState.FAILED:
+        with refusing(BackupError):
+            backup = read_backup(data)
+        if run is not None and run.state is not JobState.FAILED:
             return templates.TemplateResponse(request, "restore.html", {
                 "running": run, "steps": [], "manifest": backup.manifest, "token": token,
                 "done": False,
             })
-        # Stopped half way: what is there is shown again, to be confirmed anew.
+        # Stopped half way, or in a process before a restart that took the run
+        # with it: the parked file is dropped only once a restore went through,
+        # so what is there is shown again, to be confirmed anew.
         return templates.TemplateResponse(request, "restore.html", {
             "steps": plan_restore(client(), backup, settings.data_dir),
             "manifest": backup.manifest,
             "token": token,
             "done": False,
-            "failed": run.problem.say(translator(request)) if run.problem else run.error,
+            "failed": (None if run is None else
+                       run.problem.say(translator(request)) if run.problem else run.error),
+            "unknown_run": run is None,
         })
 
 

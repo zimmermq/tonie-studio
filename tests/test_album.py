@@ -480,3 +480,45 @@ class TestReadingRealTags:
         (tmp_path / "01.flac").write_bytes(b"not audio")
 
         assert _read_tags(tmp_path / "01.flac") is None
+
+
+class TestDiscs:
+    """A release split into disc folders: each disc is an album of its own, and says which."""
+
+    @pytest.mark.parametrize("folder", ["CD1", "cd 2", "Disc_3", "disk-4", "CD02"])
+    def test_a_disc_folder_is_known_by_its_name(self, folder):
+        from tonie_studio.album import disc_number
+
+        assert disc_number(folder) == int(folder[-1])
+
+    @pytest.mark.parametrize("folder", ["CDs", "Folge 1", "Abcd1", "CD", "Teil 2"])
+    def test_other_folders_are_no_discs(self, folder):
+        from tonie_studio.album import disc_number
+
+        assert disc_number(folder) is None
+
+    def test_tagged_discs_name_the_disc_after_the_album(self, tmp_path, tags):
+        first = _album(tmp_path, "Bobo-Gute Nacht-WEB-2020/CD1", ["01-a.flac"])
+        second = _album(tmp_path, "Bobo-Gute Nacht-WEB-2020/CD2", ["01-b.flac"])
+        tags["01-a.flac"] = TrackTags(album="Gute Nacht", albumartist="Bobo", date="2020")
+        tags["01-b.flac"] = TrackTags(album="Gute Nacht", albumartist="Bobo", date="2020")
+
+        titles = [read_album(first).title, read_album(second).title]
+        listed = [summary.title for summary in list_albums(tmp_path)]
+
+        assert titles == listed == ["Gute Nacht (CD 1)", "Gute Nacht (CD 2)"]
+
+    def test_untagged_discs_read_the_release_from_the_folder_above(self, tmp_path, tags):
+        disc = _album(tmp_path, "Lichterkinder-Schlaflieder-WEB-FLAC-2021-WALKMAN/CD2",
+                      ["01-a.flac"])
+
+        album = read_album(disc)
+
+        assert (album.title, album.artist, album.year) == (
+            "Schlaflieder (CD 2)", "Lichterkinder", "2021")
+
+    def test_a_title_that_names_its_disc_already_keeps_it(self, tmp_path, tags):
+        disc = _album(tmp_path, "Album/CD2", ["01-a.flac"])
+        tags["01-a.flac"] = TrackTags(album="Gute Nacht CD 2", albumartist="Bobo")
+
+        assert read_album(disc).title == "Gute Nacht CD 2"

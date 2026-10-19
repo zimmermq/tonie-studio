@@ -551,6 +551,88 @@ class TestRecognisingTonies:
         assert "TS-0042" not in client.get("/batch", params={"ids": [identifier]}).text
 
 
+class TestRecognisingWritesNothing:
+    """A tonie recognised by its tracks is shown, and written down only once one is made."""
+
+    def _album_with(self, client, folder, *names):
+        files = [("files", (f"{folder}/{n:02d}-{name}.mp3", bytes([n]) * 8, "audio/mpeg"))
+                 for n, name in enumerate(names, 1)]
+        response = client.post("/upload", files=files, follow_redirects=False)
+        return response.headers["location"].split("ids=")[1]
+
+    def test_opening_the_batch_page_records_nothing(self, client, teddycloud, settings):
+        # Opening a page is no decision: a guess saved here stays for good,
+        # marks the album done and hides it.
+        from tonie_studio.albumnotes import made
+
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+                                        "tracks": ["Der Tee", "Immer muss ich", "Sommer lang"]})
+        identifier = self._album_with(client, "Neu/Album", "der_tee", "immer_muss_ich",
+                                      "sommer_lang")
+
+        page = client.get("/batch", params={"ids": [identifier]}).text
+
+        assert "TS-0042" in page
+        assert made(settings.data_dir) == {}
+
+    def test_two_albums_with_the_same_tracks_are_neither_taken_for_the_tonie(self, client,
+                                                                             teddycloud):
+        # Two editions with identical track names: the tonie is one of them,
+        # and which one the track list cannot tell. Hiding the wrong one
+        # would keep it from ever being made.
+        teddycloud.upsert_custom_tonie({"model": "TS-0042", "series": "S", "episodes": "E",
+                                        "tracks": ["Der Tee", "Immer muss ich", "Sommer lang"]})
+        first = self._album_with(client, "Neu/Eins", "der_tee", "immer_muss_ich", "sommer_lang")
+        second = self._album_with(client, "Neu/Zwei", "der_tee", "immer_muss_ich", "sommer_lang")
+
+        page = client.get("/batch", params={"ids": [first, second]}).text
+
+        assert "TS-0042" not in page
+
+    def test_a_rebuilt_tonie_records_the_album_it_was_made_from(self, client, runner, teddycloud,
+                                                                settings):
+        from tonie_studio.albumnotes import made
+        from tonie_studio.albumnotes import forget_model
+
+        publish_album(client, runner, teddycloud)
+        entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
+        teddycloud.files.pop("/" + entry["source"].split("lib://", 1)[1])
+        model = entry["tonie_model"]
+        # Known by its tracks only, as a tonie made before the records were.
+        forget_model(settings.data_dir, model)
+        album = first_album_id(client)
+
+        run_batch(client, runner, [album])
+
+        assert made(settings.data_dir) == {album: [model]}
+
+
+class TestDiscsOfOneRelease:
+    """A release split into CD1 and CD2: two rows that say which disc, two tafs, both made."""
+
+    def upload(self, client):
+        files = [("files", (f"Gute Nacht/CD{disc}/0{n}-lied{disc}{n}.mp3", bytes([disc, n]) * 8,
+                            "audio/mpeg")) for disc in (1, 2) for n in (1, 2)]
+        return batch_ids(client.post("/upload", files=files, follow_redirects=False))
+
+    def test_each_disc_is_its_own_row_with_its_own_target(self, client):
+        ids = self.upload(client)
+
+        page = client.get("/batch", params={"ids": ids}).text
+
+        assert 'value="Gute Nacht (CD 1)"' in page and 'value="Gute Nacht (CD 2)"' in page
+        targets = re.findall(r'data-target="([^"]+)"', page)
+        assert len(targets) == len(set(targets)) == 2
+
+    def test_both_discs_are_made(self, client, runner, teddycloud):
+        ids = self.upload(client)
+
+        run_batch(client, runner, ids, series="Serie")
+
+        sources = sorted(entry["source"] for entry in teddycloud.tag_entries.values())
+        assert sources == ["lib://Serie/Gute Nacht (CD 1).taf", "lib://Serie/Gute Nacht (CD 2).taf"]
+
+
 class TestLoadingHint:
     def test_choosing_albums_says_it_is_reading_them(self, client):
         page = client.get("/").text

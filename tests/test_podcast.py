@@ -674,3 +674,55 @@ class TestSubscriptionIdsAreNames:
         apply_restore(cloud, read_backup(data.getvalue()), target)
 
         assert load_subscriptions(target) == []
+
+
+class TestMovingTheStickerDuringARefresh:
+    """A refresh works for minutes on its own copy; the tonie can be moved meanwhile."""
+
+    OTHER = "e00403500000ffff"
+
+    def test_writing_back_the_refresh_keeps_the_sticker_it_moved_to(self, tmp_path, subscription):
+        from tonie_studio.podcast import move_subscriptions, update_subscription
+
+        add_subscription(tmp_path, subscription)
+        running_copy = load_subscriptions(tmp_path)[0]
+        move_subscriptions(tmp_path, RUID, self.OTHER)
+
+        running_copy.updated = "2026-10-03"
+        update_subscription(tmp_path, running_copy)
+
+        stored = load_subscriptions(tmp_path)[0]
+        assert (stored.ruid, stored.updated) == (self.OTHER, "2026-10-03")
+
+    def test_the_new_episodes_go_onto_the_sticker_it_moved_to(self, cloud, tmp_path):
+        from tonie_studio.jobs import JobRunner
+        from tonie_studio.podcast import PodcastUpdater, move_subscriptions
+        from tonie_studio.tonie import move_tag
+
+        cloud.add_tag(self.OTHER)
+        first = Subscription(id="kakadu", feed="https://example.org/feed.xml", ruid=RUID, keep=2)
+        refresh(cloud, first, tmp_path, now=NOW, fetch=FakeWeb())
+        add_subscription(tmp_path, first)
+        runner = JobRunner()
+        web = {"now": FakeWeb()}
+        updater = PodcastUpdater(lambda: cloud, tmp_path, runner,
+                                 lambda url, limit=None: web["now"](url, limit))
+
+        class MovedMeanwhile(FakeWeb):
+            def __call__(self, url, limit=None):
+                if url.endswith("ep4.mp3") and RUID in cloud.tag_entries:
+                    move_tag(cloud, RUID, TestMovingTheStickerDuringARefresh.OTHER)
+                    move_subscriptions(tmp_path, RUID, TestMovingTheStickerDuringARefresh.OTHER)
+                return super().__call__(url, limit)
+
+        web["now"] = MovedMeanwhile(newer().replace(b"ep3.mp3", b"ep4.mp3"))
+        assert runner.get(updater.queue("kakadu")).done.wait(5)
+        runner.shutdown()
+
+        stored = load_subscriptions(tmp_path)[0]
+        assert stored.ruid == self.OTHER
+        assert not stored.error_key and not stored.error
+        assert RUID not in cloud.tag_entries
+        playing = cloud.tag_entries[self.OTHER]["source"]
+        assert playing == stored.source and "/" + playing[len("lib://"):] in cloud.files
+        assert stored.guids == ["ep-4", "ep-2"]

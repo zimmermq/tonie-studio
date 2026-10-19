@@ -3,7 +3,10 @@
 Every record the app keeps beside teddyCloud is a note rather than a source of
 truth: losing one costs a detail on a page, never a working tonie. So reading
 never raises - a missing or damaged file reads as the default - and a failed
-write is logged rather than allowed to break the request that made it.
+write is logged rather than allowed to break the request that made it. The
+few callers that must not carry on without their record, such as the import
+run, which would otherwise repeat work it cannot note as done, check what
+write_json returns.
 """
 
 from __future__ import annotations
@@ -92,11 +95,13 @@ def from_record(cls: Type[T], record: Mapping) -> T:
     return cls(**{key: value for key, value in record.items() if key in known})
 
 
-def write_json(path: Path, value: Any) -> None:
+def write_json(path: Path, value: Any) -> bool:
     """Replace the file in one step, so a crash leaves the old one whole.
 
     Readable by this app's user only: a running import keeps each dump's cloud
     token in its record, and a GitHub token while it reads the repository.
+    Returns whether the file now holds ``value``; a failure is logged, never
+    raised, and leaves the old file as it was.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,6 +115,8 @@ def write_json(path: Path, value: Any) -> None:
         scratch.replace(path)
     except OSError as error:
         log.warning("cannot store %s: %s", path, error)
+        return False
+    return True
 
 
 def sweep(folder: Path, pattern: str, older_than: float) -> None:

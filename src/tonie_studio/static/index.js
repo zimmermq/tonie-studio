@@ -88,7 +88,16 @@ for (const input of pickers) {
 // Sent by hand rather than by the form, so the page can say how far it is: a
 // folder of FLACs takes minutes, and a page that shows nothing meanwhile gets
 // the button pressed again. The server answers with where to go next, the
-// batch page; a refusal comes as its page, which is shown as it is.
+// batch page; a refusal comes as its page, whose message is shown here, on
+// the album list. Writing that page over this one would run app.js a second
+// time, whose top-level names then clash and stop every script on it, and
+// leave no history entry, so "back" would skip the album list as well.
+const refusal = document.getElementById('refusal');
+function refusedWith(text) {
+  const page = new DOMParser().parseFromString(text, 'text/html');
+  const message = page.querySelector('main > .warn');
+  return message && message.textContent.trim() ? message.textContent.trim() : words['upload.failed'];
+}
 form.addEventListener('submit', event => {
   event.preventDefault();
   const request = new XMLHttpRequest();
@@ -98,6 +107,7 @@ form.addEventListener('submit', event => {
     picked.textContent = words['upload.failed'];
     send.disabled = false;
   };
+  refusal.hidden = true;
   request.open('POST', form.action || '/upload');
   request.setRequestHeader('X-Upload', '1');
   request.upload.onprogress = progress => {
@@ -111,9 +121,10 @@ form.addEventListener('submit', event => {
       location.href = JSON.parse(request.responseText).next;
       return;
     }
-    document.open();
-    document.write(request.responseText);
-    document.close();
+    refusal.textContent = refusedWith(request.responseText);
+    refusal.hidden = false;
+    picked.textContent = words['upload.failed'];
+    send.disabled = false;
   };
   request.onerror = failed;
   send.disabled = true;

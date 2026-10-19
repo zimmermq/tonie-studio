@@ -710,6 +710,74 @@ class TestRemoveTonie:
         assert playing_times(tmp_path) == {} and albums_made(tmp_path) == {}
 
 
+class TestRemovingAnOfficialTonie:
+    """An official tonie's audio came from the Tonies cloud: nothing here can make it again."""
+
+    def test_audio_cached_beside_the_content_json_is_deleted_too(self, tmp_path, teddycloud):
+        # teddyCloud keeps a real tonie's audio there without giving it a
+        # source, and names the sticker after that audio again however
+        # often its model is emptied: the sticker would never be free.
+        from tonie_studio.tonie import plan_removal, remove_tonie
+
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(tonie_model="10000001", exists=True)
+        teddycloud.files["/7AB4ED0E/500304E0"] = b"taf"
+
+        planned = plan_removal(teddycloud, "7ab4ed0e500304e0")
+        removal = remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
+
+        assert planned.cached == removal.cached == "/7AB4ED0E/500304E0"
+        assert planned.lost and removal.lost
+        assert "/7AB4ED0E/500304E0" not in teddycloud.files
+        # The sticker itself stays known, only emptied.
+        assert teddycloud.tag_entries["7ab4ed0e500304e0"]["tonie_model"] == ""
+
+    def test_a_sticker_without_cached_audio_deletes_nothing_beside_it(self, tmp_path, teddycloud):
+        from tonie_studio.tonie import plan_removal
+
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(tonie_model="10000001")
+
+        planned = plan_removal(teddycloud, "7ab4ed0e500304e0")
+
+        assert planned.cached is None and not planned.lost
+
+    def test_audio_fetched_into_the_library_is_lost_with_it(self, tmp_path, teddycloud):
+        from tonie_studio.tonie import plan_removal
+
+        teddycloud.dirs.update({"/by", "/by/audioID"})
+        teddycloud.files["/by/audioID/1786524025.taf"] = b"taf"
+        teddycloud.tag_entries["7ab4ed0e500304e0"].update(
+            source="lib://by/audioID/1786524025.taf", tonie_model="10000001")
+
+        planned = plan_removal(teddycloud, "7ab4ed0e500304e0")
+
+        assert planned.taf == "/by/audioID/1786524025.taf" and planned.lost
+
+    def test_audio_made_here_is_not_called_lost(self, tmp_path, teddycloud, encoded):
+        from tonie_studio.tonie import plan_removal
+
+        publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E", tracks=["a"])
+
+        assert not plan_removal(teddycloud, "7ab4ed0e500304e0").lost
+
+
+class TestRemovingATonieNamingTheOtherSpelling:
+    def test_deletes_the_file_under_the_name_the_library_lists(self, tmp_path, teddycloud):
+        # The sticker names the decomposed spelling, the library holds the
+        # composed one: deleting the sticker's spelling is refused by
+        # teddyCloud, after the sticker was already emptied.
+        from tonie_studio.tonie import plan_removal, remove_tonie
+
+        teddycloud.create_dir("/Lichterkinder")
+        teddycloud.files["/Lichterkinder/B\u00e4renlied.taf"] = b"taf"
+        teddycloud.tag_entries["7ab4ed0e500304e0"]["source"] = "lib://Lichterkinder/Ba\u0308renlied.taf"
+
+        planned = plan_removal(teddycloud, "7ab4ed0e500304e0")
+        remove_tonie(teddycloud, "7ab4ed0e500304e0", tmp_path)
+
+        assert planned.taf == "/Lichterkinder/B\u00e4renlied.taf"
+        assert "/Lichterkinder/B\u00e4renlied.taf" not in teddycloud.files
+
+
 class TestTrackNamesKeepTheirChapters:
     def test_a_track_without_a_name_keeps_its_place(self, teddycloud, encoded):
         publish(teddycloud, "7ab4ed0e500304e0", encoded, series="S", episode="E",
