@@ -62,7 +62,7 @@ class TestGeometry:
         assert layout.picture_mm < layout.pitch_mm
 
     def test_the_printed_size_follows_the_bleed(self):
-        assert (SHEET.picture_mm, PUNCH.picture_mm) == (48, 46.5)
+        assert (SHEET.picture_mm, PUNCH.picture_mm) == (48, 48.5)
 
 
 class TestPunchLayout:

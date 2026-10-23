@@ -137,8 +137,10 @@ SHEET = Layout("sheet", diameter_mm=46, bleed_mm=1, columns=4, rows=5, pitch_mm=
 # 5.75 mm around the circle is what the punch holds while it cuts, and what a
 # hand holds while centring the square by eye; a narrower one tears or bends.
 # Squares share their edges, so one cut parts two of them. 3 by 5 is what
-# fits on A4 with that frame.
-PUNCH = Layout("punch", diameter_mm=44.5, bleed_mm=1, columns=3, rows=5, pitch_mm=56,
+# fits on A4 with that frame. The square is centred under the punch by eye,
+# so the picture reaches 2 mm past the cut: a punch that sits a little off
+# still cuts through the picture. The frame leaves room for more.
+PUNCH = Layout("punch", diameter_mm=44.5, bleed_mm=2, columns=3, rows=5, pitch_mm=56,
                cut=CUT_SQUARES)
 
 LAYOUTS = {layout.key: layout for layout in (SHEET, PUNCH)}
