@@ -28,6 +28,7 @@ import io
 import logging
 import os
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
@@ -301,6 +302,12 @@ def back_lines(back: Back, with_tracks: bool = True, layout: Layout = SHEET) -> 
     """
     width = text_width_mm(layout) * mm
     height = width
+    # Names from macOS files spell an umlaut as the letter plus a combining
+    # mark, which the built-in PDF fonts print as the letter and a box, and
+    # which measures as two characters. Composed, they print and measure right.
+    back = Back(title=composed(back.title), series=composed(back.series),
+                notes=[composed(note) for note in back.notes],
+                tracks=[composed(track) for track in back.tracks], language=back.language)
 
     head: List[TextLine] = []
     head += [TextLine(line, TITLE_PT, bold=True)
@@ -331,6 +338,15 @@ def back_lines(back: Back, with_tracks: bool = True, layout: Layout = SHEET) -> 
             return lines if keep else head
 
     return head
+
+
+def composed(text: str) -> str:
+    """The text with every letter and its combining marks joined into one character.
+
+    The built-in PDF fonts know a composed umlaut but print a combining mark
+    on its own as a box, so text bound for the PDF goes through here first.
+    """
+    return unicodedata.normalize("NFC", text or "")
 
 
 def distinct_tracks(tracks: Sequence[str]) -> List[str]:

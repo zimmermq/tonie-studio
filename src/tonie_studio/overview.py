@@ -22,7 +22,7 @@ from reportlab.pdfgen import canvas
 
 from .pictures import PICTURE_ERRORS
 from .i18n import DEFAULT, Translator
-from .sheet import CUT_LINE_GREY, FILL, font_name, render_square, wrap_text
+from .sheet import CUT_LINE_GREY, FILL, composed, font_name, render_square, wrap_text
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +103,14 @@ def _entry(sheet: canvas.Canvas, entry: Entry, left: float, top: float,
     text_left = left + cover + GAP_MM * mm
     text_width = width - cover - 2 * GAP_MM * mm
 
-    lines = [(line, TITLE_PT, True)
-             for line in wrap_text(entry.title, TITLE_PT, True, text_width)[:MOST_TITLE_LINES]]
+    title = wrap_text(composed(entry.title), TITLE_PT, True, text_width)
+    lines = [(line, TITLE_PT, True) for line in title[:MOST_TITLE_LINES]]
     if entry.series:
         lines += [(line, SERIES_PT, False)
-                  for line in wrap_text(entry.series, SERIES_PT, False, text_width)[:1]]
+                  for line in wrap_text(composed(entry.series), SERIES_PT, False, text_width)[:1]]
     for fact in entry.facts:
-        lines += [(line, FACT_PT, False) for line in wrap_text(fact, FACT_PT, False, text_width)[:1]]
+        lines += [(line, FACT_PT, False)
+                  for line in wrap_text(composed(fact), FACT_PT, False, text_width)[:1]]
 
     # The block is centred beside the cover, so a short entry does not sit at
     # the top of its row with empty space below.

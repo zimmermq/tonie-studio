@@ -247,6 +247,19 @@ class TestBackSide:
 
         assert any(line.text.startswith("and ") and line.text.endswith(" more") for line in lines)
 
+    def test_composes_umlauts_written_as_letter_and_mark(self):
+        # File names from macOS spell "ue" as u followed by a combining
+        # diaeresis (U+0308), which the PDF font has no glyph for: it printed
+        # as a box after the letter.
+        from tonie_studio.sheet import Back, back_lines
+
+        lines = back_lines(Back(title="Fu\u0308r Kinder", series="Lichterkinder",
+                                notes=["Ku\u0308rbis"], tracks=["Su\u0308\u00dfes oder Saures!"]))
+        text = " ".join(line.text for line in lines)
+
+        assert "\u0308" not in text
+        assert "F\u00fcr" in text and "K\u00fcrbis" in text and "S\u00fc\u00dfes" in text
+
     def test_leaves_the_tracks_out_when_they_are_not_wanted(self):
         from tonie_studio.sheet import Back, back_lines
 

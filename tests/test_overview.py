@@ -63,6 +63,28 @@ class TestOverview:
 
         assert target.read_bytes().startswith(b"%PDF")
 
+    def test_composes_umlauts_written_as_letter_and_mark(self, tmp_path):
+        # Album names from macOS folders spell "ue" as u followed by a combining
+        # diaeresis (U+0308), which the PDF font prints as the letter and a box.
+        from unittest.mock import patch
+
+        from reportlab.pdfgen.canvas import Canvas
+
+        drawn = []
+        original = Canvas.drawString
+
+        def capture(self, x, y, text, *args, **kwargs):
+            drawn.append(text)
+            return original(self, x, y, text, *args, **kwargs)
+
+        with patch.object(Canvas, "drawString", capture):
+            build_overview([Entry(image=None, title="Ku\u0308rbis", series="Gru\u0308\u00dfe",
+                                  facts=["Su\u0308\u00dfes"])], tmp_path / "overview.pdf")
+
+        text = " ".join(drawn)
+        assert "\u0308" not in text
+        assert "K\u00fcrbis" in text and "Gr\u00fc\u00dfe" in text and "S\u00fc\u00dfes" in text
+
     def test_nothing_to_list_is_refused(self, tmp_path):
         import pytest
 
