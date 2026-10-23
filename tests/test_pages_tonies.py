@@ -367,6 +367,20 @@ class TestLibraryPage:
 
         assert 'data-language="de"' in page
 
+    def test_a_taf_teddycloud_has_no_picture_for_shows_the_sticker_playing_it(self, client,
+                                                                               teddycloud):
+        # Audio teddyCloud cannot match by its audio id has no picture of its
+        # own; the sticker playing it, an official tonie, has one. The row
+        # already borrows that sticker's name.
+        picture = "/cache/" + "EF" * 32 + ".png"
+        self.imported(teddycloud, info={"model": "", "series": "", "episode": ""}, ruid="")
+        teddycloud.add_tag("11dfc517500304e0", source="lib://by/audioID/1636444326.taf",
+                           tonie_model="10000681", picture=picture)
+
+        shown = self.row(client.get("/library").text, "/by/audioID/1636444326.taf")
+
+        assert "/cover/cache/" + "EF" * 32 + ".png" in shown
+
     def test_says_where_each_taf_comes_from_and_whether_it_is_used(self, client, runner,
                                                                   teddycloud):
         publish_album(client, runner, teddycloud)

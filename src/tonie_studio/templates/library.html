@@ -14,7 +14,7 @@
 
 {% block row %}
 {%- set taf = item.taf %}
-{%- set picture = taf.picture | cover_url(false, 96) %}
+{%- set picture = item.picture | cover_url(false, 96) %}
 {%- set players = (item.played_by + item.misspelled_by) | map(attribute="label") | join(", ") %}
 <div class="listing-row" data-path="{{ taf.path }}" data-tags="{{ item.tags | join(' ') }}" data-language="{{ item.language }}"
      data-name="{{ item.label | lower }}" data-origin="{{ t('library.origin.' ~ item.origin) | lower }}"

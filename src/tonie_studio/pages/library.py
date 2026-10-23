@@ -17,7 +17,7 @@ from ..languages import NONE, chosen, offered as offered_languages, spoken
 from ..library import safe_library_path, same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
-from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING, list_models
+from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING, cover_url, list_models
 from ..tags import TonieError, TonieTag, list_tags, require_tag
 from ..tags import label as tag_label
 from ..times import from_seconds
@@ -224,6 +224,18 @@ class Shelved:
         """
         return (tag_label(self.taf.series, self.taf.episode)
                 or (self.played_by[0].label if self.played_by else "") or self.taf.name)
+
+    @property
+    def picture(self) -> str:
+        """The audio's own picture, else that of the sticker playing it, as with the label.
+
+        Audio teddyCloud cannot match by its audio id has no picture of its
+        own, while the official tonie playing it has one.
+        """
+        if cover_url(self.taf.picture, False):
+            return self.taf.picture
+        return next((tag.picture for tag in self.played_by if cover_url(tag.picture, False)),
+                    self.taf.picture)
 
     @property
     def added(self) -> Optional[datetime]:
