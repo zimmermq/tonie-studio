@@ -88,6 +88,18 @@ SETS = [
     {"model": "11004634", "series": "Wuselwesen", "episodes": "Wuselwesen Set", "language": "de-de",
      "tracks": ["Insekten & Bienen", "Luft & Elektrizität"]},
     {"model": "10007777", "series": "Sunset", "episodes": "Sunset", "language": "de-de"},
+    {"model": "11004170", "series": "Bluey", "episodes": "Multipack - Bluey, Bingo, Muffin",
+     "title": "Bluey - Multipack - Bluey, Bingo, Muffin", "language": "en-gb",
+     "tracks": ["Bingo: INTRO", "Bingo: EPISODE - The Dump", "Muffin: INTRO",
+                "Muffin: EPISODE - Muffin Cone", "Bluey: INTRO", "Bluey: EPISODE - Grannies"]},
+    {"model": "11000710", "series": "Clever Tonies Set", "episodes": "Inventions and Innovation",
+     "title": "Clever Tonies Set - Inventions and Innovation", "language": "en-us", "tracks": []},
+    {"model": "11004172", "series": "Bluey Tonies 3 Pack", "episodes": None,
+     "title": "Bluey Tonies 3 Pack - None", "language": "en-gb"},
+    {"model": "11003830", "series": "Ocean My First Tonies Set", "episodes": "3 Pack",
+     "title": "Ocean My First Tonies Set - 3 Pack", "language": "en-us", "tracks": []},
+    {"model": "09-0009", "series": "Creative-Tonie", "episodes": "Purple White with Star (Starter Set)",
+     "title": "Creative-Tonie - Purple White with Star (Starter Set)", "language": "en-us"},
 ]
 
 
@@ -98,6 +110,29 @@ class TestSets:
         assert self.catalog.is_set("11000801") and self.catalog.is_set("11004634")
         assert not self.catalog.is_set("10007777")
         assert not self.catalog.is_set("TS-0001")
+
+    def test_a_multipack_a_pack_of_several_and_a_series_called_a_set_are_sets(self):
+        assert self.catalog.is_set("11004170")
+        assert self.catalog.is_set("11004172")
+        assert self.catalog.is_set("11000710")
+
+    def test_a_starter_set_is_one_figure_with_extras_not_a_set(self):
+        assert not self.catalog.is_set("09-0009")
+
+    def test_a_figure_of_a_series_called_a_set_is_named_after_the_sets_episode(self):
+        name = self.catalog.figure("English/Clever Tonies Set/Inventions/Flight.nfc", "11000710")
+
+        assert (name.series, name.episode) == ("Inventions and Innovation", "Flight")
+
+    def test_a_set_name_on_both_sides_keeps_the_series(self):
+        name = self.catalog.figure("English/Ocean/Whale.nfc", "11003830")
+
+        assert (name.series, name.episode) == ("Ocean My First Tonies Set", "Whale")
+
+    def test_a_multipack_figure_is_named_after_its_file_when_many_tracks_match(self):
+        name = self.catalog.figure("English/Bluey/Bingo.nfc", "11004170")
+
+        assert (name.series, name.episode) == ("Bluey", "Bingo")
 
     def test_a_figure_takes_the_track_it_matches_and_the_sets_cover(self):
         name = self.catalog.figure("Tolle Berufe/1 Tierfotografie - Wilde Natur.nfc", "11000801")

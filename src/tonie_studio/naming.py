@@ -67,8 +67,18 @@ LIBRARY_SOURCE = "lib://"
 # The prefix of the models an earlier command-line tool made for imported tonies.
 OLD_PREFIX = "NFC-"
 
-# "Tolle Berufe - Set", "Wuselwesen Set", with an en dash too; not "Sunset".
-SET_SUFFIX = re.compile(r"(^|[\s\-\u2013])set\s*$", re.IGNORECASE)
+# What names a product of several figures: "Tolle Berufe - Set", "Clever Tonies
+# Set", "Multipack", "3 Pack"; a whole word, so not "Sunset". The cost: a single
+# tonie whose title uses "set" as a word ("Set Sail") counts as a set and gets a
+# model of its own, named after its dump, instead of the official one.
+SET_WORDS = re.compile(r"\bset\b|\bmulti-?pack\b|\b\d+[\s-]?pack\b", re.IGNORECASE)
+# One figure sold with extras: a Creative-Tonie's "(Starter Set)".
+STARTER_SET = re.compile(r"\bstarter[\s-]?set\b", re.IGNORECASE)
+
+
+def names_a_set(text: Optional[str]) -> bool:
+    """Whether ``text``, a catalogue series, episode or title, names a product of several figures."""
+    return bool(text and SET_WORDS.search(text) and not STARTER_SET.search(text))
 
 # What a step does to a tonie.
 OFFICIAL = "official"  # link to the catalogue's model
@@ -148,7 +158,7 @@ class Catalog:
 
     def is_set(self, model_id: str) -> bool:
         entry = self.by_model.get(model_id) or {}
-        return any(SET_SUFFIX.search(entry.get(key) or "") for key in ("episodes", "title"))
+        return any(names_a_set(entry.get(key)) for key in ("series", "episodes", "title"))
 
     def is_stub(self, model_id: str) -> bool:
         return model_id in self.by_model and not self.by_model[model_id].get("series")
@@ -167,6 +177,10 @@ class Catalog:
         """
         entry = self.by_model[set_model]
         series = entry.get("series") or ""
+        # "Clever Tonies Set - Inventions and Innovation" is a range of sets,
+        # whose episode names the set the figure belongs to.
+        if names_a_set(series) and entry.get("episodes") and not names_a_set(entry["episodes"]):
+            series = entry["episodes"]
         dump = PurePosixPath(path)
         stem = norm(dump.stem)
         found = []
