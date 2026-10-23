@@ -52,6 +52,55 @@ class TestLookup:
         assert info.picture == "https://images.example.com/10001924.png"
         assert info.description == "<b>Das Original</b>Zoo."
 
+    def test_takes_the_picture_of_the_figure_alone(self, tmp_path):
+        # The shop shows a product in four pictures: the figure with the CD
+        # cover first, the figure alone, the cover alone, the figure on a box.
+        # A tonie's picture is the figure, as most catalogue pictures are.
+        base = "https://images.example.com/BOX10002002"
+        alone = product("10002002", "Ein Fest f\u00fcr die Waldfreunde")
+        alone["images"] = [{"url": f"{base}_3_f-e_H.png"}, {"url": f"{base}_1_a-PkB.png"},
+                           {"url": f"{base}_4_r-zpb.png"}, {"url": f"{base}_2_a-hTx.png"}]
+        alone["firstImage"] = alone["images"][0]
+
+        info = Shop(tmp_path, fetch=Api([alone])).lookup("10002002")
+
+        assert info.picture == f"{base}_1_a-PkB.png"
+
+    def test_of_two_pictures_takes_the_first_whatever_its_name(self, tmp_path):
+        # A product shown twice shows the figure alone, then on a box. The
+        # names are not to be trusted here: some products call the box "_1_a".
+        base = "https://images.example.com/BOX11001072"
+        two = product("11001072", "Der kleine Drache Kokosnuss feiert Weihnachten")
+        two["images"] = [{"url": f"{base}_2_a-8hi.png"}, {"url": f"{base}_1_a-fTa.png"}]
+        two["firstImage"] = two["images"][0]
+
+        info = Shop(tmp_path, fetch=Api([two])).lookup("11001072")
+
+        assert info.picture == f"{base}_2_a-8hi.png"
+
+    def test_an_answer_kept_before_the_figure_was_chosen_is_asked_again(self, tmp_path):
+        # Kept answers otherwise last for good; one stored while the first
+        # picture was taken would keep the figure beside its CD cover.
+        import json
+
+        (tmp_path / "shop.json").write_text(json.dumps({"10001924": {
+            "sales_id": "10001924", "name": "Madagascar", "picture": "old.png"}}))
+        api = Api([MADAGASCAR])
+
+        info = Shop(tmp_path, fetch=api).lookup("10001924")
+        Shop(tmp_path, fetch=api).lookup("10001924")
+
+        assert info.picture == "https://images.example.com/10001924.png"
+        assert len(api.asked) == 1
+
+    def test_without_a_picture_of_the_figure_alone_takes_the_first(self, tmp_path):
+        other = product("10000001", "Madagascar")
+        other["images"] = [{"url": "https://images.example.com/packshot.png"}]
+
+        info = Shop(tmp_path, fetch=Api([other])).lookup("10000001")
+
+        assert info.picture == "https://images.example.com/10000001.png"
+
     def test_asks_by_article_number_in_the_german_shop(self, tmp_path):
         api = Api([MADAGASCAR])
 

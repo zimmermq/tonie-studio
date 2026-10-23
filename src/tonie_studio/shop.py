@@ -46,6 +46,10 @@ FILE_NAME = "shop.json"
 
 # How long a tonie the shop does not know is left alone before asking again.
 MISS_DAYS = 30
+# Which way of reading an answer a kept one was read with. An answer kept
+# under an older one is asked for again: until 2 the picture was the shop's
+# first, the figure beside its CD cover, rather than the figure alone.
+RECORD = 2
 
 # A search for a word of the name returns this many products at most. The
 # service matches any word anywhere, also in descriptions, so the ranking
@@ -128,6 +132,25 @@ def _queries(words: List[str]) -> List[str]:
     return queries[:SEARCH_REQUESTS]
 
 
+# The shop names a product's pictures after their content: "_1_a" is the
+# figure alone. The first picture shows the figure beside its CD cover, others
+# the cover alone or the figure on a Toniebox. A product with only two pictures
+# shows the figure alone first, then on a box, and there the names are not
+# reliable: some call the box picture "_1_a". Its order is trusted instead.
+_FIGURE_ALONE = re.compile(r"_1_a[-.]")
+
+
+def _figure_picture(product: Dict[str, Any]) -> str:
+    """The picture of the figure alone, as a tonie's picture is, else the shop's first one."""
+    urls = [(image or {}).get("url") or "" for image in product.get("images") or []]
+    if len(urls) == 2 and urls[0]:
+        return urls[0]
+    for url in urls:
+        if _FIGURE_ALONE.search(url.rsplit("/", 1)[-1]):
+            return url
+    return (product.get("firstImage") or {}).get("url") or ""
+
+
 def info_from(document: Dict[str, Any]) -> ShopInfo:
     """A product as the shop's search answers it, reduced to what a page shows."""
     product = document.get("_source", document)
@@ -139,7 +162,7 @@ def info_from(document: Dict[str, Any]) -> ShopInfo:
         url=f"{BASE}{path}" if path.startswith("/") else "",
         name=product.get("name") or "",
         series=(product.get("series") or {}).get("name") or "",
-        picture=(product.get("firstImage") or {}).get("url") or "",
+        picture=_figure_picture(product),
         description=clean_description(product.get("description") or ""),
         age_min=product.get("ageMin"),
         minutes=product.get("runTime"),
@@ -239,7 +262,7 @@ class Shop:
         ask = []
         for sales_id in dict.fromkeys(sales_id for sales_id in sales_ids if sales_id):
             kept = known.get(sales_id)
-            if isinstance(kept, dict) and kept.get("sales_id"):
+            if isinstance(kept, dict) and kept.get("sales_id") and kept.get("record") == RECORD:
                 found[sales_id] = from_record(ShopInfo, kept)
             elif not (isinstance(kept, dict)
                       and self.clock() - kept.get("missed", 0) < MISS_DAYS * 86400):
@@ -265,7 +288,8 @@ class Shop:
         if answers:
             with changing_json(self.data_dir / FILE_NAME, {}) as known:
                 for sales_id, info in answers.items():
-                    known[sales_id] = asdict(info) if info else {"missed": self.clock()}
+                    known[sales_id] = (dict(asdict(info), record=RECORD) if info
+                                       else {"missed": self.clock()})
             found.update({sales_id: info for sales_id, info in answers.items() if info})
         return found
 

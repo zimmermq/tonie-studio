@@ -120,9 +120,12 @@ def known_to_the_shop(settings, **ages):
     """What the shop said earlier, kept beside the app's data: its age per article number."""
     import json
 
+    from tonie_studio.shop import RECORD
+
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "shop.json").write_text(json.dumps(
-        {sales_id: {"sales_id": sales_id, "age_min": age} for sales_id, age in ages.items()}))
+        {sales_id: {"sales_id": sales_id, "age_min": age, "record": RECORD}
+         for sales_id, age in ages.items()}))
 
 
 class TestAge:
