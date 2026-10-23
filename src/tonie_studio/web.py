@@ -31,6 +31,7 @@ from .catalogue import Catalogue
 from .compress import CompressMiddleware
 from .encode import list_tafs, recover_asides, remove_orphaned_staging
 from .importing import Importer
+from .languages import NAMED, spoken
 from .naming import Namer
 from .shop import Shop
 from .jobs import Groups, JobRunner
@@ -93,6 +94,8 @@ def create_app(
     templates.env.filters["cover_url"] = cover_url
     templates.env.filters["orders"] = orders
     templates.env.globals["describe_progress"] = describe_progress
+    templates.env.globals["spoken_choices"] = NAMED
+    templates.env.filters["spoken"] = spoken
     jobs = runner or JobRunner()
     prints = JobRunner()
     catalogue = Catalogue(settings)

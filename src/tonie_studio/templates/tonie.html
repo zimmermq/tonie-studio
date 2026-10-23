@@ -1,5 +1,5 @@
 {% extends "_details_page.html" %}
-{% from "_parts.html" import category_select, danger, field, file_button, picked, section, sticker_picker, technical with context %}
+{% from "_parts.html" import category_select, danger, field, file_button, language_select, picked, section, sticker_picker, technical with context %}
 {% set page_title = tag.label %}
 {% set picture, no_picture = tag.picture | cover_url(false, 320), "tonie.no_picture" %}
 {% set title = tag.episode or tag.label %}
@@ -89,6 +89,9 @@
     {% endcall %}
     {% call field(t("field.category")) %}
       {{ category_select(categories, model.category) }}
+    {% endcall %}
+    {% call field(t("field.language")) %}
+      {{ language_select(model.language) }}
     {% endcall %}
     {% call field(t("tonie.replace_cover")) %}
       <span class="row gap-10">{{ file_button("cover", t("common.choose_picture"), slot="coverpicked", accept="image/*") }}{{ picked("coverpicked") }}</span>

@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from ..languages import chosen
 from ..models import CATEGORIES, DEFAULT_CATEGORY
 from ..tags import TonieError, list_tags
 from ..tonie import publish_stream
@@ -49,11 +50,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         series: str = Form(""),
         episode: str = Form(""),
         category: str = Form(DEFAULT_CATEGORY),
+        language: str = Form(""),
         cover: Optional[UploadFile] = File(None),
     ):
         picture, suffix = uploaded_cover(cover)
         with refusing(TonieError):
             publish_stream(client(), ruid, url, series=series, episode=episode,
                            cover=picture, cover_name=suffix, category=category,
-                           data_dir=ctx.settings.data_dir)
+                           language=chosen(language), data_dir=ctx.settings.data_dir)
         return RedirectResponse("/tonies", 303)

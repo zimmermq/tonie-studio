@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlencode
@@ -14,6 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..albumnotes import made
 from ..encode import EncodeError
 from ..library import is_library, listed_path, path_of
+from ..languages import offered as offered_languages
 from ..listing import Column, filters
 from ..models import (CATEGORIES, DEFAULT_CATEGORY, WRITING, find_model, images_cached,
                       picture_suffix, release_year, update_model)
@@ -39,12 +41,15 @@ def register(app: FastAPI, ctx: Context) -> None:
         rows = list_tonies(connection, tags, ctx.namer.official().by_model, ctx.shop)
         tonies = sorted((row for row in rows if row.kind != FREE), key=lambda row: row.name)
         counts, offered = filters((row.tags for row in tonies), (OFFICIAL, OWN, NO_MODEL, NO_PICTURE))
+        spoken_counts = Counter(row.language for row in tonies)
         return templates.TemplateResponse(request, "tonies.html", {
             "tags": tags,
             "tonies": tonies,
             "free": [row for row in rows if row.kind == FREE],
             "counts": counts,
             "filters": offered,
+            "spoken_languages": offered_languages(spoken_counts),
+            "spoken_counts": spoken_counts,
             "columns": TONIE_COLUMNS,
             "box": box.state,
             "images_cached": images_cached(connection),
@@ -171,6 +176,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         series: str = Form(""),
         episode: str = Form(""),
         category: str = Form(DEFAULT_CATEGORY),
+        language: str = Form(""),
         cover: Optional[UploadFile] = File(None),
     ):
         connection = client()
@@ -182,7 +188,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 
         with refusing(TonieError):
             update_model(connection, tag.model, series=series, episode=episode,
-                         category=category, cover=picture, cover_name=suffix)
+                         category=category, cover=picture, cover_name=suffix,
+                         language=language or None)
         return RedirectResponse("/tonies", 303)
 
 

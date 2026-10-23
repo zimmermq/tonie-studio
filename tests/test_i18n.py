@@ -17,7 +17,7 @@ SOURCES = Path(__file__).resolve().parent.parent / "src" / "tonie_studio"
 DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "restore.action.",
            "restore.what.", "place.unknown", "place.taken", "place.reserved",
            "place.assigned", "place.complete", "place.none_waiting", "place.failed",
-           "import.phase.", "import.state.", "names.kind.", "tonies.kind.",
+           "import.phase.", "import.state.", "names.kind.", "tonies.kind.", "language.",
            "sheet.layout.", "sheet.intro.", "tonies.col_",
            "library.origin.", "library.col_",
            "listening.filter.", "listening.col_",
@@ -95,6 +95,10 @@ class TestCatalogs:
         from tonie_studio.album import ORDERINGS
 
         assert {f"ordering.{ordering}" for ordering in ORDERINGS} <= keys
+
+        from tonie_studio.languages import NAMED, NONE, OTHER
+
+        assert {f"language.{language}" for language in (*NAMED, OTHER, NONE)} <= keys
 
         from tonie_studio.checkup import SEVERITIES
 

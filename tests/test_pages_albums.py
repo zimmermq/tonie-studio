@@ -583,6 +583,25 @@ class TestAssign:
         assert entry["source"] == "lib://Lichterkinder/Halloween.taf"
         assert entry["nocloud"] is True
 
+    def test_the_model_speaks_the_language_chosen(self, client, runner, teddycloud):
+        job, page = encode_and_assign_page(client, runner)
+
+        client.post(f"/job/{job.id}/assign", data={
+            "ruid": "7ab4ed0e500304e0", "series": "L", "episode": "H", "category": "music",
+            "language": "en"}, follow_redirects=False)
+
+        assert 'name="language"' in page.text
+        assert teddycloud.custom_tonies()[0]["language"] == "en-us"
+
+    def test_without_a_choice_the_model_speaks_german(self, client, runner, teddycloud):
+        job, _page = encode_and_assign_page(client, runner)
+
+        client.post(f"/job/{job.id}/assign", data={
+            "ruid": "7ab4ed0e500304e0", "series": "L", "episode": "H", "category": "music",
+            "language": "nonsense"}, follow_redirects=False)
+
+        assert teddycloud.custom_tonies()[0]["language"] == "de-de"
+
     def test_carries_the_edited_track_names_into_the_model(self, client, runner, teddycloud):
         job, _page = encode_and_assign_page(client, runner, titles=["Erster", "Zweiter"])
 

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from .encode import list_folder
+from .languages import NONE, spoken
 from .models import cover_url, list_models
 from .naming import LIBRARY_FOLDER, LIBRARY_PREFIX
 from .shop import LANGUAGE as SHOP_LANGUAGE
@@ -30,6 +31,7 @@ class Listed:
     category: str = ""
     added: Optional[datetime] = None  # when its taf was written into the library
     age: Optional[int] = None  # the youngest age tonies.com recommends it for
+    language: str = NONE  # what it speaks, as languages.spoken groups it
 
     @property
     def tags(self) -> List[str]:
@@ -57,10 +59,13 @@ def list_tonies(connection: TeddyCloudClient, tags: List[TonieTag],
         if not tag.assigned:
             rows.append(Listed(tag, FREE))
         elif tag.model in own:
-            rows.append(Listed(tag, OWN, own[tag.model].category, added.get(tag.source)))
+            model = own[tag.model]
+            rows.append(Listed(tag, OWN, model.category, added.get(tag.source),
+                               language=spoken(model.language)))
         elif tag.model:
-            category = (catalogue.get(tag.model) or {}).get("category") or ""
-            rows.append(Listed(tag, OFFICIAL, category, added.get(tag.source)))
+            entry = catalogue.get(tag.model) or {}
+            rows.append(Listed(tag, OFFICIAL, entry.get("category") or "", added.get(tag.source),
+                               language=spoken(entry.get("language"))))
         else:
             rows.append(Listed(tag, NO_MODEL, "", added.get(tag.source)))
 

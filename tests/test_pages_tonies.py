@@ -261,6 +261,30 @@ class TestEditTonie:
     def test_refuses_a_tag_teddycloud_does_not_know(self, client):
         assert client.get("/tonies/ffffffffffffffff").status_code == 404
 
+    def test_editing_changes_the_language_and_the_page_shows_it(self, client, runner,
+                                                                teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        client.post("/tonies/7ab4ed0e500304e0", data={
+            "series": "Lichterkinder", "episode": "Halloween", "category": "music",
+            "language": "fr"}, follow_redirects=False)
+
+        assert teddycloud.custom_tonies()[0]["language"] == "fr-fr"
+        page = client.get("/tonies/7ab4ed0e500304e0").text
+        assert '<option value="fr" selected>' in page
+
+    def test_saving_the_same_language_keeps_its_region(self, client, runner, teddycloud):
+        # A model the catalogue style calls en-gb is English already; saving
+        # it as English must not turn it into en-us, nor into German.
+        publish_album(client, runner, teddycloud)
+        teddycloud.custom_models[0]["language"] = "en-gb"
+
+        client.post("/tonies/7ab4ed0e500304e0", data={
+            "series": "Lichterkinder", "episode": "Halloween", "category": "music",
+            "language": "en"}, follow_redirects=False)
+
+        assert teddycloud.custom_tonies()[0]["language"] == "en-gb"
+
     def test_editing_an_unknown_tag_says_it_is_unknown(self, client):
         response = client.post("/tonies/ffffffffffffffff", data={"series": "x"})
 
@@ -318,6 +342,30 @@ class TestLibraryPage:
 
         assert "Barbie - Princess Adventure" in shown
         assert 'data-tags="imported"' in shown
+
+    def test_an_imported_taf_speaks_the_language_its_catalogue_entry_names(self, client,
+                                                                         teddycloud):
+        teddycloud.catalogue = [{"model": "10000681", "series": "Barbie", "language": "en-gb"}]
+        self.imported(teddycloud)
+
+        page = client.get("/library").text
+        shown = self.row(page, "/by/audioID/1636444326.taf")
+
+        assert 'data-language="en"' in shown
+
+    def test_a_taf_nobody_can_name_is_of_no_known_language(self, client, teddycloud):
+        self.imported(teddycloud, info={"model": "", "series": "", "episode": ""}, ruid="")
+
+        shown = self.row(client.get("/library").text, "/by/audioID/1636444326.taf")
+
+        assert 'data-language="none"' in shown
+
+    def test_a_recorded_taf_speaks_the_language_of_its_model(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/library").text
+
+        assert 'data-language="de"' in page
 
     def test_says_where_each_taf_comes_from_and_whether_it_is_used(self, client, runner,
                                                                   teddycloud):
@@ -418,6 +466,21 @@ class TestLibraryPage:
         assert response.status_code == 303
         entry = teddycloud.tag_entries["deb4ed0e500304e0"]
         assert entry["source"] == "lib://Lichterkinder/Halloween.taf" and entry["tonie_model"]
+
+    def test_a_recorded_taf_put_on_a_sticker_speaks_the_language_chosen(self, client, runner,
+                                                                       teddycloud):
+        encode_and_assign_page(client, runner)
+
+        page = client.get("/library/assign", params={"path": "/Lichterkinder/Halloween.taf"}).text
+        client.post("/library/assign", data={
+            "path": "/Lichterkinder/Halloween.taf", "ruid": "deb4ed0e500304e0",
+            "series": "Lichterkinder", "episode": "Halloween", "category": "music",
+            "language": "en"}, follow_redirects=False)
+
+        assert 'name="language"' in page
+        model = teddycloud.tag_entries["deb4ed0e500304e0"]["tonie_model"]
+        assert next(m for m in teddycloud.custom_tonies() if m["model"] == model)["language"] \
+            == "en-us"
 
     def test_the_assign_form_posts_the_path_it_was_opened_for(self, client, runner, teddycloud):
         # The form is posted as the page renders it: a value the page itself
@@ -557,6 +620,15 @@ class TestRadioTonie:
         entry = teddycloud.tag_entries["7ab4ed0e500304e0"]
         assert entry["source"] == "http://radio.example/kinder.mp3"
         assert entry["live"] is True
+
+    def test_a_stream_speaks_the_language_chosen(self, client, teddycloud):
+        client.post("/radio", data={
+            "ruid": "7ab4ed0e500304e0", "url": "http://radio.example/kinder.mp3",
+            "series": "Kinderradio", "episode": "", "category": "music", "language": "fr",
+        }, follow_redirects=False)
+
+        assert 'name="language"' in client.get("/radio").text
+        assert teddycloud.custom_tonies()[0]["language"] == "fr-fr"
 
     def test_refuses_something_that_is_not_a_url(self, client, teddycloud):
         response = client.post("/radio", data={

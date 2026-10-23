@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_parts.html" import page_script with context %}
-{% from "_list.html" import toolbar, chips, head with context %}
+{% from "_list.html" import toolbar, chips, language_chips, head with context %}
 {#- A page that is a list: search, filter chips and order over rows the
     server sent all at once (list.js), the same on every list page.
 
@@ -18,6 +18,10 @@
                     the list's id and classes ("listing ..." for a table,
                     "list" for plain rows)
     and may set:
+      spoken_languages, spoken_counts
+                    the language chips (languages.offered) and how many
+                    rows speak each; the rows then carry data-language.
+                    Not "languages": that names the app's own languages
       list_view     "list" (the default) or "grid"; ``views`` offers both,
                     ``remember`` keeps the choice in the browser
       headings      false for plain rows without column headings
@@ -34,6 +38,7 @@
 {% if rows %}
 {{ toolbar(columns, search, search_label, views=views | default(())) }}
 {{ chips(rows | length, filters, counts, filter_label) }}
+{% if spoken_languages %}{{ language_chips(rows | length, spoken_languages, spoken_counts) }}{% endif %}
 {% block above_rows %}{% endblock %}
 {% endif %}
 

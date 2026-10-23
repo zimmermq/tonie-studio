@@ -19,6 +19,7 @@ from typing import Any, BinaryIO, Callable, Dict, List, Optional, Sequence, Unio
 from urllib.parse import quote, urlparse
 
 from .cache import BackgroundCache
+from .languages import chosen
 from .tags import TonieError, label
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .store import changing_json, read_json
@@ -342,22 +343,24 @@ def update_model(
     cover: Optional[Union[Path, bytes]] = None,
     cover_name: str = "jpg",
     shop_link: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> Model:
     """Change a model's description without touching the audio it points at.
 
     `audio_id` and `hash` are carried over untouched: they are what lets
     teddyCloud recognise the taf, and rewriting a title must not cost that.
-    What is not named stays as it is.
+    What is not named stays as it is. ``language`` is picked by language
+    alone (languages.NAMED) and keeps the region of the same language.
     """
     with WRITING:
         return _update_model(client, model_id, series, episode, category, tracks, cover,
-                             cover_name, shop_link)
+                             cover_name, shop_link, language)
 
 
 def _update_model(client: TeddyCloudClient, model_id: str, series: Optional[str],
                   episode: Optional[str], category: Optional[str],
                   tracks: Optional[Sequence[str]], cover: Optional[Union[Path, bytes]],
-                  cover_name: str, shop_link: Optional[str]) -> Model:
+                  cover_name: str, shop_link: Optional[str], language: Optional[str]) -> Model:
     model = find_model(client, model_id)
     if model is None:
         raise TonieError("tonie.model_missing", model=model_id)
@@ -374,6 +377,8 @@ def _update_model(client: TeddyCloudClient, model_id: str, series: Optional[str]
         model.picture = upload_cover(client, model.id, cover, cover_name)
     if shop_link is not None:
         model.other[SHOP_LINK] = shop_link
+    if language is not None:
+        model.language = chosen(language, model.language)
 
     client.upsert_custom_tonie(model.to_json())
     log.info("model %s updated", model.id)

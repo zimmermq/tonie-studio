@@ -4,8 +4,11 @@
 // What the page provides:
 // - the list, marked data-list, its rows each with data-search (lower case
 //   text the search looks through), data-tags (what the filter chips match)
-//   and data-name, plus one data value per order;
+//   and data-name, plus one data value per order, and optionally
+//   data-language (what the language chips match);
 // - #search, #sort, #count, #nohits, chips with data-filter ("" for all),
+//   optionally chips with data-language ("" for all), which narrow what the
+//   filter chips keep,
 //   column headings with data-sort, and optionally buttons with data-view;
 // - in #page-data: "orders", each order's {number, desc}, "first", the order
 //   the list starts in, and the words "list.shown_of".
@@ -25,6 +28,7 @@
     const count = document.getElementById('count');
     const nohits = document.getElementById('nohits');
     const chips = [...document.querySelectorAll('[data-filter]')];
+    const languages = [...document.querySelectorAll('[data-language]')];
     const sorters = [...document.querySelectorAll('[data-sort]')];
     const views = [...document.querySelectorAll('button[data-view]')];
     const viewKey = list.dataset.remember;
@@ -41,6 +45,7 @@
       q: asked.get('q') || '',
       // "kind" is what the tonie list called its filter before it had a name of its own.
       filter: asked.get('filter') || asked.get('kind') || '',
+      language: asked.get('lang') || '',
       sort: ORDERS[asked.get('sort')] ? asked.get('sort') : firstKey,
       view: asked.get('view') || (views.length && remembered()) || list.dataset.view || '',
     };
@@ -69,6 +74,7 @@
       params.delete('kind');
       put('q', state.q, state.q);
       put('filter', state.filter, state.filter);
+      put('lang', state.language, state.language);
       put('sort', state.sort, state.sort !== firstKey);
       put('dir', state.dir, state.dir !== firstWay(state.sort));
       put('view', state.view, views.length && state.view !== list.dataset.view);
@@ -81,13 +87,15 @@
       let shown = 0;
       for (const row of rows) {
         const tagged = !state.filter || row.dataset.tags.split(' ').includes(state.filter);
-        row.hidden = !(tagged && matches(row, terms));
+        const spoken = !state.language || row.dataset.language === state.language;
+        row.hidden = !(tagged && spoken && matches(row, terms));
         if (!row.hidden) shown += 1;
       }
       count.textContent = shown === rows.length ? '' : say(shownOf, { shown, count: rows.length });
       nohits.hidden = shown > 0;
       // As an attribute: the property reflecting it is missing in older browsers.
       for (const chip of chips) chip.setAttribute('aria-pressed', chip.dataset.filter === state.filter);
+      for (const chip of languages) chip.setAttribute('aria-pressed', chip.dataset.language === state.language);
     }
 
     // Appending moves a row, so the rows end up in order behind the column
@@ -131,6 +139,9 @@
     }
     for (const chip of chips) {
       chip.addEventListener('click', () => { state.filter = chip.dataset.filter; filter(); keep(); });
+    }
+    for (const chip of languages) {
+      chip.addEventListener('click', () => { state.language = chip.dataset.language; filter(); keep(); });
     }
     for (const button of views) {
       button.addEventListener('click', () => {

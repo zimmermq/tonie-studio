@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -12,10 +13,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..checkup import BOX_SOUND_PREFIX
 from ..encode import TAF_SUFFIX, EncodeError, Taf, delete_taf, existing_taf, list_tafs
 from ..jobs import JobState
+from ..languages import NONE, chosen, offered as offered_languages, spoken
 from ..library import safe_library_path, same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
-from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING
+from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING, list_models
 from ..tags import TonieError, TonieTag, list_tags, require_tag
 from ..tags import label as tag_label
 from ..times import from_seconds
@@ -31,13 +33,20 @@ def register(app: FastAPI, ctx: Context) -> None:
     def library_page(request: Request):
         connection = client()
         tafs = list_tafs(connection)
-        shelf = sorted(_shelve(tafs, list_tags(connection)), key=lambda item: item.label.casefold())
+        languages = {model: entry.get("language") or ""
+                     for model, entry in ctx.namer.official().by_model.items()}
+        languages.update({model.id: model.language for model in list_models(connection)})
+        shelf = sorted(_shelve(tafs, list_tags(connection), languages),
+                       key=lambda item: item.label.casefold())
         counts, offered = filters((item.tags for item in shelf), (RECORDED, IMPORTED, BOX, UNUSED))
+        spoken_counts = Counter(item.language for item in shelf)
         return templates.TemplateResponse(request, "library.html", {
             "shelf": shelf,
             "total": sum(taf.size for taf in tafs),
             "counts": counts,
             "filters": offered,
+            "spoken_languages": offered_languages(spoken_counts),
+            "spoken_counts": spoken_counts,
             "columns": LIBRARY_COLUMNS,
         })
 
@@ -103,7 +112,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/library/assign")
     def assign(path: str = Form(...), ruid: str = Form(...), series: str = Form(""),
-               episode: str = Form(""), category: str = Form(DEFAULT_CATEGORY)):
+               episode: str = Form(""), category: str = Form(DEFAULT_CATEGORY),
+               language: str = Form("")):
         connection = client()
         encoded = (existing_taf(connection, path)
                    if path.endswith(TAF_SUFFIX) and safe_library_path(path) else None)
@@ -122,7 +132,8 @@ def register(app: FastAPI, ctx: Context) -> None:
                 if not episode.strip():
                     raise Refused(400, "encode.no_name")
                 publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
-                        category=category, data_dir=ctx.settings.data_dir)
+                        category=category, language=chosen(language),
+                        data_dir=ctx.settings.data_dir)
         return RedirectResponse(f"/tonies/{ruid}", 303)
 
 
@@ -147,12 +158,17 @@ def _imported(path: str) -> bool:
     return same(path).startswith(same(LIBRARY_FOLDER) + "/")
 
 
-def _shelve(tafs: List[Taf], tags: List[TonieTag]) -> List["Shelved"]:
+def _shelve(tafs: List[Taf], tags: List[TonieTag],
+            languages: Optional[Dict[str, str]] = None) -> List["Shelved"]:
     """Each taf with its origin, the stickers that play it and those that only seem to.
 
     A sticker plays a taf only when its source names the file exactly;
     teddyCloud's file system tells the two spellings of an umlaut apart.
+    ``languages`` gives each model's language, catalogue and own models alike:
+    a taf speaks the language of the model teddyCloud matched its audio to,
+    else of the model of a sticker naming it.
     """
+    languages = languages or {}
     users: Dict[str, List[TonieTag]] = {}
     for tag in tags:
         if tag.source:
@@ -160,9 +176,11 @@ def _shelve(tafs: List[Taf], tags: List[TonieTag]) -> List["Shelved"]:
     shelf = []
     for taf in tafs:
         naming = users.get(same(taf.source), [])
+        model = taf.model or next((tag.model for tag in naming if tag.model), "")
         shelf.append(Shelved(taf, _origin(taf),
                              [tag for tag in naming if tag.source == taf.source],
-                             [tag for tag in naming if tag.source != taf.source]))
+                             [tag for tag in naming if tag.source != taf.source],
+                             spoken(languages.get(model))))
     return shelf
 
 
@@ -194,6 +212,7 @@ class Shelved:
     origin: str
     played_by: List[TonieTag]
     misspelled_by: List[TonieTag] = field(default_factory=list)
+    language: str = NONE  # what it speaks, as languages.spoken groups it
 
     @property
     def label(self) -> str:

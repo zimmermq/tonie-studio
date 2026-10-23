@@ -23,7 +23,7 @@ from .batch import Placing, PlayedOn, Slot
 from .encode import EncodeError, EncodeResult, encode_files, existing_taf
 from .jobs import Job, JobState
 from .library import same
-from .models import DEFAULT_CATEGORY, WRITING
+from .models import DEFAULT_CATEGORY, DEFAULT_LANGUAGE, WRITING
 from .pictures import crop
 from .runtimes import remember
 from .sheet import PIXELS
@@ -124,7 +124,7 @@ def encode_job(client: Callable[[], TeddyCloudClient], chosen: Sequence[Tuple[Tr
 def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome: Outcome,
                     series: Optional[str] = None, episode: Optional[str] = None,
                     category: str = DEFAULT_CATEGORY, require_free: bool = False,
-                    model_id: Optional[str] = None) -> str:
+                    model_id: Optional[str] = None, language: str = DEFAULT_LANGUAGE) -> str:
     """Put a finished encode on a tag and return the model id it became.
 
     ``series`` and ``episode`` override the names the encode was planned
@@ -141,6 +141,7 @@ def publish_outcome(client: TeddyCloudClient, data_dir: Path, ruid: str, outcome
         tracks=outcome.tracks,
         cover=cropped_cover(outcome.details),
         category=category,
+        language=language,
         year=outcome.details.year,
         require_free=require_free,
         model_id=model_id,

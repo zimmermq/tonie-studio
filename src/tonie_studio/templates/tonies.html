@@ -36,7 +36,7 @@
 {%- set tag = item.tag %}
 {%- set picture = tag.picture | cover_url(false, 192) %}
 <a class="listing-row" id="tag-{{ tag.ruid }}" href="/tonies/{{ tag.ruid }}" title="{{ tag.label }}"
-   data-kind="{{ item.kind }}" data-tags="{{ item.tags | join(' ') }}"
+   data-kind="{{ item.kind }}" data-tags="{{ item.tags | join(' ') }}" data-language="{{ item.language }}"
    data-name="{{ item.name }}" data-series="{{ (tag.series ~ ' ' ~ item.name) | trim | lower }}"
    data-added="{{ item.added.timestamp() | int if item.added else '' }}" data-chapters="{{ tag.chapters or '' }}"
    data-category="{{ item.category | lower }}" data-age="{{ item.age if item.age is not none else '' }}"

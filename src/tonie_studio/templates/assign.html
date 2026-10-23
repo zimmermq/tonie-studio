@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import category_select, field, page_script, sticker_picker with context %}
+{% from "_parts.html" import category_select, field, language_select, page_script, sticker_picker with context %}
 {% from "_steps.html" import steps with context %}
 {% set page_title = t("assign.title") %}
 {% set page_heading = t("assign.heading") %}
@@ -33,8 +33,11 @@
     {% call field(t("field.episode")) %}
       <input type="text" name="episode" value="{{ episode }}" required>
     {% endcall %}
-    {% call field(t("field.category"), class="mb-0") %}
+    {% call field(t("field.category")) %}
       {{ category_select(categories, category) }}
+    {% endcall %}
+    {% call field(t("field.language"), class="mb-0") %}
+      {{ language_select() }}
     {% endcall %}
   </div>
 

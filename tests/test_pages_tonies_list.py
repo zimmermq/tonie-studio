@@ -90,6 +90,32 @@ class TestTheControls:
         assert 'id="search"' not in client.get("/tonies").text
 
 
+class TestLanguage:
+    def test_each_tonie_says_the_language_it_speaks(self, client, runner, teddycloud, official):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/tonies").text
+
+        assert 'data-language="de"' in row(page, OFFICIAL)
+        assert 'data-language="de"' in row(page, "7ab4ed0e500304e0")
+
+    def test_a_second_language_is_offered_with_its_count(self, client, teddycloud, official):
+        teddycloud.catalogue.append({"model": "10000002", "series": "Madagascar",
+                                     "episodes": "Madagascar", "language": "en-us"})
+        teddycloud.add_tag("22dfc517500304e0", source="lib://by/audioID/1.taf",
+                           tonie_model="10000002")
+
+        page = client.get("/tonies").text
+
+        assert 'data-language="en"' in row(page, "22dfc517500304e0")
+        chip = page[page.index('<button type="button" class="chip" data-language="en"'):]
+        assert ">1<" in chip[:chip.index("</button>")].replace(" ", "")
+        assert 'data-language="de"' in page and 'data-language=""' in page
+
+    def test_one_language_alone_offers_no_choice(self, client, official):
+        assert 'class="chip" data-language=' not in client.get("/tonies").text
+
+
 def known_to_the_shop(settings, **ages):
     """What the shop said earlier, kept beside the app's data: its age per article number."""
     import json

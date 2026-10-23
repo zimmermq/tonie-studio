@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import category_select, field, sticker_picker with context %}
+{% from "_parts.html" import category_select, field, language_select, sticker_picker with context %}
 {% set page_title = t("library.assign_title") %}
 
 {% block intro %}{{ path }} - {{ t("albums.tracks", count=encoded.tracks) }}{% endblock %}
@@ -22,8 +22,11 @@
     {% call field(t("field.episode")) %}
       <input type="text" name="episode" value="{{ episode }}" required>
     {% endcall %}
-    {% call field(t("field.category"), class="mb-0") %}
+    {% call field(t("field.category")) %}
       {{ category_select(categories) }}
+    {% endcall %}
+    {% call field(t("field.language"), class="mb-0") %}
+      {{ language_select() }}
     {% endcall %}
   </div>
   {% endif %}

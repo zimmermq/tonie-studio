@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import category_select, field, file_button, picked, sticker_picker, thumb with context %}
+{% from "_parts.html" import category_select, field, file_button, language_select, picked, sticker_picker, thumb with context %}
 {% set page_title = t("radio.title") %}
 
 {% block intro %}{{ t("radio.intro") }}{% endblock %}
@@ -50,6 +50,9 @@
     {% endcall %}
     {% call field(t("field.category")) %}
       {{ category_select(categories) }}
+    {% endcall %}
+    {% call field(t("field.language")) %}
+      {{ language_select() }}
     {% endcall %}
     {% call field(t("radio.cover"), class="mb-0") %}
       <span class="row gap-10">{{ file_button("cover", t("common.choose_picture"), slot="coverpicked", accept="image/*") }}{{ picked("coverpicked") }}</span>

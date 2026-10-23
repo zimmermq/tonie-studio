@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..i18n import Translator
 from ..jobs import Job, JobRunner, JobState
+from ..languages import chosen
 from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
 from ..publishing import Outcome, job_states, publish_outcome
 from ..tags import TonieError, list_tags
@@ -124,10 +125,12 @@ def register(app: FastAPI, ctx: Context) -> None:
         series: str = Form(""),
         episode: str = Form(...),
         category: str = Form(DEFAULT_CATEGORY),
+        language: str = Form(""),
     ):
         outcome = _finished_outcome(jobs, job_id)
         with refusing(TonieError):
-            publish_outcome(client(), settings.data_dir, ruid, outcome, series, episode, category)
+            publish_outcome(client(), settings.data_dir, ruid, outcome, series, episode, category,
+                            language=chosen(language))
         # Its page offers the last step, printing its cover.
         return RedirectResponse(f"/tonies/{ruid}", 303)
 

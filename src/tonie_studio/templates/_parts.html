@@ -120,6 +120,18 @@
 </select>
 {%- endmacro %}
 
+{#- The choice of what an own tonie speaks, by language rather than region;
+    ``stored`` is the model's language as kept (de-de, en-gb), German where
+    there is none yet. The handler keeps the region of the same language. #}
+{% macro language_select(stored=None) -%}
+{%- set current = (stored or "de-de") | spoken %}
+<select name="language">
+  {%- for code in spoken_choices %}
+  <option value="{{ code }}"{% if code == current %} selected{% endif %}>{{ t("language." ~ code) }}</option>
+  {%- endfor %}
+</select>
+{%- endmacro %}
+
 {#- A page's own script and what the server hands it: ``data`` goes into
     #page-data as JSON, where static/<name>.js reads it. #}
 {% macro page_script(name, data) -%}

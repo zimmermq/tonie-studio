@@ -33,6 +33,18 @@
 </div>
 {% endmacro %}
 
+{#- The languages to narrow the list to, beside the filter chips; list.js
+    keeps both. Shown only where there is more than one to choose from. #}
+{% macro language_chips(total, languages, counts) %}
+<div class="chips" role="group" aria-label="{{ t('list.language') }}">
+  <span class="muted">{{ t("list.language") }}</span>
+  <button type="button" class="chip" data-language="">{{ t("list.all") }} <span>{{ total }}</span></button>
+  {% for language in languages %}
+  <button type="button" class="chip" data-language="{{ language }}">{{ t("language." ~ language) }} <span>{{ counts[language] }}</span></button>
+  {% endfor %}
+</div>
+{% endmacro %}
+
 {#- A heading orders by its column; again, the other way round. The first
     cell sits over the pictures, ``trailing`` adds one over a last column of
     buttons. #}
