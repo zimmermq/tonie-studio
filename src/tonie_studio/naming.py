@@ -13,8 +13,10 @@ tonies are named that way and need nothing from here. Three kinds are not:
 For those a custom model is made, in this app's namespace, named after where
 the dump came from: its folder is the series and its file the episode, with
 the catalogue's spelling of the series where it knows it, and its category
-and cover where they are unambiguous. The model carries the taf's audio id
-and hash, so a second tonie with the same audio reuses it.
+and cover where they are unambiguous. A folder further up that names a
+language, such as "English" or "fr", gives the model that language, German
+otherwise. The model carries the taf's audio id and hash, so a second tonie
+with the same audio reuses it.
 
 Two upkeep tasks keep that right later. A custom model whose audio the
 catalogue has since listed is replaced by the official model, which describes
@@ -44,6 +46,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .cache import TtlCache
 from .encode import list_folder
+from .languages import from_path, spoken
 from .models import (CATEGORIES, MODEL_PREFIX, WRITING, Model, highest_id_used, list_models,
                      note_id_used)
 from .tags import TonieTag, list_tags
@@ -51,6 +54,7 @@ from .teddycloud import TeddyCloudClient, TeddyCloudError
 
 log = logging.getLogger(__name__)
 
+# What a dump speaks when none of its folders names a language.
 LANGUAGE = "de-de"
 
 # Where teddyCloud keeps the tafs it fetched from the cloud, named <audioId>.taf.
@@ -101,22 +105,32 @@ class Name:
     pic: str = ""       # only when the series is a single official entry
 
 
-class Catalog:
-    """The catalogue's entries of one language, looked up by normalised name."""
+def dump_language(path: str) -> str:
+    """What the tonie dumped at ``path`` speaks: what its folders name, else LANGUAGE."""
+    return from_path(path) or LANGUAGE
 
-    def __init__(self, entries: Iterable[Mapping[str, Any]], language: str = LANGUAGE):
+
+class Catalog:
+    """The catalogue's entries by language, looked up by normalised name.
+
+    A dump is only compared with the entries of its own language, in any
+    region: an English one with en-us and en-gb alike.
+    """
+
+    def __init__(self, entries: Iterable[Mapping[str, Any]]):
         entries = list(entries)
         self.by_model = {entry["model"]: entry for entry in entries if entry.get("model")}
-        self.by_series: Dict[str, List[Mapping[str, Any]]] = {}
+        self.by_series: Dict[Tuple[str, str], List[Mapping[str, Any]]] = {}
         for entry in entries:
-            if entry.get("language") == language and entry.get("model") and entry.get("series"):
-                self.by_series.setdefault(norm(entry["series"]), []).append(entry)
+            if entry.get("model") and entry.get("series"):
+                key = (spoken(entry.get("language")), norm(entry["series"]))
+                self.by_series.setdefault(key, []).append(entry)
 
     def describe(self, path: str) -> Name:
         """The name of the tonie dumped at ``path``, ``<...>/<series>/<episode>.nfc``."""
         dump = PurePosixPath(path)
         series, episode = dump.parent.name, dump.stem
-        entries = self.by_series.get(norm(series))
+        entries = self.by_series.get((spoken(dump_language(path)), norm(series)))
         if not entries:
             return Name(None, series, episode)
         wanted = norm(episode)
@@ -447,7 +461,8 @@ def _naming_step(tag: TonieTag, path: str, audio: Tuple[str, str], catalog: Cata
                      and audio[1] in [sha1.upper() for sha1 in model.hashes]), None)
     if existing:
         return Step(REUSE, tag.ruid, existing.id, name=name, path=path, replaces=current)
-    model = Model(id=ids.next(), series=name.series, episode=name.episode, language=LANGUAGE,
+    model = Model(id=ids.next(), series=name.series, episode=name.episode,
+                  language=dump_language(path),
                   category=name.category if name.category in CATEGORIES else "",
                   picture=name.pic, audio_ids=[audio[0]], hashes=[audio[1]])
     return Step(NEW, tag.ruid, model.id, name=name, path=path, new_model=model, replaces=current)
@@ -481,13 +496,29 @@ def _retitles(by_ruid: Mapping[str, TonieTag], dumps: Mapping[str, str], handled
             if name.model:
                 continue
         model = ours[tag.model]
-        if (model.series, model.episode) == (name.series, name.episode):
+        language = _corrected_language(model.language, path)
+        if (model.series, model.episode, model.language) == (name.series, name.episode, language):
             continue
         done.add(model.id)
         steps.append(Step(RETITLE, ruid, model.id, name=name, path=path,
-                          new_model=replace(model, series=name.series, episode=name.episode),
+                          new_model=replace(model, series=name.series, episode=name.episode,
+                                            language=language),
                           label=tag.label))
     return steps
+
+
+def _corrected_language(language: str, path: str) -> str:
+    """The language a model of an imported tonie should have, given its dump's ``path``.
+
+    German is what a model gets when nothing names its language, so a German
+    one whose folder names another language takes that. Any other language
+    was picked by a person and stays, even against the folder. The cost: a
+    person who set German on a dump from an English folder sees it reverted.
+    """
+    named = from_path(path)
+    if named and language == LANGUAGE and spoken(named) != spoken(LANGUAGE):
+        return named
+    return language
 
 
 def apply(client: TeddyCloudClient, todo: Plan,

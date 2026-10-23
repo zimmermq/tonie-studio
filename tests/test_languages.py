@@ -2,7 +2,7 @@
 
 from collections import Counter
 
-from tonie_studio.languages import NAMED, NONE, OTHER, chosen, offered, spoken
+from tonie_studio.languages import NAMED, NONE, OTHER, chosen, from_path, offered, spoken
 
 
 class TestSpoken:
@@ -42,3 +42,36 @@ class TestChosen:
     def test_nonsense_keeps_what_was_there_or_is_german(self):
         assert chosen("xx", "en-gb") == "en-gb"
         assert chosen("xx") == "de-de"
+
+
+class TestFromPath:
+    def test_a_folder_named_after_a_language_gives_it(self):
+        assert from_path("English/Amelia Bedelia and Friends/Beat the Clock.nfc") == "en-us"
+        assert from_path("French/Pat Patrouille/Chase.nfc") == "fr-fr"
+        assert from_path("German/Bobo/Folge 1.nfc") == "de-de"
+
+    def test_its_german_and_its_own_name_count_too(self):
+        assert from_path("Englisch/Peppa/Peppa.nfc") == "en-us"
+        assert from_path("Polski/Bajki/Bajka.nfc") == "pl-pl"
+        assert from_path("Francais/Chase/Chase.nfc") == "fr-fr"
+        assert from_path("Deutsch/Bobo/Folge 1.nfc") == "de-de"
+
+    def test_a_folder_named_by_its_code_gives_it(self):
+        assert from_path("dumps/en/Peppa/Peppa.nfc") == "en-us"
+        assert from_path("pl/Bajki/Bajka.nfc") == "pl-pl"
+        assert from_path("tonies/FR/Chase/Chase.nfc") == "fr-fr"
+
+    def test_a_code_with_a_region_keeps_the_region(self):
+        assert from_path("en-gb/Peppa/Peppa.nfc") == "en-gb"
+        assert from_path("de_CH/Globi/Globi.nfc") == "de-ch"
+
+    def test_the_language_folder_nearest_the_top_decides(self):
+        assert from_path("English/German/Folge 1.nfc") == "en-us"
+
+    def test_only_a_whole_folder_name_counts_never_the_file_name(self):
+        assert from_path("Comics/English.nfc") is None
+        assert from_path("Englisch lernen/Tiere/Hund.nfc") is None
+        assert from_path("Sammlung/Bobo/Folge 1.nfc") is None
+
+    def test_a_language_without_a_name_here_is_not_guessed(self):
+        assert from_path("fi/Muumi/Muumi.nfc") is None

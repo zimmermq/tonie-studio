@@ -68,6 +68,16 @@ class TestDescribe:
 
         assert name.model is None and name.series == "Bobo"
 
+    def test_a_dump_in_a_language_folder_is_looked_up_in_that_language(self):
+        name = self.catalog.describe("English/Forscherkids/Alles ueber Vulkane.nfc")
+
+        assert name.model == "20000003"
+
+    def test_a_series_only_the_other_language_has_is_not_borrowed(self):
+        name = self.catalog.describe("English/Bobo/Folge 2.nfc")
+
+        assert (name.model, name.series, name.category, name.pic) == (None, "Bobo", "", "")
+
 
 SETS = [
     {"model": "11000801", "series": "Tolle Berufe", "episodes": "Tolle Berufe - Set",
@@ -227,6 +237,17 @@ class TestPlan:
         assert (new.series, new.episode, new.audio_ids, new.hashes) == (
             "Comics", "Fledermaus", ["1"], ["11"])
         assert result.retired == ["TS-0007"] and result.skipped == []
+
+    def test_a_new_model_speaks_the_language_its_dump_folder_names(self):
+        tags = [tag(ruid("00000001"), lib(1)), tag(ruid("00000002"), lib(2))]
+        items = {ruid("00000001"): "English/Comics/Fledermaus.nfc",
+                 ruid("00000002"): "Comics/Supermann.nfc"}
+
+        result = plan(tags, items, Catalog([]), {}, [], {"1.taf": header(1, "11"),
+                                                          "2.taf": header(2, "22")})
+
+        languages = {step.ruid: step.new_model.language for step in result.steps}
+        assert languages == {ruid("00000001"): "en-us", ruid("00000002"): "de-de"}
 
     def test_the_same_audio_reuses_the_model_that_carries_it(self):
         tags = [tag(ruid("00000001"), lib(1))]
@@ -395,6 +416,30 @@ class TestRetitling:
         tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
 
         result = plan(tags, {ruid("00000001"): "Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")}, retitle=True)
+
+        assert result.steps == []
+
+    def test_a_model_made_german_from_another_language_folder_gets_that_language(self):
+        # German is the language of a model nothing named one for.
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Mit Gefühl")
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "English/Eule/Eule Set - Mit Gefuehl.nfc"},
+                      Catalog(self.eule), official_by_audio(self.eule), [ours],
+                      {"11.taf": header(11, "aa")}, retitle=True)
+
+        (step,) = result.steps
+        assert (step.kind, step.new_model.language) == (RETITLE, "en-us")
+        assert (step.new_model.series, step.new_model.episode) == ("Eule", "Mit Gefühl")
+
+    def test_a_language_a_person_picked_is_kept(self):
+        ours = model("TS-0039", 11, "AA", series="Eule", episode="Mit Gefühl")
+        ours.language = "fr-fr"
+        tags = [tag(ruid("00000001"), lib(11), "TS-0039")]
+
+        result = plan(tags, {ruid("00000001"): "English/Eule/Eule Set - Mit Gefuehl.nfc"},
                       Catalog(self.eule), official_by_audio(self.eule), [ours],
                       {"11.taf": header(11, "aa")}, retitle=True)
 

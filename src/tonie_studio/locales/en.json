@@ -442,7 +442,7 @@
  "names.kind.promote": "Now official: moves to the official model",
  "names.kind.rename": "Old NFC model gets a TS number",
  "names.kind.repair": "Model of its own gets its audio back",
- "names.kind.retitle": "Model of its own gets a better name",
+ "names.kind.retitle": "Model of its own gets a better name or its language",
  "names.kind.reuse": "Existing model of its own (same audio)",
  "names.not_in_library": "Audio is not in the library ({source})",
  "names.nothing": "Nothing to do: every tonie of the latest import has a name, and none of this app's models has become official.",

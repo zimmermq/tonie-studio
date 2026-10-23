@@ -442,7 +442,7 @@
  "names.kind.promote": "Jetzt offiziell: wechselt zum offiziellen Modell",
  "names.kind.rename": "Altes NFC-Modell bekommt eine TS-Nummer",
  "names.kind.repair": "Eigenes Modell bekommt sein Hörspiel zurück",
- "names.kind.retitle": "Eigenes Modell bekommt einen besseren Namen",
+ "names.kind.retitle": "Eigenes Modell bekommt einen besseren Namen oder seine Sprache",
  "names.kind.reuse": "Vorhandenes eigenes Modell (gleiches Hörspiel)",
  "names.not_in_library": "Hörspiel liegt nicht in der Library ({source})",
  "names.nothing": "Nichts zu tun: Alle Tonies des letzten Imports haben einen Namen, und kein eigenes Modell ist inzwischen offiziell.",
