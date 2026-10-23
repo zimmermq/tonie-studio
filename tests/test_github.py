@@ -90,6 +90,37 @@ class TestDumps:
         assert found == [("Hoerspiele/Serie & Co/Folge 100%.nfc", "two"),
                          ("Hoerspiele/Serie A/Folge 1.nfc", "one")]
 
+    def test_several_dumps_are_read_at_once(self):
+        # Hundreds of dumps one after another took minutes, nearly all of it
+        # spent waiting for GitHub to answer each small file.
+        import threading
+        import time
+
+        class Slow(FakeGitHub):
+            def __init__(self, files):
+                super().__init__(files)
+                self.lock = threading.Lock()
+                self.now = self.most = 0
+
+            def __call__(self, url, headers=None, timeout=None):
+                if "api.github.com" in url:
+                    return super().__call__(url, headers, timeout)
+                with self.lock:
+                    self.now += 1
+                    self.most = max(self.most, self.now)
+                time.sleep(0.05)
+                with self.lock:
+                    self.now -= 1
+                return super().__call__(url, headers, timeout)
+
+        files = {f"Serie/Folge {n:02d}.nfc": f"dump {n}" for n in range(1, 21)}
+        github = Slow(files)
+
+        found = dumps(Repo("owner", "tonies"), get=github)
+
+        assert github.most > 1
+        assert found == sorted(files.items())
+
     def test_reads_the_whole_repository_without_a_subfolder(self):
         found = dumps(Repo("owner", "tonies"), get=FakeGitHub(FILES))
 

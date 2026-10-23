@@ -16,6 +16,7 @@ person types, so nothing here can be pointed at another host.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, List, Tuple
@@ -35,6 +36,12 @@ LARGEST_DUMP = 64 * 1024
 # Long enough for GitHub on a slow day; the tree of a large repository is the
 # slowest answer.
 TIMEOUT = 30
+
+# How many dumps are downloaded at once. Each is a few hundred bytes and the
+# time goes on waiting for GitHub's answer, so several hundred read one by one
+# took minutes. Eight cut that to well under half a minute; more would gain
+# little and put more load on GitHub's free raw service at once.
+FILE_FETCHES = 8
 
 # What GitHub allows in an owner or repository name.
 _NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -109,8 +116,7 @@ def dumps(repo: Repo, token: str = "", get: Get = requests.get) -> List[Tuple[st
     if not paths:
         raise RepoError("github.no_dumps", where=repo.label)
 
-    found = []
-    for path in paths:
+    def read(path: str) -> Tuple[str, str]:
         if token:
             url = f"{base}/contents/{quote(path)}?ref={quote(branch, safe='')}"
             file_headers = dict(headers, Accept="application/vnd.github.raw")
@@ -120,8 +126,12 @@ def dumps(repo: Repo, token: str = "", get: Get = requests.get) -> List[Tuple[st
         response = _get(get, url, file_headers)
         if len(response.content) > LARGEST_DUMP:
             raise RepoError("github.too_large", path=path, kilobytes=LARGEST_DUMP // 1024)
-        found.append((path, response.text))
-    return found
+        return path, response.text
+
+    # In path order however they arrive; the first failure in that order is
+    # the one reported, as when they were read one by one.
+    with ThreadPoolExecutor(max_workers=FILE_FETCHES, thread_name_prefix="github") as pool:
+        return list(pool.map(read, paths))
 
 
 def _api(get: Get, url: str, headers: dict) -> dict:
