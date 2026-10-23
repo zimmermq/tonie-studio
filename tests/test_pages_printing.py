@@ -1,5 +1,6 @@
 """Tests for the pages of the sticker sheet, the overview and the printer calibration."""
 
+import re
 from unittest.mock import patch
 
 import pytest
@@ -135,6 +136,13 @@ class TestSheet:
         page = client.get("/sheet").text
 
         assert 'name="back"' in page and "Rückseite" in page
+
+    def test_the_back_side_is_ticked_to_begin_with(self, client, runner, teddycloud):
+        publish_album(client, runner, teddycloud)
+
+        page = client.get("/sheet").text
+
+        assert re.search(r'<input[^>]*name="back"[^>]*\bchecked\b', page)
 
     def test_takes_an_uploaded_image_as_well(self, client):
         response = print_sheet(client, files=[("files", ("extra.jpg", jpeg_bytes(), "image/jpeg"))])
