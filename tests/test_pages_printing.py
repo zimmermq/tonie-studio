@@ -266,6 +266,53 @@ class TestOverviewSheet:
 
         assert "Nirgends" not in titles
 
+    def test_lists_the_original_tonies_as_well(self, client, runner, teddycloud):
+        # A bought tonie has no model of this app, only the one teddyCloud
+        # names from its tonies.json; it stands in the tin all the same.
+        from tonie_studio.printing import overview_entries
+
+        publish_album(client, runner, teddycloud)
+        picture = "/cache/" + "AB" * 32 + ".png"
+        teddycloud.files[picture] = jpeg_bytes()
+        teddycloud.add_tag("e0040350aabbcc01", tonie_model="10000581", series="100% Wolf",
+                           episode="Das Original-Hoerspiel", picture=picture)
+
+        entries = overview_entries(teddycloud, {})
+        wolf = [entry for entry in entries if entry.series == "100% Wolf"]
+
+        assert [entry.title for entry in wolf] == ["Das Original-Hoerspiel"]
+        assert "10000581" in wolf[0].facts
+        assert any(entry.series != "100% Wolf" for entry in entries)
+
+    def test_an_original_picture_is_fetched_only_when_it_is_drawn(self, client, runner,
+                                                                   teddycloud):
+        # Hundreds of shop pictures of half a megabyte each must not sit in
+        # memory together while the PDF is written.
+        from tonie_studio.printing import overview_entries
+
+        publish_album(client, runner, teddycloud)
+        picture = "/cache/" + "CD" * 32 + ".png"
+        teddycloud.files[picture] = jpeg_bytes()
+        teddycloud.add_tag("e0040350aabbcc02", tonie_model="10000582", series="Wolf",
+                           episode="Zwei", picture=picture)
+
+        wolf = next(entry for entry in overview_entries(teddycloud, {}) if entry.series == "Wolf")
+
+        assert callable(wolf.image)
+        assert wolf.image() == teddycloud.files[picture]
+
+    def test_an_original_on_two_tags_is_listed_once(self, client, runner, teddycloud):
+        from tonie_studio.printing import overview_entries
+
+        publish_album(client, runner, teddycloud)
+        for ruid in ("e0040350aabbcc03", "e0040350aabbcc04"):
+            teddycloud.add_tag(ruid, tonie_model="10000583", series="Doppelt", episode="Eins",
+                               picture="/img_unknown.png")
+
+        series = [entry.series for entry in overview_entries(teddycloud, {})]
+
+        assert series.count("Doppelt") == 1
+
     def test_nothing_to_list_is_said(self, client):
         assert client.get("/sheet/overview").status_code == 400
 

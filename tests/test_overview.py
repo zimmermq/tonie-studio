@@ -5,7 +5,7 @@ import re
 
 from PIL import Image
 
-from tonie_studio.overview import ROWS_PER_PAGE, Entry, build_overview
+from tonie_studio.overview import COLUMNS, ROWS_PER_PAGE, Entry, build_overview
 
 
 def _image():
@@ -34,9 +34,29 @@ class TestOverview:
     def test_a_long_collection_goes_onto_more_pages(self, tmp_path):
         target = tmp_path / "overview.pdf"
 
-        build_overview([entry(f"Album {n}") for n in range(ROWS_PER_PAGE * 2 + 1)], target)
+        per_page = COLUMNS * ROWS_PER_PAGE
+        build_overview([entry(f"Album {n}") for n in range(per_page + 1)], target)
 
         assert _pages(target.read_bytes()) == 2
+
+    def test_thirty_six_fit_on_a_page(self):
+        # A collection of several hundred bought tonies stays a list of some
+        # twenty pages rather than forty.
+        assert COLUMNS * ROWS_PER_PAGE == 36
+
+    def test_a_picture_is_fetched_only_when_its_entry_is_drawn(self, tmp_path):
+        fetched = []
+
+        def fetcher(name):
+            def fetch():
+                fetched.append(name)
+                return _image()
+            return fetch
+
+        build_overview([Entry(image=fetcher("a"), title="A"), Entry(image=fetcher("b"), title="B"),
+                        Entry(image=lambda: None, title="Without")], tmp_path / "overview.pdf")
+
+        assert fetched == ["a", "b"]
 
     def test_a_tonie_without_a_picture_is_still_listed(self, tmp_path):
         # A radio tonie or one recorded without a cover is still a tonie in

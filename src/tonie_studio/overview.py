@@ -1,10 +1,10 @@
 """An A4 list of every tonie, to keep in the tin or pin to a door.
 
-The stickers say what one tonie is; this says what there is. Each entry is a
-small round cover beside the album's name, who made it and the facts the model
-knows, two columns to a page. It is meant to be read from arm's length, so the
-type is larger than on a sticker and a name that does not fit is wrapped
-rather than shrunk.
+The stickers say what one tonie is; this says what there is: the tonies made
+here and the bought ones alike. Each entry is a small round cover beside the
+album's name, who made it and the facts that are known, three columns to a
+page, so that a collection of several hundred stays a list of some twenty
+pages. A name that does not fit is wrapped rather than shrunk.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import io
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -26,16 +26,16 @@ from .sheet import CUT_LINE_GREY, FILL, composed, font_name, render_square, wrap
 
 log = logging.getLogger(__name__)
 
-COLUMNS = 2
-ROWS_PER_PAGE = 9
-MARGIN_MM = 15
-HEADING_MM = 14
-COVER_MM = 22
-GAP_MM = 4
+COLUMNS = 3
+ROWS_PER_PAGE = 12
+MARGIN_MM = 12
+HEADING_MM = 12
+COVER_MM = 17
+GAP_MM = 3
 
-TITLE_PT = 10.0
-SERIES_PT = 8.0
-FACT_PT = 7.0
+TITLE_PT = 8.5
+SERIES_PT = 7.0
+FACT_PT = 6.5
 LEADING = 1.2
 
 # Enough lines for a long title; more would run into the next entry.
@@ -44,7 +44,9 @@ MOST_TITLE_LINES = 3
 
 @dataclass
 class Entry:
-    image: Optional[bytes]
+    # The cover, or what fetches it when the entry is drawn; None or a fetcher
+    # answering None leaves an empty ring.
+    image: Union[bytes, Callable[[], Optional[bytes]], None]
     title: str
     series: str = ""
     facts: Sequence[str] = field(default_factory=list)
@@ -74,7 +76,7 @@ def build_overview(entries: Sequence[Entry], target: Path,
                 sheet.showPage()
             _heading(sheet, heading, translate("pdf.page", page=index // per_page + 1, pages=pages),
                      pages)
-        # Down the first column, then down the second, the way a list is read.
+        # Down each column before the next, the way a list is read.
         column, row = divmod(slot, ROWS_PER_PAGE)
         left = MARGIN_MM * mm + column * column_width
         top = page_height - MARGIN_MM * mm - HEADING_MM * mm - row * row_height
@@ -98,7 +100,8 @@ def _entry(sheet: canvas.Canvas, entry: Entry, left: float, top: float,
            width: float, height: float) -> None:
     cover = COVER_MM * mm
     centre_y = top - height / 2
-    _cover(sheet, entry.image, left + cover / 2, centre_y, cover / 2)
+    image = entry.image() if callable(entry.image) else entry.image
+    _cover(sheet, image, left + cover / 2, centre_y, cover / 2)
 
     text_left = left + cover + GAP_MM * mm
     text_width = width - cover - 2 * GAP_MM * mm

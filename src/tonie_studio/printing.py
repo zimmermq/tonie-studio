@@ -134,21 +134,45 @@ def stickers_for(client: Callable[[], TeddyCloudClient], wanted: Sequence[Tuple[
 
 def overview_entries(client: TeddyCloudClient, times: Dict[str, int],
                       translate: Optional[Translator] = None) -> List[Entry]:
-    """One entry per model that sits on a sticker, in shelf order.
+    """One entry per tonie on a tag, in shelf order: made here or bought.
 
-    A model no sticker names is not a tonie anyone can pick up, so it does not
-    belong on a list of what is in the tin.
+    A model no tag plays is not a tonie anyone can pick up, so it does not
+    belong on a list of what is in the tin. A bought tonie has no model of
+    this app and is named from what teddyCloud knows of it, with its model
+    number as the one fact. Pictures are fetched only when their entry is
+    drawn: hundreds of shop pictures of half a megabyte each would not fit in
+    memory together.
     """
-    on_stickers = {tag.model for tag in list_tags(client) if tag.model}
+    models = {model.id: model for model in list_models(client)}
     entries = []
-    for model in list_models(client):
-        if model.id not in on_stickers:
+    listed = set()
+    for tag in list_tags(client):
+        if not tag.model or tag.model in listed:
             continue
-        image = cover_bytes(client, model)
-        back = back_of(model, times.get(model.id), translate)
-        entries.append(Entry(image=image, title=back.title, series=back.series,
-                             facts=list(back.notes)))
+        listed.add(tag.model)
+        model = models.get(tag.model)
+        if model is not None:
+            back = back_of(model, times.get(model.id), translate)
+            entries.append(Entry(image=_later(cover_bytes, client, model), title=back.title,
+                                 series=back.series, facts=list(back.notes)))
+        else:
+            entries.append(Entry(image=_later(_picture_bytes, client, tag.picture),
+                                 title=tag.episode or tag.model, series=tag.series,
+                                 facts=[tag.model]))
     return sorted(entries, key=lambda entry: (entry.series.casefold(), entry.title.casefold()))
+
+
+def _later(fetch: Callable, *args) -> Callable[[], Optional[bytes]]:
+    return lambda: fetch(*args)
+
+
+def _picture_bytes(client: TeddyCloudClient, picture: Optional[str]) -> Optional[bytes]:
+    """A tag's picture through teddyCloud, or None when it cannot hand one out."""
+    try:
+        return fetch_picture(client, picture)
+    except TeddyCloudError as error:
+        log.warning("cannot read the picture %s: %s", picture, error)
+        return None
 
 
 def back_of(model: Model, seconds: Optional[int] = None,

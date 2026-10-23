@@ -202,8 +202,10 @@ class FakeTeddyCloud:
                 "trackSeconds": entry.get("track_seconds") or self._track_seconds(entry["source"]),
                 "tonieInfo": {
                     "model": entry["tonie_model"],
-                    "series": model.get("series", ""),
-                    "episode": model.get("episodes", ""),
+                    # An original tonie has no custom model: teddyCloud
+                    # names it from the tonies.json it keeps instead.
+                    "series": model.get("series", "") or entry.get("series", ""),
+                    "episode": model.get("episodes", "") or entry.get("episode", ""),
                     "picture": entry.get("picture") or model.get("pic", "/img_unknown.png"),
                     "tracks": model.get("tracks", []),
                 },
