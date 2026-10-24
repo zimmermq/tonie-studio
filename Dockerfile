@@ -1,6 +1,6 @@
 # By digest as well as tag: the tag moves with every rebuild upstream, so the
 # same commit could otherwise build on a different base. Renovate moves both.
-FROM python:3.15-slim@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
+FROM python:3.15-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
 
 # The audio archive is mounted read-only at /archive and browser uploads are
 # spooled under /data; both come from volumes. Europe/Berlin so a job timestamp
