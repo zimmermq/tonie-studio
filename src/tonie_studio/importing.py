@@ -29,6 +29,10 @@ until then: once the dumps are read, the run holds everything it needs.
 
 Only one run exists at a time. A finished, stopped or abandoned one stays on
 show until the next is started.
+
+A run can switch teddyCloud's access to the Tonies cloud on for itself and
+off again when it ends (see Cloud), so that access is open only while it is
+needed.
 """
 
 from __future__ import annotations
@@ -120,6 +124,13 @@ RESUME_SECONDS = 600
 # cloud: it does not count towards giving up and is no reason to skip a dump.
 BROKE_OFF = "import.download_broke"
 
+# What a run leaves teddyCloud's cloud settings at when it ends; see Cloud.
+RESTORE, SWITCH_OFF = "restore", "off"
+
+# The settings teddyCloud needs on to fetch a tonie's audio: access to the
+# cloud at all, and keeping what it fetched.
+CLOUD_SETTINGS = ("cloud.enabled", "cloud.cacheContent")
+
 
 @dataclass
 class Skip:
@@ -197,6 +208,35 @@ class Pace:
 
 
 @dataclass
+class Cloud:
+    """Whether a run switches teddyCloud's cloud access on for itself, and
+    what it leaves behind when it ends: the settings as it found them
+    (RESTORE), or access switched off whatever it was before (SWITCH_OFF).
+
+    The settings are teddyCloud's own, so while a run holds them on every box
+    teddyCloud serves reaches the cloud too, not only the import.
+    """
+
+    switch: bool = False
+    after: str = RESTORE
+    # The settings as the run found them, written before it changes any.
+    # Not empty exactly while the run owes teddyCloud putting them back,
+    # which a restart of the app does not forget.
+    before: Dict[str, str] = field(default_factory=dict)
+
+    def check(self) -> None:
+        if self.after not in (RESTORE, SWITCH_OFF):
+            raise ImportProblem("import.bad_cloud")
+
+    def left_at(self) -> Dict[str, str]:
+        """The settings as the run leaves them when it ends."""
+        values = dict(self.before)
+        if self.after == SWITCH_OFF:
+            values["cloud.enabled"] = "false"
+        return values
+
+
+@dataclass
 class Item:
     """One dump of a run. ``auth`` is dropped once the item is settled."""
 
@@ -227,6 +267,9 @@ class Run:
     # active anything needed to read them again, such as a "token".
     source: Dict[str, Any]
     phase: str = CHECKING
+    # A run stored before runs could switch the cloud finds none here and
+    # leaves the settings alone.
+    cloud: Cloud = field(default_factory=Cloud)
     paused: bool = False
     next_at: float = 0.0
     streak: int = 0
@@ -409,7 +452,8 @@ def _load(data_dir: Path) -> Optional[Run]:
     try:
         items = [from_record(Item, entry) for entry in stored.get("items", [])]
         pace = from_record(Pace, stored.get("pace", {}))
-        return from_record(Run, {**stored, "items": items, "pace": pace})
+        cloud = from_record(Cloud, stored.get("cloud", {}))
+        return from_record(Run, {**stored, "items": items, "pace": pace, "cloud": cloud})
     except (TypeError, AttributeError) as error:
         log.warning("ignoring unreadable %s: %s", FILE_NAME, error)
         return None
@@ -465,32 +509,43 @@ class Importer:
             return _load(self.data_dir)
 
     def begin(self, dumps: Iterable[Tuple[str, str]], pace: Pace, label: str,
-              token: str = "") -> Run:
+              token: str = "", cloud: Optional[Cloud] = None) -> Run:
         """Start a run over ``dumps``; refused while another is active."""
-        self._preflight(pace)
-        return self._create(pace, new_items(dumps), CHECKING, {"label": label, "token": token})
+        cloud = cloud or Cloud()
+        self._preflight(pace, cloud)
+        return self._create(pace, new_items(dumps), CHECKING, {"label": label, "token": token},
+                            cloud)
 
-    def begin_github(self, repo: Repo, pace: Pace, token: str = "") -> Run:
+    def begin_github(self, repo: Repo, pace: Pace, token: str = "",
+                     cloud: Optional[Cloud] = None) -> Run:
         """Start a run over the dumps in ``repo``, which the worker reads first."""
-        self._preflight(pace)
+        cloud = cloud or Cloud()
+        self._preflight(pace, cloud)
         source = {"label": repo.label, "owner": repo.owner, "name": repo.name,
                   "branch": repo.branch, "subfolder": repo.subfolder, "token": token}
-        return self._create(pace, [], FETCHING, source)
+        return self._create(pace, [], FETCHING, source, cloud)
 
-    def _preflight(self, pace: Pace) -> None:
+    def _preflight(self, pace: Pace, cloud: Cloud) -> None:
         pace.check()
+        cloud.check()
         client = self.client()
-        if client.setting("cloud.enabled") != "true" or \
-                client.setting("cloud.cacheContent") != "true":
+        cloud_on = all(client.setting(name) == "true" for name in CLOUD_SETTINGS)
+        if not cloud_on and not cloud.switch:
             raise ImportProblem("import.cloud_off")
 
-    def _create(self, pace: Pace, items: List[Item], phase: str, source: Dict[str, Any]) -> Run:
+    def _create(self, pace: Pace, items: List[Item], phase: str, source: Dict[str, Any],
+                cloud: Cloud) -> Run:
         with LOCK:
             existing = _load(self.data_dir)
             if existing and existing.active:
                 raise ImportProblem("import.busy")
+            # A run that ended without putting the settings back, such as
+            # while teddyCloud was away, hands that over: the new run puts
+            # back what the old one found, not what it finds itself.
+            cloud = Cloud(switch=cloud.switch, after=cloud.after,
+                          before=dict(existing.cloud.before) if existing else {})
             run = Run(id=uuid.uuid4().hex[:12], started_at=self.clock(), pace=pace,
-                      items=items, source=source, phase=phase)
+                      items=items, source=source, phase=phase, cloud=cloud)
             if not _save(self.data_dir, run):
                 raise self._cannot_save()
         self.held = None
@@ -578,7 +633,11 @@ class Importer:
     def step(self) -> float:
         """Do the next piece of work that is due; return seconds until the next."""
         run = self.current()
-        if run is None or not run.active or run.paused:
+        if run is None:
+            return IDLE_SECONDS
+        if not run.active:
+            return self._put_cloud_back(run)
+        if run.paused:
             return IDLE_SECONDS
         if self.held is not None:
             # Rewriting the run as it stands tells whether the file can be
@@ -587,8 +646,54 @@ class Importer:
                 return HOLD_SECONDS
             log.info("import %s can write its record again and carries on", run.id)
             self.held = None
+        if run.cloud.switch and not run.cloud.before and not self._switch_cloud_on(run):
+            return HOLD_SECONDS if self.held is not None else 0
         wait = self._work(run)
         return HOLD_SECONDS if self.held is not None else wait
+
+    def _switch_cloud_on(self, run: Run) -> bool:
+        """Switch teddyCloud's cloud access on for ``run``; returns whether it is.
+
+        What it was is written first, so that a run cut off halfway still
+        knows what to put back. A refusal ends the run, before the cloud is
+        asked anything; a run that ended puts back what it changed.
+        """
+        client = self.client()
+        before = {name: client.setting(name) for name in CLOUD_SETTINGS}
+        if not self._record(run.id, lambda current: setattr(current.cloud, "before", before)):
+            return False
+        try:
+            _set_cloud(client, {name: "true" for name in CLOUD_SETTINGS})
+        except TeddyCloudError as error:
+            log.warning("import %s cannot switch teddyCloud's cloud access on: %s", run.id, error)
+            cause = ImportProblem("import.cloud_not_switched", reason=str(error))
+
+            def failed(current: Run) -> None:
+                current.error, current.error_key, current.error_params = (
+                    str(cause), cause.key, cause.params)
+                current.settle(STOPPED)
+            self._record(run.id, failed)
+            return False
+        log.info("import %s switched teddyCloud's cloud access on", run.id)
+        return True
+
+    def _put_cloud_back(self, run: Run) -> float:
+        """Leave teddyCloud's cloud settings as the ended ``run`` was asked to.
+
+        Tried again until teddyCloud takes them: access that stays open is
+        what switching it was meant to avoid.
+        """
+        if not run.cloud.before:
+            return IDLE_SECONDS
+        try:
+            _set_cloud(self.client(), run.cloud.left_at())
+        except TeddyCloudError as error:
+            log.warning("import %s cannot put teddyCloud's cloud settings back yet: %s",
+                        run.id, error)
+            return RETRY_SECONDS
+        self._record(run.id, lambda current: setattr(current.cloud, "before", {}))
+        log.info("import %s put teddyCloud's cloud settings back", run.id)
+        return IDLE_SECONDS
 
     def _work(self, run: Run) -> float:
         if run.phase == FETCHING:
@@ -658,7 +763,8 @@ class Importer:
         if index is None:
             self._record(run.id, lambda current: current.settle(FINISHED))
             log.info("import %s finished", run.id)
-            return IDLE_SECONDS
+            # At once, not after an idle wait: the ended run puts the cloud back.
+            return 0
 
         item = run.items[index]
         client = self.client()
@@ -768,6 +874,24 @@ class Importer:
             log.error("import cannot write %s; asking nobody anything until it can",
                       self.data_dir / FILE_NAME)
         self.held = self._cannot_save()
+
+
+def _set_cloud(client: TeddyCloudClient, values: Dict[str, str]) -> None:
+    """Set teddyCloud's ``values`` and save them, so a restart of teddyCloud keeps them.
+
+    Only what differs is written. teddyCloud answers a setting it did not
+    take with an error text at 200, so each one is read back; one it kept
+    unchanged raises TeddyCloudError.
+    """
+    changing = {name: value for name, value in values.items() if client.setting(name) != value}
+    if not changing:
+        return
+    for name, value in changing.items():
+        client.set_setting(name, value)
+    client.save_settings()
+    kept = [name for name, value in values.items() if client.setting(name) != value]
+    if kept:
+        raise TeddyCloudError(f"teddyCloud kept {', '.join(kept)} unchanged", refused=True)
 
 
 def _settle_item(item: Item, state: str, where: str, when: float) -> None:

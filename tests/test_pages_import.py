@@ -6,8 +6,8 @@ import pytest
 
 from tonie_studio.github import RepoError
 from tonie_studio.i18n import Translator
-from tonie_studio.importing import (FETCHING, PENDING, STOPPED, Importer, Pace, Skip, add_skip,
-                                    skip_list)
+from tonie_studio.importing import (FETCHING, PENDING, RESTORE, STOPPED, SWITCH_OFF, Importer,
+                                    Pace, Skip, add_skip, skip_list)
 
 AUTH = "AB" * 32
 say = Translator("de")
@@ -144,6 +144,67 @@ class TestStarting:
         response = site.post("/import/github", data=dict(GITHUB, per_hour="0"))
 
         assert response.status_code == 400
+
+
+class TestCloudSwitch:
+    def test_both_forms_offer_the_switch_ticked_and_putting_back_chosen(self, site):
+        page = site.get("/import").text
+
+        assert page.count('name="cloud_switch" value="on" checked') == 2
+        assert page.count('name="cloud_after" value="restore" checked') == 2
+        assert page.count('name="cloud_after" value="off">') == 2
+        assert say("import.cloud.switch") in page
+
+    def test_with_the_switch_a_run_starts_while_cloud_access_is_off(self, site, importer,
+                                                                     teddycloud):
+        teddycloud.settings["cloud.enabled"] = "false"
+
+        response = site.post("/import/github", data=dict(GITHUB, cloud_switch="on",
+                                                         cloud_after="restore"),
+                             follow_redirects=False)
+
+        assert response.status_code == 303
+        cloud = importer.current().cloud
+        assert (cloud.switch, cloud.after) == (True, RESTORE)
+
+    def test_the_choice_to_switch_off_reaches_the_run(self, site, importer):
+        files = [("files", ("Meine/Wolf.nfc", dump("17 C5 DF 11").encode(), "text/plain"))]
+
+        site.post("/import/files", data=dict(PACE, cloud_switch="on", cloud_after="off"),
+                  files=files)
+
+        cloud = importer.current().cloud
+        assert (cloud.switch, cloud.after) == (True, SWITCH_OFF)
+
+    def test_without_the_tick_the_settings_are_left_alone(self, site, importer):
+        site.post("/import/github", data=GITHUB)
+
+        assert importer.current().cloud.switch is False
+
+    def test_a_choice_it_does_not_know_is_refused(self, site):
+        response = site.post("/import/github", data=dict(GITHUB, cloud_switch="on",
+                                                         cloud_after="later"))
+
+        assert response.status_code == 400
+        assert say("import.bad_cloud") in response.text
+
+    def test_a_run_holding_the_cloud_on_says_so(self, site, importer, teddycloud):
+        teddycloud.settings["cloud.enabled"] = "false"
+        site.post("/import/github", data=dict(GITHUB, cloud_switch="on", cloud_after="off"))
+        importer.step()
+
+        assert say("import.cloud.held_off") in site.get("/import").text
+
+    def test_a_run_that_still_owes_putting_it_back_says_so(self, site, importer, teddycloud):
+        teddycloud.settings["cloud.enabled"] = "false"
+        site.post("/import/github", data=dict(GITHUB, cloud_switch="on"))
+        importer.step()
+        site.post("/import/stop")
+        teddycloud.settings_down = True
+        importer.step()
+        teddycloud.settings_down = False
+
+        assert say("import.cloud.putting_back") in site.get("/import").text
 
 
 class TestWatching:

@@ -359,6 +359,29 @@ class TestSetting:
         assert client.setting("cloud.enabled") == "true"
         assert request_mock.call_args.args == ("GET", "/api/settings/get/cloud.enabled")
 
+    def test_sets_a_value_as_a_text_body(self, client, request_mock):
+        request_mock.return_value = _ok()
+
+        client.set_setting("cloud.enabled", "true")
+
+        assert request_mock.call_args.args == ("POST", "/api/settings/set/cloud.enabled")
+        assert request_mock.call_args.kwargs["data"] == "true"
+
+    def test_a_value_teddycloud_does_not_take_is_a_refusal(self, client, request_mock):
+        request_mock.return_value = Mock(status_code=200, text="ERROR")
+
+        with pytest.raises(TeddyCloudError) as raised:
+            client.set_setting("cloud.nonsense", "true")
+
+        assert raised.value.refused
+
+    def test_saves_the_settings_to_teddyclouds_config_file(self, client, request_mock):
+        request_mock.return_value = _ok()
+
+        client.save_settings()
+
+        assert request_mock.call_args.args == ("GET", "/api/triggerWriteConfig")
+
 
 def _download(status=200, chunks=(b"taf",), fails=None):
     """A streamed response the way requests hands one out, usable in a with block."""

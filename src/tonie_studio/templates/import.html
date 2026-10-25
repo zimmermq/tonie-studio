@@ -19,6 +19,22 @@
   </div>
 {% endmacro %}
 
+{% macro cloud_fields(cloud) %}
+  <label class="row gap-8 clickable mt-14">
+    <input type="checkbox" name="cloud_switch" value="on"{% if cloud.switch %} checked{% endif %}>
+    <span>{{ t("import.cloud.switch") }}</span>
+  </label>
+  <p class="muted mt-0">{{ t("import.cloud.hint") }}</p>
+  {% call field(t("import.cloud.after"), group=True) %}
+    <label class="block">
+      <input type="radio" name="cloud_after" value="restore"{% if cloud.after == "restore" %} checked{% endif %}> {{ t("import.cloud.restore") }}
+    </label>
+    <label class="block">
+      <input type="radio" name="cloud_after" value="off"{% if cloud.after == "off" %} checked{% endif %}> {{ t("import.cloud.off") }}
+    </label>
+  {% endcall %}
+{% endmacro %}
+
 {% block intro %}{{ t("import.intro") }}{% endblock %}
 {% block body %}
 <p class="row wrap gap-12">
@@ -39,6 +55,13 @@
   {% endif %}
   {% if held %}
   <div class="warn" role="alert">{{ t(held.key, **held.params) }}</div>
+  {% endif %}
+  {% if run.cloud.before %}
+  <p class="muted">
+    {%- if not run.active %}{{ t("import.cloud.putting_back") }}
+    {%- elif run.cloud.after == "off" %}{{ t("import.cloud.held_off") }}
+    {%- else %}{{ t("import.cloud.held_restore") }}{% endif -%}
+  </p>
   {% endif %}
   <div class="list">
   {% for state in states %}
@@ -150,6 +173,7 @@
     <input type="password" name="token" autocomplete="off">
   {% endcall %}
   {{ pace_fields(pace) }}
+  {{ cloud_fields(cloud) }}
   <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
 </form>
 
@@ -161,6 +185,7 @@
     {{ picked("dumpspicked") }}
   </p>
   {{ pace_fields(pace) }}
+  {{ cloud_fields(cloud) }}
   <p><button class="primary" type="submit">{{ t("import.start") }}</button></p>
 </form>
 {% endif %}

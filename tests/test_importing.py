@@ -13,9 +13,10 @@ import pytest
 from fake_teddycloud import FakeTeddyCloud
 from tonie_studio.github import Repo, RepoError
 from tonie_studio.importing import (CACHED, CHECKING, DUPLICATE, FAILED, FETCHING, FINISHED,
-                                    GIVEN_UP, IMPORTED, PENDING, SKIP_FILE, SKIPPED, STOPPED,
-                                    UNREADABLE, ImportProblem, Importer, Pace, Skip, add_skip,
-                                    cached_at, import_one, remove_skip, skip_list)
+                                    GIVEN_UP, IMPORTED, PENDING, RESTORE, RETRY_SECONDS, RUNNING,
+                                    SKIP_FILE, SKIPPED, STOPPED, SWITCH_OFF, UNREADABLE, Cloud,
+                                    ImportProblem, Importer, Pace, Skip, add_skip, cached_at,
+                                    import_one, remove_skip, skip_list)
 
 AUTH = "AB" * 32
 
@@ -264,6 +265,158 @@ class TestPlanning:
             importer.begin([WOLF], Pace(per_hour=0), "test")
 
         assert raised.value.key == "import.bad_pace"
+
+
+class TestCloudSwitch:
+    """A run that switches teddyCloud's cloud access on for itself, and back when it ends."""
+
+    @pytest.fixture
+    def cloud_off(self, teddycloud):
+        teddycloud.settings["cloud.enabled"] = "false"
+        return teddycloud
+
+    def cloud(self, teddycloud):
+        return {name: teddycloud.settings[name] for name in ("cloud.enabled", "cloud.cacheContent")}
+
+    def test_switches_the_cloud_on_imports_and_puts_it_back(self, importer, cloud_off, clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+
+        importer.step()
+        assert self.cloud(cloud_off) == {"cloud.enabled": "true", "cloud.cacheContent": "true"}
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": IMPORTED}
+        assert self.cloud(cloud_off) == {"cloud.enabled": "false", "cloud.cacheContent": "true"}
+        assert importer.current().cloud.before == {}
+
+    def test_every_change_is_saved_so_a_restart_of_teddycloud_keeps_it(self, importer, cloud_off,
+                                                                       clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        assert [saved["cloud.enabled"] for saved in cloud_off.saved_settings] == ["true", "false"]
+
+    def test_restoring_leaves_a_cloud_that_was_on_before_on(self, importer, teddycloud, clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True, after=RESTORE))
+        run_until_idle(importer, clock)
+
+        assert self.cloud(teddycloud) == {"cloud.enabled": "true", "cloud.cacheContent": "true"}
+
+    def test_restoring_puts_back_caching_it_switched_on(self, importer, cloud_off, clock):
+        cloud_off.settings["cloud.cacheContent"] = "false"
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        assert self.cloud(cloud_off) == {"cloud.enabled": "false", "cloud.cacheContent": "false"}
+
+    def test_switching_off_turns_the_cloud_off_even_when_it_was_on(self, importer, teddycloud,
+                                                                  clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True, after=SWITCH_OFF))
+        run_until_idle(importer, clock)
+
+        assert self.cloud(teddycloud) == {"cloud.enabled": "false", "cloud.cacheContent": "true"}
+
+    def test_a_stopped_run_puts_the_cloud_back(self, importer, cloud_off, clock):
+        importer.begin([WOLF, FEST], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        importer.stop()
+        importer.step()
+
+        assert importer.current().phase == STOPPED
+        assert cloud_off.settings["cloud.enabled"] == "false"
+
+    def test_a_run_that_gives_up_puts_it_back_and_takes_it_again_when_resumed(
+            self, importer, cloud_off, clock):
+        cloud_off.cloud_refusing.update({WOLF_RUID, FEST_RUID})
+        importer.begin([WOLF, FEST, BIBI], Pace(per_hour=10, jitter=0, max_failures=2), "test",
+                       cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+        clock.now += 360
+        run_until_idle(importer, clock)
+        assert importer.current().phase == GIVEN_UP
+        assert cloud_off.settings["cloud.enabled"] == "false"
+
+        importer.resume()
+        importer.step()
+
+        assert importer.current().phase == RUNNING
+        assert cloud_off.settings["cloud.enabled"] == "true"
+
+    def test_a_paused_run_keeps_the_cloud_on(self, importer, cloud_off, clock):
+        importer.begin([WOLF, FEST], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        importer.pause()
+        importer.step()
+
+        assert cloud_off.settings["cloud.enabled"] == "true"
+
+    def test_an_importer_started_anew_still_puts_it_back(self, importer, cloud_off, tmp_path,
+                                                          clock):
+        importer.begin([WOLF, FEST], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        again = Importer(lambda: cloud_off, tmp_path, clock=clock, rng=random.Random(1),
+                         sleep=lambda seconds: None)
+        clock.now += 360
+        run_until_idle(again, clock)
+
+        assert again.current().phase == FINISHED
+        assert cloud_off.settings["cloud.enabled"] == "false"
+
+    def test_a_setting_teddycloud_refuses_ends_the_run_and_asks_the_cloud_nothing(
+            self, importer, cloud_off, clock):
+        cloud_off.settings_refusing.add("cloud.enabled")
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+
+        run_until_idle(importer, clock)
+
+        run = importer.current()
+        assert run.phase == STOPPED
+        assert run.error_key == "import.cloud_not_switched"
+        assert cloud_off.cloud_requests == []
+        assert cloud_off.settings["cloud.enabled"] == "false"
+
+    def test_putting_it_back_waits_for_teddycloud_to_answer(self, importer, cloud_off, clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+        importer.step()
+        importer.stop()
+
+        cloud_off.settings_down = True
+        assert importer.step() == RETRY_SECONDS
+        assert importer.current().cloud.before
+
+        cloud_off.settings_down = False
+        importer.step()
+        assert cloud_off.settings["cloud.enabled"] == "false"
+        assert importer.current().cloud.before == {}
+
+    def test_a_new_run_takes_over_what_the_last_one_still_owes(self, importer, cloud_off, clock):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+        importer.step()
+        importer.stop()
+        cloud_off.settings_down = True
+        importer.step()
+        cloud_off.settings_down = False
+
+        importer.begin([FEST], STEADY, "test", cloud=Cloud(switch=True))
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Fest.nfc": IMPORTED}
+        assert cloud_off.settings["cloud.enabled"] == "false"
+
+    def test_without_the_switch_the_settings_are_left_alone(self, importer, teddycloud, clock):
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+
+        assert teddycloud.saved_settings == []
+
+    def test_a_choice_for_afterwards_it_does_not_know_is_refused(self, importer):
+        with pytest.raises(ImportProblem) as raised:
+            importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True, after="later"))
+
+        assert raised.value.key == "import.bad_cloud"
 
 
 class TestPacing:

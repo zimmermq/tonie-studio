@@ -17,8 +17,9 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from ..github import LARGEST_DUMP, RepoError, parse_repo
 from ..teddycloud import TeddyCloudError
 from ..times import from_seconds
-from ..importing import (BROKE_OFF, CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, SKIPPED,
-                         UNREADABLE, ImportProblem, Pace, Run, remove_skip, skip_list)
+from ..importing import (BROKE_OFF, CACHED, DUPLICATE, FAILED, IMPORTED, NEW, PENDING, RESTORE,
+                         SKIPPED, UNREADABLE, Cloud, ImportProblem, Pace, Run, remove_skip,
+                         skip_list)
 from .. import naming
 from ..jobs import JobState
 from .common import Context, Refused, refused, upload_form
@@ -58,6 +59,9 @@ def register(app: FastAPI, ctx: Context) -> None:
             "recent": _recent(run) if run else [],
             "next_at": from_seconds(run.next_at) if run else None,
             "pace": run.pace if run else Pace(),
+            # The form always offers switching on and putting back, whatever
+            # the last run chose: leaving teddyCloud as it was is the default.
+            "cloud": Cloud(switch=True, after=RESTORE),
             "skips": [(skip, from_seconds(skip.added_at) if skip.added_at else None)
                       for skip in skip_list(ctx.settings.data_dir)],
         })
@@ -86,12 +90,14 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.post("/import/github")
     def start_github(repo: str = Form(...), branch: str = Form(""), subfolder: str = Form(""),
                      token: str = Form(""), per_hour: float = Form(...), jitter: float = Form(...),
-                     max_failures: int = Form(...)):
+                     max_failures: int = Form(...), cloud_switch: str = Form(""),
+                     cloud_after: str = Form(RESTORE)):
         try:
             found = parse_repo(repo, branch=branch, subfolder=subfolder)
         except RepoError as error:
             raise refused(error) from error
-        _start(lambda pace: importer.begin_github(found, pace, token=token.strip()),
+        cloud = _cloud(cloud_switch, cloud_after)
+        _start(lambda pace: importer.begin_github(found, pace, token=token.strip(), cloud=cloud),
                per_hour, jitter, max_failures)
         return RedirectResponse("/import", 303)
 
@@ -117,7 +123,9 @@ def register(app: FastAPI, ctx: Context) -> None:
         if not dumps:
             raise Refused(400, "import.no_dumps")
         label = _common_folder([name for name, _ in dumps])
-        _start(lambda pace: importer.begin(dumps, pace, label), per_hour, jitter, max_failures)
+        cloud = _cloud(str(form.get("cloud_switch", "")), str(form.get("cloud_after", RESTORE)))
+        _start(lambda pace: importer.begin(dumps, pace, label, cloud=cloud),
+               per_hour, jitter, max_failures)
         return RedirectResponse("/import", 303)
 
     def names_run(job_id: str):
@@ -202,6 +210,11 @@ def _start(begin, per_hour: float, jitter: float, max_failures: int) -> Run:
         return begin(Pace(per_hour=per_hour, jitter=jitter / 100, max_failures=max_failures))
     except ImportProblem as error:
         raise refused(error, 409 if error.key == "import.busy" else 400) from error
+
+
+def _cloud(switch: str, after: str) -> Cloud:
+    """The form's choice for teddyCloud's cloud access; an unticked box is not sent at all."""
+    return Cloud(switch=switch == "on", after=after)
 
 
 def _counts(run: Run) -> dict:

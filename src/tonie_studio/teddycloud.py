@@ -339,6 +339,21 @@ class TeddyCloudClient:
         """One setting's value as teddyCloud spells it, such as ``"true"``."""
         return self._request("GET", f"/api/settings/get/{name}", params=self._params()).text.strip()
 
+    def set_setting(self, name: str, value: str) -> None:
+        """Change one setting in teddyCloud's memory; see save_settings."""
+        path = f"/api/settings/set/{name}"
+        response = self._request("POST", path, params=self._params(), data=value)
+        self._expect_ok(response, path)
+
+    def save_settings(self) -> None:
+        """Write teddyCloud's settings to its config file.
+
+        A changed setting lives only in teddyCloud's memory until then, and a
+        restart of teddyCloud brings back what the file says.
+        """
+        response = self._request("GET", "/api/triggerWriteConfig", params=self._params())
+        self._expect_ok(response, "/api/triggerWriteConfig")
+
     def tonies_json(self) -> List[Dict[str, Any]]:
         """The official catalogue teddyCloud keeps up to date: every tonie it can name."""
         return self._request("GET", "/api/toniesJson", params=self._params()).json()

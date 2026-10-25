@@ -57,6 +57,11 @@ class FakeTeddyCloud:
             "cloud.enabled": "true", "cloud.cacheContent": "true", "cloud.cacheToLibrary": "true",
             "tonie_json.cache_images": "true",
         }
+        # Settings teddyCloud answers ERROR for, every save of the settings
+        # as they then stood, and whether teddyCloud answers about settings at all.
+        self.settings_refusing: Set[str] = set()
+        self.saved_settings: List[Dict[str, str]] = []
+        self.settings_down = False
         # What the Tonies cloud would hand out, by ruid, and every ruid asked for.
         self.cloud: Dict[str, bytes] = {}
         # Tonies whose download the cloud refuses as unauthorized, as it does
@@ -332,7 +337,22 @@ class FakeTeddyCloud:
         return len(taf)
 
     def setting(self, name: str) -> str:
+        if self.settings_down:
+            raise TeddyCloudError("teddyCloud at http://fake is unreachable")
         return self.settings[name]
+
+    def set_setting(self, name: str, value: str) -> None:
+        if self.settings_down:
+            raise TeddyCloudError("teddyCloud at http://fake is unreachable")
+        if name in self.settings_refusing:
+            raise TeddyCloudError(f"teddyCloud refused /api/settings/set/{name}: ERROR",
+                                  refused=True)
+        self.settings[name] = value
+
+    def save_settings(self) -> None:
+        if self.settings_down:
+            raise TeddyCloudError("teddyCloud at http://fake is unreachable")
+        self.saved_settings.append(dict(self.settings))
 
     def tonies_json(self) -> List[dict]:
         return [dict(entry) for entry in self.catalogue]
