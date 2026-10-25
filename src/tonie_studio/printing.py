@@ -139,9 +139,9 @@ def overview_entries(client: TeddyCloudClient, times: Dict[str, int],
     A model no tag plays is not a tonie anyone can pick up, so it does not
     belong on a list of what is in the tin. A bought tonie has no model of
     this app and is named from what teddyCloud knows of it, with its model
-    number as the one fact. Pictures are fetched only when their entry is
-    drawn: hundreds of shop pictures of half a megabyte each would not fit in
-    memory together.
+    number as the one fact. Pictures are not fetched here but by the
+    overview, which makes each one small as it arrives: hundreds of shop
+    pictures of half a megabyte each would not fit in memory together.
     """
     models = {model.id: model for model in list_models(client)}
     entries = []

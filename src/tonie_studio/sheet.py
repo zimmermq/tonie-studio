@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from PIL import Image
+from reportlab import rl_config
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
@@ -43,6 +44,11 @@ from .i18n import DEFAULT, Translator
 from .pictures import PICTURE_ERRORS, around_figure, centre_square, inset, on_white
 
 log = logging.getLogger(__name__)
+
+# Pictures go into a PDF as binary streams. reportlab spells them out as
+# ASCII85 text by default, which makes the file a quarter larger and, without
+# reportlab's C extension, is the slowest step of a page of hundreds of covers.
+rl_config.useA85 = 0
 
 # How the cover meets the circle. "fill" lets the circle cut into the artwork;
 # "fit" keeps the whole cover visible and fills the ring around it with a

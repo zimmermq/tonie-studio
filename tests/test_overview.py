@@ -2,15 +2,16 @@
 
 import io
 import re
+import threading
 
 from PIL import Image
 
-from tonie_studio.overview import COLUMNS, ROWS_PER_PAGE, Entry, build_overview
+from tonie_studio.overview import COLUMNS, COVER_PIXELS, ROWS_PER_PAGE, Entry, build_overview
 
 
-def _image():
+def _image(size=300):
     buffer = io.BytesIO()
-    Image.new("RGB", (300, 300), (200, 60, 40)).save(buffer, format="JPEG")
+    Image.new("RGB", (size, size), (200, 60, 40)).save(buffer, format="JPEG")
     return buffer.getvalue()
 
 
@@ -44,7 +45,7 @@ class TestOverview:
         # twenty pages rather than forty.
         assert COLUMNS * ROWS_PER_PAGE == 36
 
-    def test_a_picture_is_fetched_only_when_its_entry_is_drawn(self, tmp_path):
+    def test_each_picture_is_fetched_once(self, tmp_path):
         fetched = []
 
         def fetcher(name):
@@ -56,7 +57,36 @@ class TestOverview:
         build_overview([Entry(image=fetcher("a"), title="A"), Entry(image=fetcher("b"), title="B"),
                         Entry(image=lambda: None, title="Without")], tmp_path / "overview.pdf")
 
-        assert fetched == ["a", "b"]
+        assert sorted(fetched) == ["a", "b"]
+
+    def test_pictures_are_fetched_several_at_a_time(self, tmp_path):
+        # Hundreds of pictures fetched one after another take longer than the
+        # proxy in front of the app waits for the page.
+        both_asked = threading.Barrier(2, timeout=5)
+
+        def fetch():
+            both_asked.wait()
+            return _image()
+
+        build_overview([Entry(image=fetch, title="A"), Entry(image=fetch, title="B")],
+                       tmp_path / "overview.pdf")
+
+        assert not both_asked.broken
+
+    def test_a_cover_is_embedded_at_print_resolution_not_larger(self, tmp_path):
+        target = tmp_path / "overview.pdf"
+
+        build_overview([Entry(image=_image(1500), title="Gross")], target)
+
+        widths = {int(width) for width in re.findall(rb"/Width (\d+)", target.read_bytes())}
+        assert widths == {COVER_PIXELS}
+
+    def test_pictures_are_stored_as_binary_not_as_text(self, tmp_path):
+        target = tmp_path / "overview.pdf"
+
+        build_overview([entry()], target)
+
+        assert b"ASCII85Decode" not in target.read_bytes()
 
     def test_a_tonie_without_a_picture_is_still_listed(self, tmp_path):
         # A radio tonie or one recorded without a cover is still a tonie in

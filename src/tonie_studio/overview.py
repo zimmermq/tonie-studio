@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Sequence, Union
@@ -41,11 +42,21 @@ LEADING = 1.2
 # Enough lines for a long title; more would run into the next entry.
 MOST_TITLE_LINES = 3
 
+# The side of a cover as it goes into the PDF: COVER_MM at 300 dpi. More
+# only makes the file larger and the page slower to build.
+COVER_PIXELS = 200
+
+# How many covers are fetched and made small at once. Fetching waits on
+# teddyCloud, and Pillow lets other threads run while it decodes and scales,
+# so a collection of several hundred takes a few seconds instead of longer
+# than the proxy in front of the app waits for the page.
+PREPARE_WORKERS = 8
+
 
 @dataclass
 class Entry:
-    # The cover, or what fetches it when the entry is drawn; None or a fetcher
-    # answering None leaves an empty ring.
+    # The cover, or what fetches it while the overview is built; None or a
+    # fetcher answering None leaves an empty ring.
     image: Union[bytes, Callable[[], Optional[bytes]], None]
     title: str
     series: str = ""
@@ -69,20 +80,37 @@ def build_overview(entries: Sequence[Entry], target: Path,
     sheet.setTitle(heading)
     pages = (len(entries) + per_page - 1) // per_page
 
-    for index, entry in enumerate(entries):
-        slot = index % per_page
-        if slot == 0:
-            if index:
-                sheet.showPage()
-            _heading(sheet, heading, translate("pdf.page", page=index // per_page + 1, pages=pages),
-                     pages)
-        # Down each column before the next, the way a list is read.
-        column, row = divmod(slot, ROWS_PER_PAGE)
-        left = MARGIN_MM * mm + column * column_width
-        top = page_height - MARGIN_MM * mm - HEADING_MM * mm - row * row_height
-        _entry(sheet, entry, left, top, column_width, row_height)
+    # Each worker keeps only the small cover it made, never the original, so
+    # hundreds of shop pictures of half a megabyte each are not held at once.
+    with ThreadPoolExecutor(PREPARE_WORKERS) as pool:
+        covers = pool.map(_small_cover, entries)
+        for index, (entry, cover) in enumerate(zip(entries, covers)):
+            slot = index % per_page
+            if slot == 0:
+                if index:
+                    sheet.showPage()
+                _heading(sheet, heading,
+                         translate("pdf.page", page=index // per_page + 1, pages=pages), pages)
+            # Down each column before the next, the way a list is read.
+            column, row = divmod(slot, ROWS_PER_PAGE)
+            left = MARGIN_MM * mm + column * column_width
+            top = page_height - MARGIN_MM * mm - HEADING_MM * mm - row * row_height
+            _entry(sheet, entry, cover, left, top, column_width, row_height)
 
     sheet.save()
+
+
+def _small_cover(entry: Entry) -> Optional[bytes]:
+    """The entry's cover as the square the overview prints, or None when there is none."""
+    image = entry.image() if callable(entry.image) else entry.image
+    if not image:
+        return None
+    try:
+        return render_square(image, FILL, size=COVER_PIXELS)
+    except PICTURE_ERRORS as error:
+        # A cover that cannot be read costs its picture, not the page.
+        log.warning("overview: a cover cannot be read: %s", error)
+        return None
 
 
 def _heading(sheet: canvas.Canvas, heading: str, page: str, pages: int) -> None:
@@ -96,12 +124,11 @@ def _heading(sheet: canvas.Canvas, heading: str, page: str, pages: int) -> None:
         sheet.drawRightString(page_width - MARGIN_MM * mm, baseline, page)
 
 
-def _entry(sheet: canvas.Canvas, entry: Entry, left: float, top: float,
+def _entry(sheet: canvas.Canvas, entry: Entry, square: Optional[bytes], left: float, top: float,
            width: float, height: float) -> None:
     cover = COVER_MM * mm
     centre_y = top - height / 2
-    image = entry.image() if callable(entry.image) else entry.image
-    _cover(sheet, image, left + cover / 2, centre_y, cover / 2)
+    _cover(sheet, square, left + cover / 2, centre_y, cover / 2)
 
     text_left = left + cover + GAP_MM * mm
     text_width = width - cover - 2 * GAP_MM * mm
@@ -126,17 +153,11 @@ def _entry(sheet: canvas.Canvas, entry: Entry, left: float, top: float,
         sheet.drawString(text_left, cursor + size * 0.2, text)
 
 
-def _cover(sheet: canvas.Canvas, image: Optional[bytes], x: float, y: float, radius: float) -> None:
+def _cover(sheet: canvas.Canvas, square: Optional[bytes], x: float, y: float,
+           radius: float) -> None:
     """The cover clipped round, or an empty ring where there is none."""
-    reader = None
-    if image:
-        try:
-            reader = ImageReader(io.BytesIO(render_square(image, FILL, size=300)))
-        except PICTURE_ERRORS as error:
-            # A cover that cannot be read costs its picture, not the page.
-            log.warning("overview: a cover cannot be read: %s", error)
-
-    if reader is not None:
+    if square:
+        reader = ImageReader(io.BytesIO(square))
         sheet.saveState()
         path = sheet.beginPath()
         path.circle(x, y, radius)
