@@ -69,6 +69,10 @@
  "archive.exists": "Dieser Podcast wird schon archiviert.",
  "archive.gone": "Dieses Archiv gibt es nicht mehr.",
  "archive.intro": "Jede Folge eines Podcasts als eigenes Hörspiel in der Library, mit ihrem Bild, um sie über die Library auf einen beliebigen Sticker zu legen. Neue Folgen kommen zweimal am Tag dazu, und nichts wird gelöscht, auch nicht, was die Quelle entfernt. Von einer Sendung der ARD Audiothek werden alle Folgen archiviert, von einem Feed die, die er enthält.",
+ "archive.missing": {
+  "one": "1 Folge gibt es bei der Quelle nicht mehr",
+  "other": "{count} Folgen gibt es bei der Quelle nicht mehr"
+ },
  "archive.name_taken": "Für die Folge \"{name}\" ist in der Library kein Name mehr frei.",
  "archive.none": "Noch kein Podcast archiviert.",
  "archive.source": "Feed-Adresse (RSS) oder Link einer Sendung oder Folge der ARD Audiothek",

@@ -102,6 +102,9 @@
         {{ t("archive.stored", count=entry.archived | length, total=[entry.total, entry.archived | length] | max, folder=entry.folder) }}
         &middot; {% if entry.updated %}{{ t("podcasts.updated", date=entry.updated[:10]) }}{% else %}{{ t("podcasts.not_loaded") }}{% endif %}
       </span>
+      {% if entry.missing %}
+      <span class="muted detail">{{ t("archive.missing", count=entry.missing | length) }}</span>
+      {% endif %}
       {% if entry.error_key or entry.error %}
       <span class="state-failed detail">{{ error_text(entry) }}</span>
       {% endif %}

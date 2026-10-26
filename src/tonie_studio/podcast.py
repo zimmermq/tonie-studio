@@ -121,6 +121,8 @@ class Episode:
     seconds: Optional[int] = None
     kind: str = ""
     image: Optional[str] = None
+    # Further addresses of the same audio, to try when ``url`` is gone.
+    others: List[str] = field(default_factory=list)
 
 
 @dataclass

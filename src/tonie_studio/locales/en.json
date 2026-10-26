@@ -69,6 +69,10 @@
  "archive.exists": "This podcast is archived already.",
  "archive.gone": "This archive no longer exists.",
  "archive.intro": "Every episode of a podcast as its own audio in the library, with its picture, to put on any sticker from the library page. New episodes are added twice a day, and nothing is deleted, not even what the source takes down. Of an ARD Audiothek show every episode is archived, of a feed the ones it lists.",
+ "archive.missing": {
+  "one": "1 episode is no longer available at the source",
+  "other": "{count} episodes are no longer available at the source"
+ },
  "archive.name_taken": "There is no free name in the library for the episode \"{name}\".",
  "archive.none": "No podcast archived yet.",
  "archive.source": "Feed address (RSS), or link of an ARD Audiothek show or episode",

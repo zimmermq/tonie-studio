@@ -230,6 +230,16 @@ class TestArchivePages:
 
         assert len([url for url in web.asked if "/programsets/" in url]) == 1
 
+    def test_episodes_the_source_no_longer_has_are_counted(self, site, web, runner):
+        web.failing["https://media.example/101.mp3"] = 404
+        web.failing["https://media.example/101-other.mp3"] = 404
+
+        self.archive(site, runner)
+
+        page = site.get("/podcasts").text
+        assert "2 von 3 Folgen" in page
+        assert "1 Folge gibt es bei der Quelle nicht mehr" in page
+
     def test_the_job_page_leads_back_to_the_podcasts(self, site, runner):
         job = self.archive(site, runner)
 

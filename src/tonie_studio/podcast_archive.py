@@ -92,6 +92,15 @@ class Stored:
 
 
 @dataclass
+class Missing:
+    """An episode the source lists but whose audio it no longer has."""
+
+    title: str = ""
+    # When its audio was last asked for, as ISO 8601.
+    checked: str = ""
+
+
+@dataclass
 class Archive:
     id: str
     source: str
@@ -102,6 +111,7 @@ class Archive:
     archived: Dict[str, Stored] = field(default_factory=dict)
     # The episode being stored and its target, written before its encode.
     storing: Dict[str, str] = field(default_factory=dict)
+    missing: Dict[str, Missing] = field(default_factory=dict)
     total: int = 0
     checked: str = ""
     updated: str = ""
@@ -159,10 +169,10 @@ def _audiothek(url: str, fetch: Fetch, glance: bool = False) -> Feed:
 
 
 def _audiothek_episode(node: dict) -> Optional[Episode]:
-    audios = node.get("audios") or []
-    url = next((audio.get("downloadUrl") or audio.get("url") for audio in audios
-                if audio.get("downloadUrl") or audio.get("url")), None)
-    if not url or not node.get("id"):
+    urls = list(dict.fromkeys(audio.get("downloadUrl") or audio.get("url")
+                              for audio in node.get("audios") or []
+                              if audio.get("downloadUrl") or audio.get("url")))
+    if not urls or not node.get("id"):
         return None
     try:
         published = datetime.fromisoformat(node.get("publicationStartDateAndTime") or "")
@@ -170,7 +180,8 @@ def _audiothek_episode(node: dict) -> Optional[Episode]:
         published = None
     picture = (node.get("image") or {}).get("url1X1") or (node.get("image") or {}).get("url")
     return Episode(guid=str(node["id"]), title=(node.get("title") or "").strip() or str(node["id"]),
-                   url=url, published=published, seconds=node.get("duration") or None,
+                   url=urls[0], others=urls[1:], published=published,
+                   seconds=node.get("duration") or None,
                    kind="audio/mpeg",
                    image=picture.replace("{width}", AUDIOTHEK_PICTURE_WIDTH) if picture else None)
 
@@ -201,11 +212,27 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
 
     oldest = datetime.min.replace(tzinfo=timezone.utc)
     # The episode a crash interrupted first: storing the next one replaces its note.
-    todo = sorted((episode for episode in feed.episodes if episode.guid not in archive.archived),
+    todo = sorted((episode for episode in feed.episodes if episode.guid not in archive.archived
+                   and not _resting(archive.missing.get(episode.guid), now)),
                   key=lambda episode: (episode.guid not in archive.storing,
                                        episode.published or oldest))
-    for episode in todo[:most]:
-        path = _store(client, archive, episode, data_dir, fetch)
+    stored = 0
+    for episode in todo:
+        if stored >= most:
+            break
+        try:
+            path = _store(client, archive, episode, data_dir, fetch)
+        except _Gone:
+            # Passed over, so the episodes after it are still stored; asked
+            # for again after REFRESH_AFTER, should the source mend it.
+            archive.missing[episode.guid] = Missing(title=episode.title, checked=now.isoformat())
+            archive.storing = {}
+            update_archive(data_dir, archive)
+            log.warning("archive %s: the source no longer has the audio of %s",
+                        archive.id, episode.title)
+            continue
+        stored += 1
+        archive.missing.pop(episode.guid, None)
         archive.archived[episode.guid] = Stored(
             path=path, title=episode.title,
             published=episode.published.isoformat() if episode.published else "",
@@ -216,7 +243,28 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
         log.info("archive %s stored %s", archive.id, path)
 
     archive.error, archive.error_key, archive.error_params = "", "", {}
-    return max(0, len(todo) - most)
+    return sum(1 for episode in todo
+               if episode.guid not in archive.archived and episode.guid not in archive.missing)
+
+
+# What a server answers for audio it no longer has; anything else may mend
+# itself and fails the run, to be tried again.
+GONE = (404, 410)
+
+
+class _Gone(Exception):
+    """No address of an episode has its audio any more."""
+
+
+def _resting(missing: Optional[Missing], now: datetime) -> bool:
+    """Whether a missing episode was asked for too recently to be asked again."""
+    if missing is None:
+        return False
+    try:
+        checked = datetime.fromisoformat(missing.checked)
+    except ValueError:
+        return False
+    return now - checked < REFRESH_AFTER
 
 
 def _store(client: TeddyCloudClient, archive: Archive, episode: Episode, data_dir: Path,
@@ -237,14 +285,27 @@ def _store(client: TeddyCloudClient, archive: Archive, episode: Episode, data_di
     folder.mkdir(parents=True, exist_ok=True)
     try:
         path = folder / f"episode{episode_suffix(episode)}"
-        if fetch is download:
-            download(episode.url, into=path)
-        else:
-            path.write_bytes(fetch(episode.url))
+        _fetch_audio(episode, path, fetch)
         encode_files(client, [path], target, total_seconds=episode.seconds)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return target
+
+
+def _fetch_audio(episode: Episode, path: Path, fetch: Fetch) -> None:
+    """Download the episode from the first of its addresses that still has it."""
+    for url in [episode.url] + episode.others:
+        try:
+            if fetch is download:
+                download(url, into=path)
+            else:
+                path.write_bytes(fetch(url))
+            return
+        except requests.HTTPError as error:
+            if getattr(error.response, "status_code", None) not in GONE:
+                raise
+            log.info("%s is gone: %s", url, error)
+    raise _Gone(episode.guid)
 
 
 def _free_target(client: TeddyCloudClient, folder: str, episode: Episode) -> str:
@@ -356,7 +417,7 @@ def remove_archive(data_dir: Path, archive_id: str) -> None:
 
 
 # What a refresh changes on an archive; the source and the folder are a person's.
-REFRESHED = ("title", "archived", "storing", "total", "checked", "updated",
+REFRESHED = ("title", "archived", "storing", "missing", "total", "checked", "updated",
              "error", "error_key", "error_params")
 
 
@@ -382,7 +443,9 @@ def _read(data_dir: Path) -> List[Archive]:
         archived = {guid: from_record(Stored, stored)
                     for guid, stored in (entry.get("archived") or {}).items()
                     if isinstance(stored, dict) and stored.get("path")}
-        archives.append(from_record(Archive, {**entry, "archived": archived}))
+        missing = {guid: from_record(Missing, gone)
+                   for guid, gone in (entry.get("missing") or {}).items() if isinstance(gone, dict)}
+        archives.append(from_record(Archive, {**entry, "archived": archived, "missing": missing}))
     return archives
 
 

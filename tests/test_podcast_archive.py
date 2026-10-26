@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+import requests
 from fake_teddycloud import FakeTeddyCloud
 
 import tonie_studio.podcast_archive as podcast_archive
@@ -46,7 +47,14 @@ def node(number, title, when, picture="moffels"):
     return {"id": str(number), "title": title, "publicationStartDateAndTime": when,
             "duration": 390, "image": {"url1X1": f"https://img.example/{picture}?w={{width}}"},
             "audios": [{"url": f"https://media.example/{number}.mp3",
-                        "downloadUrl": f"https://media.example/{number}.mp3"}]}
+                        "downloadUrl": f"https://media.example/{number}.mp3"},
+                       {"url": f"https://media.example/{number}-other.mp3", "downloadUrl": None}]}
+
+
+def answered(status):
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status} for url", response=response)
 
 
 NODES = [node(103, "Märchen: Rumpelstilzchen", "2026-10-25T19:04:00+01:00"),
@@ -62,9 +70,13 @@ class FakeWeb:
         self.nodes = list(NODES if nodes is None else nodes)
         self.asked = []
         self.pictures_fail = False
+        # Addresses answered with a status instead of audio, by address.
+        self.failing = {}
 
-    def __call__(self, url, limit=None):
+    def __call__(self, url, limit=None, timeout=None):
         self.asked.append(url)
+        if url in self.failing:
+            raise answered(self.failing[url])
         if url.endswith("feed.xml"):
             return self.feed
         if url.startswith("https://api.ardaudiothek.de/items/urn:ard:episode:"):
@@ -281,6 +293,67 @@ class TestRefreshing:
 
         assert entry.total == 3
         assert entry.checked == NOW.isoformat()
+
+
+class TestAudioThatIsGone:
+    def oldest_gone(self, web, status=404):
+        web.failing["https://media.example/101.mp3"] = status
+        web.failing["https://media.example/101-other.mp3"] = status
+
+    def test_another_address_of_the_episode_is_tried(self, cloud, tmp_path):
+        web = FakeWeb()
+        web.failing["https://media.example/101.mp3"] = 404
+        entry = archive(SHOW_LINK)
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=web)
+
+        assert "101" in entry.archived
+        assert "https://media.example/101-other.mp3" in web.asked
+
+    def test_an_episode_the_source_no_longer_has_is_passed_over(self, cloud, tmp_path):
+        web = FakeWeb()
+        self.oldest_gone(web)
+        entry = archive(SHOW_LINK)
+
+        left = refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=web)
+
+        assert left == 0
+        assert sorted(entry.archived) == ["102", "103"]
+        assert entry.missing["101"].title == "Aus Zappelduster wird Unser Sandmännchen"
+        assert entry.storing == {}
+
+    def test_a_missing_episode_is_not_asked_for_again_at_once(self, cloud, tmp_path):
+        web = FakeWeb()
+        self.oldest_gone(web)
+        entry = archive(SHOW_LINK)
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=web)
+        web.asked.clear()
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW.replace(hour=9), fetch=web)
+
+        assert "https://media.example/101.mp3" not in web.asked
+
+    def test_a_missing_episode_is_tried_again_later_and_stored_when_it_is_back(self, cloud,
+                                                                                tmp_path):
+        web = FakeWeb()
+        self.oldest_gone(web)
+        entry = archive(SHOW_LINK)
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=web)
+        web.failing.clear()
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW.replace(day=27), fetch=web)
+
+        assert "101" in entry.archived and entry.missing == {}
+
+    def test_a_server_in_trouble_is_no_missing_episode(self, cloud, tmp_path):
+        web = FakeWeb()
+        self.oldest_gone(web, status=503)
+        entry = archive(SHOW_LINK)
+
+        with pytest.raises(requests.HTTPError):
+            refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=web)
+
+        assert entry.missing == {}
 
 
 class TestWhatIsKept:
