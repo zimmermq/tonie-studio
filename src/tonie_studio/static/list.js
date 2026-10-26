@@ -8,7 +8,7 @@
 //   data-language (what the language chips match);
 // - #search, #sort, #count, #nohits, chips with data-filter ("" for all),
 //   optionally chips with data-language ("" for all), which narrow what the
-//   filter chips keep,
+//   filter chips keep; a chip's span holds its number,
 //   column headings with data-sort, and optionally buttons with data-view;
 // - in #page-data: "orders", each order's {number, desc}, "first", the order
 //   the list starts in, and the words "list.shown_of".
@@ -28,7 +28,7 @@
     const count = document.getElementById('count');
     const nohits = document.getElementById('nohits');
     const chips = [...document.querySelectorAll('[data-filter]')];
-    const languages = [...document.querySelectorAll('[data-language]')];
+    const languages = [...document.querySelectorAll('button[data-language]')];
     const sorters = [...document.querySelectorAll('[data-sort]')];
     const views = [...document.querySelectorAll('button[data-view]')];
     const viewKey = list.dataset.remember;
@@ -92,10 +92,39 @@
         if (!row.hidden) shown += 1;
       }
       count.textContent = shown === rows.length ? '' : say(shownOf, { shown, count: rows.length });
+      number(terms);
       nohits.hidden = shown > 0;
       // As an attribute: the property reflecting it is missing in older browsers.
       for (const chip of chips) chip.setAttribute('aria-pressed', chip.dataset.filter === state.filter);
       for (const chip of languages) chip.setAttribute('aria-pressed', chip.dataset.language === state.language);
+    }
+
+    // Each chip's number is what a click on it would show: the search counts,
+    // and so does the chip chosen in the other row, so a chip never promises
+    // rows the search has already taken away.
+    function number(terms) {
+      const byTag = {}, byLanguage = {};
+      let tagged = 0, spoken = 0;
+      for (const row of rows) {
+        if (!matches(row, terms)) continue;
+        const tags = row.dataset.tags.split(' ');
+        if (!state.language || row.dataset.language === state.language) {
+          tagged += 1;
+          for (const tag of tags) byTag[tag] = (byTag[tag] || 0) + 1;
+        }
+        if (!state.filter || tags.includes(state.filter)) {
+          spoken += 1;
+          byLanguage[row.dataset.language] = (byLanguage[row.dataset.language] || 0) + 1;
+        }
+      }
+      const show = (chip, value) => {
+        const span = chip.querySelector('span');
+        if (span) span.textContent = String(value);
+      };
+      for (const chip of chips) show(chip, chip.dataset.filter ? byTag[chip.dataset.filter] || 0 : tagged);
+      for (const chip of languages) {
+        show(chip, chip.dataset.language ? byLanguage[chip.dataset.language] || 0 : spoken);
+      }
     }
 
     // Appending moves a row, so the rows end up in order behind the column

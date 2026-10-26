@@ -29,8 +29,10 @@ async function page(rows, globals = {}) {
   sort.value = 'name';
   const search = element('search');
   search.value = '';
-  const chips = ['', 'official', 'own', 'nopicture'].map(kind => element('', '', { dataset: { filter: kind } }));
-  const languages = ['', 'de', 'en', 'none'].map(code => element('', '', { dataset: { language: code } }));
+  // Each chip carries its number in a span, as the page writes it.
+  const counted = (dataset) => element('', '', { dataset, children: { span: element('', '?') } });
+  const chips = ['', 'official', 'own', 'nopicture'].map(kind => counted({ filter: kind }));
+  const languages = ['', 'de', 'en', 'none'].map(code => counted({ language: code }));
   const views = ['grid', 'list'].map(view => element('', '', { dataset: { view } }));
   const sorters = ['name', 'age', 'added'].map(key => element('', '', { dataset: { sort: key } }));
   const elements = await runPage(['app.js', 'list.js'], {
@@ -42,7 +44,7 @@ async function page(rows, globals = {}) {
                           chapters: { number: true, desc: true } } },
     // As in the page: the list carries data-view too, so the bare attribute
     // finds it along with the buttons.
-    queries: { '[data-filter]': chips, '[data-language]': languages, '[data-view]': [list, ...views],
+    queries: { '[data-filter]': chips, 'button[data-language]': languages, '[data-view]': [list, ...views],
                'button[data-view]': views, '[data-sort]': sorters },
     globals,
   });
@@ -63,6 +65,28 @@ async function page(rows, globals = {}) {
   assert.deepEqual(names(), ['simba']);
   assert.equal(elements.count.textContent, '1 of 3');
   assert.equal(elements.nohits.hidden, true);
+}
+
+// The numbers on the chips say what each would show: the search counts, and so
+// does the chip chosen in the other row.
+{
+  const { search, chip, language } = await page([
+    tonie('a', { series: 'Disney', kind: 'own' }), tonie('b', { series: 'Disney', language: 'en' }),
+    tonie('c', { series: 'Kakadu' })]);
+  const number = element => element.querySelector('span').textContent;
+  assert.deepEqual([number(chip('')), number(chip('own')), number(chip('official'))], ['3', '1', '2']);
+
+  search.value = 'disney';
+  search.fire('input');
+  assert.deepEqual([number(chip('')), number(chip('own')), number(chip('official'))], ['2', '1', '1']);
+  assert.deepEqual([number(language('')), number(language('de')), number(language('en'))],
+                   ['2', '1', '1']);
+
+  chip('own').fire('click');
+  assert.deepEqual([number(language('')), number(language('de')), number(language('en'))],
+                   ['1', '1', '0']);
+  language('en').fire('click');
+  assert.deepEqual([number(chip('')), number(chip('own')), number(chip('official'))], ['1', '0', '1']);
 }
 
 // A filter keeps one kind; "no picture" goes by the picture, not the kind.
