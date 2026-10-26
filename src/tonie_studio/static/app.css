@@ -399,9 +399,11 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
 /* The library: always a table, with the file's path under its name. */
 .listing.library .listing-head,
 .listing.library .listing-row {
-  grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px 80px 100px minmax(0, 1.6fr) 70px;
+  grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px 80px 100px minmax(0, 1.6fr) 15rem;
 }
 .listing.library .t-played { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listing.library .t-delete { display: flex; gap: 6px; align-items: center; justify-content: flex-end;
+  white-space: nowrap; }
 .listing.library .t-delete form { margin: 0; }
 /* What was heard: always a table, most played first. */
 .listing.listening .listing-head,
@@ -430,7 +432,7 @@ a.chip { border: 1px solid var(--line); background: var(--card); color: inherit;
   }
   #tonies[data-view=list] .t-kind, #tonies[data-view=list] .t-added { display: none; }
   .listing.library .listing-head,
-  .listing.library .listing-row { grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px minmax(0, 1.6fr) 70px; }
+  .listing.library .listing-row { grid-template-columns: 44px minmax(0, 2.4fr) 100px 90px minmax(0, 1.6fr) 15rem; }
   .listing.library .t-size, .listing.library .t-added { display: none; }
 }
 

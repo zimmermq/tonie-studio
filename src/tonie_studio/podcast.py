@@ -130,6 +130,8 @@ class Feed:
     title: str
     image: Optional[str]
     episodes: List[Episode]
+    # What the source says it speaks, as it says it, such as "de" or "en-US".
+    language: Optional[str] = None
 
 
 @dataclass
@@ -199,7 +201,8 @@ def parse_feed(data: bytes) -> Feed:
     title = (channel.findtext("title") or "").strip()
     if not title:
         raise FeedError("feed.no_title")
-    return Feed(title=title, image=image, episodes=episodes)
+    return Feed(title=title, image=image, episodes=episodes,
+                language=(channel.findtext("language") or "").strip() or None)
 
 
 def newest(feed: Feed, count: int) -> List[Episode]:

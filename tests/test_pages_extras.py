@@ -240,6 +240,54 @@ class TestArchivePages:
         assert "2 von 3 Folgen" in page
         assert "1 Folge gibt es bei der Quelle nicht mehr" in page
 
+    def test_archived_episodes_show_their_picture_and_origin_in_the_library(self, site, runner):
+        self.archive(site, runner)
+
+        page = site.get("/library").text
+
+        assert page.count('src="/cover/archive/') == 3
+        assert "Podcast-Archiv" in page
+
+    def test_archived_episodes_speak_their_language_in_the_library(self, site, runner):
+        self.archive(site, runner)
+
+        page = site.get("/library").text
+
+        assert page.count('data-tags="podcast" data-language="de"') + page.count(
+            'data-tags="podcast unused" data-language="de"') == 3
+
+    def test_putting_one_on_a_sticker_offers_its_language(self, site, runner, settings):
+        from tonie_studio.podcast_archive import load_archives
+
+        self.archive(site, runner)
+        stored = load_archives(settings.data_dir)[0].archived["103"]
+
+        page = site.get(f"/library/assign?path={stored.path}").text
+
+        assert '<option value="de" selected>' in page
+
+    def test_the_picture_of_an_archived_episode_is_served(self, site, runner, settings):
+        from tonie_studio.podcast_archive import load_archives
+
+        self.archive(site, runner)
+        name = load_archives(settings.data_dir)[0].archived["103"].picture
+
+        response = site.get(f"/cover/archive/{name}?size=96")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/")
+
+    @pytest.mark.parametrize("name", ["../podcast-archives.json", "nonsense.jpg"])
+    def test_nothing_but_an_archive_picture_is_served(self, site, name):
+        assert site.get(f"/cover/archive/{name}").status_code in (400, 404)
+
+    def test_putting_on_a_sticker_is_a_button_beside_delete(self, site, runner):
+        self.archive(site, runner)
+
+        page = site.get("/library").text
+
+        assert 'class="button small" href="/library/assign?path=' in page
+
     def test_the_job_page_leads_back_to_the_podcasts(self, site, runner):
         job = self.archive(site, runner)
 

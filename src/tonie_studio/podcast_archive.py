@@ -33,6 +33,7 @@ from .encode import (EncodeError, Progress, cut_to_bytes, delete_taf, encode_fil
                      encode_library, library_path, taf_exists)
 from .i18n import Problem
 from .jobs import JobRunner
+from .languages import DEFAULT, STORED
 from .library import same
 from .models import picture_suffix
 from .podcast import (LARGEST_FEED, LARGEST_IMAGE, MOST_KEEP, REFRESH_AFTER, TITLE_IN_NAME,
@@ -89,6 +90,8 @@ class Stored:
     seconds: Optional[int] = None
     # The file of its picture in PICTURES; "" without one.
     picture: str = ""
+    # What it speaks, as models store it, such as "de-de"; "" when unknown.
+    language: str = ""
 
 
 @dataclass
@@ -108,6 +111,8 @@ class Archive:
     # renames itself must not start a second folder.
     folder: str = ""
     title: str = ""
+    # What the source speaks, as models store it; "" when it does not say.
+    language: str = ""
     archived: Dict[str, Stored] = field(default_factory=dict)
     # The episode being stored and its target, written before its encode.
     storing: Dict[str, str] = field(default_factory=dict)
@@ -165,7 +170,8 @@ def _audiothek(url: str, fetch: Fetch, glance: bool = False) -> Feed:
     episodes = [episode for episode in map(_audiothek_episode, nodes) if episode]
     if not title:
         raise FeedError("feed.no_title")
-    return Feed(title=title, image=image, episodes=episodes)
+    # The Audiothek is the ARD's, and says nothing of a show's language.
+    return Feed(title=title, image=image, episodes=episodes, language="de")
 
 
 def _audiothek_episode(node: dict) -> Optional[Episode]:
@@ -207,6 +213,7 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
     feed = read_source(archive.source, fetch)
     archive.title = feed.title
     archive.folder = archive.folder or feed.title
+    archive.language = stored_language(feed.language) or archive.language
     archive.total = len(feed.episodes)
     archive.checked = now.isoformat()
 
@@ -236,7 +243,8 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
         archive.archived[episode.guid] = Stored(
             path=path, title=episode.title,
             published=episode.published.isoformat() if episode.published else "",
-            seconds=episode.seconds, picture=_keep_picture(data_dir, episode.image, fetch))
+            seconds=episode.seconds, picture=_keep_picture(data_dir, episode.image, fetch),
+            language=archive.language)
         archive.storing = {}
         archive.updated = now.isoformat()
         update_archive(data_dir, archive)
@@ -254,6 +262,14 @@ GONE = (404, 410)
 
 class _Gone(Exception):
     """No address of an episode has its audio any more."""
+
+
+def stored_language(code: Optional[str]) -> str:
+    """A source's language as models store it, "de" as "de-de"; "" for none."""
+    code = (code or "").strip().lower().replace("_", "-")
+    if "-" in code:
+        return code
+    return STORED.get(code, "")
 
 
 def _resting(missing: Optional[Missing], now: datetime) -> bool:
@@ -344,22 +360,34 @@ def _keep_picture(data_dir: Path, url: Optional[str], fetch: Fetch) -> str:
     return name
 
 
+# What _keep_picture names a picture: never a path, so a name from a request
+# cannot reach another file.
+PICTURE_NAME = re.compile(r"[0-9a-f]{20}\.[a-z0-9]{2,5}")
+
+
+def picture_path(data_dir: Path, name: str) -> Optional[Path]:
+    """The file of a kept picture, or None for a name _keep_picture does not give or a gone file."""
+    if not PICTURE_NAME.fullmatch(name or ""):
+        return None
+    path = data_dir / PICTURES / name
+    return path if path.is_file() else None
+
+
 def picture_of(data_dir: Path, stored: Stored) -> Optional[bytes]:
     """The picture kept for an episode, or None."""
-    if not stored.picture or "/" in stored.picture or stored.picture.startswith("."):
-        return None
-    path = data_dir / PICTURES / stored.picture
-    return path.read_bytes() if path.is_file() else None
+    path = picture_path(data_dir, stored.picture)
+    return path.read_bytes() if path else None
+
+
+def stored_by_path(data_dir: Path) -> Dict[str, Stored]:
+    """Every archived episode by the library path of its taf, as ``same`` spells it."""
+    return {same(stored.path): stored for archive in load_archives(data_dir)
+            for stored in archive.archived.values()}
 
 
 def episode_at(data_dir: Path, path: str) -> Optional[Stored]:
     """The archived episode whose taf is at the library path ``path``, or None."""
-    wanted = same(path)
-    for archive in load_archives(data_dir):
-        for stored in archive.archived.values():
-            if same(stored.path) == wanted:
-                return stored
-    return None
+    return stored_by_path(data_dir).get(same(path))
 
 
 def put_together(client: TeddyCloudClient, archive: Archive, guids: List[str], name: str,
@@ -386,7 +414,7 @@ def put_together(client: TeddyCloudClient, archive: Archive, guids: List[str], n
         model_id = publish(client, ruid, encoded, series=archive.title or archive.folder,
                            episode=name, tracks=[stored.title for stored in chosen], cover=cover,
                            cover_name=chosen[0].picture.rsplit(".", 1)[-1] if cover else "jpg",
-                           data_dir=data_dir)
+                           language=archive.language or DEFAULT, data_dir=data_dir)
     except Exception:
         try:
             delete_taf(client, encoded.target)
@@ -417,7 +445,7 @@ def remove_archive(data_dir: Path, archive_id: str) -> None:
 
 
 # What a refresh changes on an archive; the source and the folder are a person's.
-REFRESHED = ("title", "archived", "storing", "missing", "total", "checked", "updated",
+REFRESHED = ("title", "language", "archived", "storing", "missing", "total", "checked", "updated",
              "error", "error_key", "error_params")
 
 
@@ -440,9 +468,12 @@ def _read(data_dir: Path) -> List[Archive]:
         if not (isinstance(entry, dict) and is_subscription_id(entry.get("id"))
                 and entry.get("source")):
             continue
-        archived = {guid: from_record(Stored, stored)
+        # An episode stored before its archive knew a language speaks the archive's.
+        archived = {guid: from_record(Stored, {"language": entry.get("language") or "", **stored})
                     for guid, stored in (entry.get("archived") or {}).items()
                     if isinstance(stored, dict) and stored.get("path")}
+        for stored in archived.values():
+            stored.language = stored.language or entry.get("language") or ""
         missing = {guid: from_record(Missing, gone)
                    for guid, gone in (entry.get("missing") or {}).items() if isinstance(gone, dict)}
         archives.append(from_record(Archive, {**entry, "archived": archived, "missing": missing}))

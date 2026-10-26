@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 from ..models import CACHE, COVER_TYPES, cache_name, fetch_cover, is_cover_name
 from ..pictures import MAX_SIZE, PICTURE_ERRORS, shrink
+from ..podcast_archive import picture_path
 from ..sheet import FILL, FIT, PIXELS, render_square
 from .common import Context, Refused
 
@@ -55,6 +56,17 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise Refused(400, "error.not_an_image")
         data = client().fetch(f"{CACHE}{name}")
         return _picture_response(request, data, name, mode, size, KEEP_CACHED)
+
+    @app.get("/cover/archive/{name}")
+    def archived_picture(request: Request, name: str, size: int = 0):
+        """A picture the podcast archive kept for an episode, from this app's data.
+
+        Its name is a hash of where it came from, so it never changes and may be kept long.
+        """
+        path = picture_path(ctx.settings.data_dir, name)
+        if path is None:
+            raise Refused(404, "error.not_an_image")
+        return _picture_response(request, path.read_bytes(), name, None, size, KEEP_CACHED)
 
     @app.get("/cover/custom/{name}")
     def custom_cover(request: Request, name: str, mode: Optional[str] = None, size: int = 0):

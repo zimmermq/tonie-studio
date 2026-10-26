@@ -17,7 +17,7 @@ from ..languages import NONE, chosen, offered as offered_languages, spoken
 from ..library import safe_library_path, same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
-from ..podcast_archive import episode_at, picture_of
+from ..podcast_archive import Stored, episode_at, picture_of, stored_by_path
 from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING, cover_url, list_models
 from ..tags import TonieError, TonieTag, list_tags, require_tag
 from ..tags import label as tag_label
@@ -37,9 +37,11 @@ def register(app: FastAPI, ctx: Context) -> None:
         languages = {model: entry.get("language") or ""
                      for model, entry in ctx.namer.official().by_model.items()}
         languages.update({model.id: model.language for model in list_models(connection)})
-        shelf = sorted(_shelve(tafs, list_tags(connection), languages),
+        shelf = sorted(_shelve(tafs, list_tags(connection), languages,
+                               stored_by_path(ctx.settings.data_dir)),
                        key=lambda item: item.label.casefold())
-        counts, offered = filters((item.tags for item in shelf), (RECORDED, IMPORTED, BOX, UNUSED))
+        counts, offered = filters((item.tags for item in shelf),
+                                  (RECORDED, PODCAST, IMPORTED, BOX, UNUSED))
         spoken_counts = Counter(item.language for item in shelf)
         return templates.TemplateResponse(request, "library.html", {
             "shelf": shelf,
@@ -108,8 +110,9 @@ def register(app: FastAPI, ctx: Context) -> None:
             "imported": _imported(path),
             "series": folder.rsplit("/", 1)[-1],
             # An archived episode by its title, which the file name may have
-            # had to change.
+            # had to change, and in its language.
             "episode": archived.title if archived and archived.title else name[:-len(TAF_SUFFIX)],
+            "language": archived.language if archived else None,
             "tags": list_tags(connection),
             "categories": CATEGORIES,
         })
@@ -157,6 +160,8 @@ LIBRARY_COLUMNS = (
 
 # Where a taf of the library comes from; the library page filters by it.
 RECORDED, IMPORTED, BOX = "recorded", "imported", "box"
+# An episode the podcast archive stored; recorded here too, but found by the archive.
+PODCAST = "podcast"
 # Not where it comes from but filtered the same way: no sticker plays it.
 UNUSED = "unused"
 
@@ -167,16 +172,19 @@ def _imported(path: str) -> bool:
 
 
 def _shelve(tafs: List[Taf], tags: List[TonieTag],
-            languages: Optional[Dict[str, str]] = None) -> List["Shelved"]:
+            languages: Optional[Dict[str, str]] = None,
+            archived: Optional[Dict[str, Stored]] = None) -> List["Shelved"]:
     """Each taf with its origin, the stickers that play it and those that only seem to.
 
     A sticker plays a taf only when its source names the file exactly;
     teddyCloud's file system tells the two spellings of an umlaut apart.
     ``languages`` gives each model's language, catalogue and own models alike:
     a taf speaks the language of the model teddyCloud matched its audio to,
-    else of the model of a sticker naming it.
+    else of the model of a sticker naming it. ``archived`` are the podcast
+    archive's episodes by their path, which bring their own picture.
     """
     languages = languages or {}
+    archived = archived or {}
     users: Dict[str, List[TonieTag]] = {}
     for tag in tags:
         if tag.source:
@@ -185,10 +193,13 @@ def _shelve(tafs: List[Taf], tags: List[TonieTag],
     for taf in tafs:
         naming = users.get(same(taf.source), [])
         model = taf.model or next((tag.model for tag in naming if tag.model), "")
-        shelf.append(Shelved(taf, _origin(taf),
+        episode = archived.get(same(taf.path))
+        shelf.append(Shelved(taf, PODCAST if episode else _origin(taf),
                              [tag for tag in naming if tag.source == taf.source],
                              [tag for tag in naming if tag.source != taf.source],
-                             spoken(languages.get(model))))
+                             spoken(episode.language if episode and episode.language
+                                    else languages.get(model)),
+                             archive_picture=episode.picture if episode else ""))
     return shelf
 
 
@@ -221,6 +232,8 @@ class Shelved:
     played_by: List[TonieTag]
     misspelled_by: List[TonieTag] = field(default_factory=list)
     language: str = NONE  # what it speaks, as languages.spoken groups it
+    # The picture the podcast archive kept for it, as its file name; "" for other audio.
+    archive_picture: str = ""
 
     @property
     def label(self) -> str:

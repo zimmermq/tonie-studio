@@ -420,6 +420,7 @@
  "library.now_used": "Seit die Seite geöffnet wurde, wurde die Datei vergeben an: {used}. Öffne die Library neu, um es zu sehen und zu entscheiden.",
  "library.origin.box": "Box-Töne",
  "library.origin.imported": "Importiert",
+ "library.origin.podcast": "Podcast-Archiv",
  "library.origin.recorded": "Aufgenommen",
  "library.origin.unused": "Unbenutzt",
  "library.other_spelling": "andere Schreibweise der Umlaute, spielt nichts",

@@ -420,6 +420,7 @@
  "library.now_used": "Since the page was opened, this file was given to: {used}. Open the library again to see it and decide.",
  "library.origin.box": "Box sounds",
  "library.origin.imported": "Imported",
+ "library.origin.podcast": "Podcast archive",
  "library.origin.recorded": "Recorded",
  "library.origin.unused": "Unused",
  "library.other_spelling": "other spelling of the umlauts, plays nothing",

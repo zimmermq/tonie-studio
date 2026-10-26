@@ -114,9 +114,11 @@ class TestCatalogs:
         assert {f"tonies.kind.{kind}" for kind in (OFFICIAL, OWN, NO_MODEL, NO_PICTURE)} <= keys
         assert {column.heading for column in TONIE_COLUMNS} <= keys
 
-        from tonie_studio.pages.library import BOX, IMPORTED, LIBRARY_COLUMNS, RECORDED, UNUSED
+        from tonie_studio.pages.library import (BOX, IMPORTED, LIBRARY_COLUMNS, PODCAST, RECORDED,
+                                                UNUSED)
 
-        assert {f"library.origin.{origin}" for origin in (RECORDED, IMPORTED, BOX, UNUSED)} <= keys
+        assert {f"library.origin.{origin}"
+                for origin in (RECORDED, PODCAST, IMPORTED, BOX, UNUSED)} <= keys
         assert {column.heading for column in LIBRARY_COLUMNS} <= keys
 
         from tonie_studio.listening import HEARD, QUIET

@@ -14,7 +14,8 @@
 
 {% block row %}
 {%- set taf = item.taf %}
-{%- set picture = item.picture | cover_url(false, 96) %}
+{%- set picture = ("/cover/archive/" ~ item.archive_picture ~ "?size=96") if item.archive_picture
+                  else (item.picture | cover_url(false, 96)) %}
 {%- set players = (item.played_by + item.misspelled_by) | map(attribute="label") | join(", ") %}
 <div class="listing-row" data-path="{{ taf.path }}" data-tags="{{ item.tags | join(' ') }}" data-language="{{ item.language }}"
      data-name="{{ item.label | lower }}" data-origin="{{ t('library.origin.' ~ item.origin) | lower }}"
@@ -36,7 +37,7 @@
   </span>
   <span class="t-delete">
     {%- if not item.played_by and not item.misspelled_by and item.origin != "box" %}
-    <a class="small-text block" href="/library/assign?path={{ taf.path | urlencode }}">{{ t("library.assign") }}</a>
+    <a class="button small" href="/library/assign?path={{ taf.path | urlencode }}">{{ t("library.assign") }}</a>
     {%- endif %}
     {#- The box's own sounds are played by the box itself and stay. Deleting a
         taf a sticker plays leaves that tonie silent; sometimes that is the

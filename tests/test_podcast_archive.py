@@ -356,6 +356,42 @@ class TestAudioThatIsGone:
         assert entry.missing == {}
 
 
+class TestLanguage:
+    def test_an_audiothek_show_speaks_german(self):
+        assert read_source(SHOW_LINK, FakeWeb()).language == "de"
+
+    def test_a_feed_says_its_own_language(self, cloud, tmp_path):
+        english = FEED.replace(b"<title>Kakadu</title>", b"<title>Kakadu</title><language>en-US</language>")
+        entry = archive()
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb(english))
+
+        assert entry.language == "en-us"
+        assert {stored.language for stored in entry.archived.values()} == {"en-us"}
+
+    def test_an_episode_stored_before_its_archive_knew_a_language_takes_the_archives(
+            self, tmp_path):
+        import json as json_module
+
+        (tmp_path / podcast_archive.FILE_NAME).write_text(json_module.dumps([{
+            "id": "alt", "source": SHOW_LINK, "folder": "Unser Sandmännchen",
+            "language": "de-de", "archived": {"103": {"path": "/Unser Sandmännchen/x.taf"}}}]))
+
+        (entry,) = load_archives(tmp_path)
+
+        assert entry.archived["103"].language == "de-de"
+
+    def test_a_compilation_speaks_the_language_of_its_archive(self, cloud, tmp_path):
+        cloud.add_tag(RUID)
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb())
+
+        podcast_archive.put_together(cloud, load_archives(tmp_path)[0], ["101"], "Eins", RUID,
+                                     tmp_path)
+
+        assert cloud.custom_models[-1]["language"] == "de-de"
+
+
 class TestWhatIsKept:
     def test_title_date_and_length_of_each_episode(self, cloud, tmp_path):
         entry = archive(SHOW_LINK)
