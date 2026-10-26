@@ -4,6 +4,48 @@
 
 {% block intro %}{{ t("podcasts.intro") }}{% endblock %}
 {% block body %}
+<form method="get" action="/podcasts" class="card row stackable wrap gap-12 items-end">
+  {% call field(t("podcasts.search.field"), class="grow m-0") %}
+    <input type="search" name="query" value="{{ query }}">
+  {% endcall %}
+  <button class="primary" type="submit">{{ t("podcasts.search.go") }}</button>
+</form>
+
+{% if query %}
+<h2>{{ t("podcasts.search.title") }}</h2>
+{% for place in failed %}
+<div class="warn">{{ t("podcasts.search.failed", place=t("podcasts.search.where." ~ place)) }}</div>
+{% endfor %}
+<div class="list">
+{% for entry in found %}
+  <div class="item">
+    <span class="grow truncate">
+      <strong class="truncate">{{ entry.title }}</strong>
+      <span class="muted truncate">
+        {{ entry.by }}
+        {%- if entry.episodes %} &middot; {{ t("podcasts.search.episodes", count=entry.episodes) }}{% endif %}
+        &middot; {{ t("podcasts.search.where." ~ entry.where) }}
+      </span>
+    </span>
+    {% if entry.feed %}
+    <a class="button small" href="/podcasts?feed={{ entry.feed | urlencode }}#subscribe">{{ t("podcasts.subscribe") }}</a>
+    {% endif %}
+    {% if entry.source in archived_sources %}
+    <span class="pill">{{ t("podcasts.search.archived") }}</span>
+    {% else %}
+    <form method="post" action="/podcasts/archives">
+      <input type="hidden" name="source" value="{{ entry.source }}">
+      <button type="submit" class="small">{{ t("archive.start") }}</button>
+    </form>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="empty">{{ t("podcasts.search.none") }}</p>
+{% endfor %}
+</div>
+{% endif %}
+
+<h2>{{ t("nav.podcasts") }}</h2>
 <div class="list">
 {% for entry in subscriptions %}
   <div class="item">
@@ -30,10 +72,10 @@
 {% endfor %}
 </div>
 
-<h2>{{ t("podcasts.subscribe") }}</h2>
+<h2 id="subscribe">{{ t("podcasts.subscribe") }}</h2>
 <form method="post" action="/podcasts" class="card">
   {% call field(t("podcasts.feed")) %}
-    <input type="url" name="feed" required placeholder="https://...">
+    <input type="url" name="feed" required placeholder="https://..." value="{{ feed }}">
   {% endcall %}
   {% call field(t("podcasts.which_sticker"), group=True) %}
     {{ sticker_picker(tags, "ruid", "assign.no_tags", choose=choose) }}

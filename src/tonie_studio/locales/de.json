@@ -555,6 +555,18 @@
  "podcasts.on_sticker": "auf {sticker}",
  "podcasts.order_hint": "Die neueste Folge kommt zuerst. Abbestellen lässt den Sticker spielen, was er hat.",
  "podcasts.refresh": "Jetzt aktualisieren",
+ "podcasts.search.archived": "wird archiviert",
+ "podcasts.search.episodes": {
+  "one": "1 Folge",
+  "other": "{count} Folgen"
+ },
+ "podcasts.search.failed": "{place} hat nicht geantwortet; die Liste ist vielleicht unvollständig.",
+ "podcasts.search.field": "Podcast oder Sendung der ARD Audiothek nach Namen finden",
+ "podcasts.search.go": "Suchen",
+ "podcasts.search.none": "Nichts gefunden.",
+ "podcasts.search.title": "Gefunden",
+ "podcasts.search.where.audiothek": "ARD Audiothek",
+ "podcasts.search.where.directory": "Podcast-Verzeichnis",
  "podcasts.subscribe": "Abonnieren",
  "podcasts.unsubscribe": "Abbestellen",
  "podcasts.updated": "zuletzt neu am {date}",

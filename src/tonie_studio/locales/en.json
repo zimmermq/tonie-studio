@@ -555,6 +555,18 @@
  "podcasts.on_sticker": "on {sticker}",
  "podcasts.order_hint": "The newest episode comes first. Unsubscribing leaves the sticker playing what it has.",
  "podcasts.refresh": "Refresh now",
+ "podcasts.search.archived": "being archived",
+ "podcasts.search.episodes": {
+  "one": "1 episode",
+  "other": "{count} episodes"
+ },
+ "podcasts.search.failed": "{place} did not answer; the list may be incomplete.",
+ "podcasts.search.field": "Find a podcast or an ARD Audiothek show by name",
+ "podcasts.search.go": "Search",
+ "podcasts.search.none": "Nothing found.",
+ "podcasts.search.title": "Found",
+ "podcasts.search.where.audiothek": "ARD Audiothek",
+ "podcasts.search.where.directory": "Podcast directory",
  "podcasts.subscribe": "Subscribe",
  "podcasts.unsubscribe": "Unsubscribe",
  "podcasts.updated": "last new on {date}",

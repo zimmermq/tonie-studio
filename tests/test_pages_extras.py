@@ -273,3 +273,56 @@ class TestArchivePages:
         assert model["episodes"] == "Märchen: Rumpelstilzchen"
         assert model["pic"]
         assert teddycloud.images
+
+
+class TestPodcastSearchPage:
+    @pytest.fixture
+    def web(self):
+        from test_podcast_search import FakeWeb
+
+        return FakeWeb()
+
+    @pytest.fixture
+    def site(self, make_site, web):
+        yield make_site(fetch=web)
+
+    def test_the_page_offers_a_search(self, site):
+        assert 'name="query"' in site.get("/podcasts").text
+
+    def test_a_show_found_in_the_audiothek_can_be_archived(self, site):
+        page = site.get("/podcasts?query=Sandmännchen").text
+
+        assert "Antenne Brandenburg" in page and "214 Folgen" in page
+        assert ('name="source" value="https://www.ardsounds.de/sendung/unser-sandmaennchen/'
+                'urn:ard:show:0e3f60ed4ba198df/"') in page
+
+    def test_a_podcast_found_in_the_directory_can_also_be_subscribed(self, site):
+        page = site.get("/podcasts?query=Sandmännchen").text
+
+        assert 'href="/podcasts?feed=https%3A//www.antennebrandenburg.de/podcast.xml#subscribe"' in page
+
+    def test_the_subscription_form_takes_the_feed_it_was_sent(self, site):
+        page = site.get("/podcasts?feed=https://www.antennebrandenburg.de/podcast.xml").text
+
+        assert 'value="https://www.antennebrandenburg.de/podcast.xml"' in page
+
+    def test_a_place_that_does_not_answer_is_said(self, make_site):
+        from test_podcast_search import FakeWeb
+        from tonie_studio.podcast_search import AUDIOTHEK
+
+        site = make_site(fetch=FakeWeb(failing=(AUDIOTHEK,)))
+
+        page = site.get("/podcasts?query=Sandmännchen").text
+
+        assert "ARD Audiothek hat nicht geantwortet" in page
+        assert "Antenne Brandenburg (rbb)" in page
+
+    def test_a_show_archived_already_says_so(self, site, settings):
+        from tonie_studio.podcast_archive import add_archive
+
+        add_archive(settings.data_dir, "https://www.ardsounds.de/sendung/unser-sandmaennchen/"
+                                       "urn:ard:show:0e3f60ed4ba198df/", "Unser Sandmännchen")
+
+        page = site.get("/podcasts?query=Sandmännchen").text
+
+        assert "wird archiviert" in page

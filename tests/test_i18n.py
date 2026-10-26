@@ -21,7 +21,7 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "sheet.layout.", "sheet.intro.", "tonies.col_",
            "library.origin.", "library.col_",
            "listening.filter.", "listening.col_",
-           "albums.filter.")
+           "albums.filter.", "podcasts.search.where.")
 
 
 def placeholders(text):
@@ -91,6 +91,10 @@ class TestCatalogs:
         from tonie_studio.pages.importing import KINDS
 
         assert {f"names.kind.{kind}" for kind in KINDS} <= keys
+
+        from tonie_studio.podcast_search import PLACES
+
+        assert {f"podcasts.search.where.{place}" for place in PLACES} <= keys
 
         from tonie_studio.album import ORDERINGS
 

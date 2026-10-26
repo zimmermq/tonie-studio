@@ -15,6 +15,7 @@ from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions
                        remove_subscription)
 from ..podcast import subscribe as add_podcast
 from ..podcast_archive import add_archive, load_archives, read_source, remove_archive
+from ..podcast_search import search as search_podcasts
 from ..runtimes import playing_times
 from ..tags import find_tag, list_tags
 from .common import Context, Refused
@@ -67,17 +68,28 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     @app.get("/podcasts", response_class=HTMLResponse)
-    def podcasts_page(request: Request, ruid: str = ""):
-        """``ruid`` chooses that sticker, for a page that sent someone here with one."""
+    def podcasts_page(request: Request, ruid: str = "", query: str = "", feed: str = ""):
+        """``ruid`` chooses that sticker, for a page that sent someone here with one.
+
+        ``query`` searches the ARD Audiothek and the podcast directory; ``feed``
+        fills in the subscription form, as a result found there does.
+        """
         tags = list_tags(client())
         labels = {tag.ruid: tag.label for tag in tags}
+        found, failed = search_podcasts(query, fetch) if query.strip() else ([], [])
+        archives = load_archives(settings.data_dir)
         return templates.TemplateResponse(request, "podcasts.html", {
+            "query": query,
+            "found": found,
+            "failed": failed,
+            "archived_sources": {entry.source for entry in archives},
+            "feed": feed,
             "subscriptions": load_subscriptions(settings.data_dir),
             "labels": labels,
             "tags": tags,
             "choose": ruid if ruid in labels else None,
             "keep": DEFAULT_KEEP,
-            "archives": load_archives(settings.data_dir),
+            "archives": archives,
         })
 
 
