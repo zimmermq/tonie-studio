@@ -553,6 +553,43 @@ class TestTheUpdater:
         assert updater.queue(entry.id) == "job-1"
         assert updater.running(entry.id) == "job-1"
 
+    def test_an_archive_left_unfinished_carries_on_at_once(self, cloud, tmp_path):
+        # A restart of the app ends the chain of rounds; the next check would
+        # come only twelve hours after the last.
+        unfinished = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        unfinished.total, unfinished.checked = 3, NOW.isoformat()
+        update_archive(tmp_path, unfinished)
+        done = add_archive(tmp_path, "https://example.org/feed.xml", "Kakadu")
+        done.total, done.checked = 0, NOW.isoformat()
+        update_archive(tmp_path, done)
+        queued = []
+
+        class Holding:
+            def submit(self, kind, label, work):
+                queued.append(label)
+                return f"job-{len(queued)}"
+
+        updater = ArchiveUpdater(lambda: cloud, tmp_path, Holding(), FakeWeb())
+
+        updater.carry_on()
+
+        assert queued == ["Unser Sandmännchen"]
+
+    def test_an_episode_cut_off_mid_store_counts_as_unfinished(self, cloud, tmp_path):
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        entry.storing = {"ep-1": "/Unser Sandmännchen/Eins.taf"}
+        update_archive(tmp_path, entry)
+        queued = []
+
+        class Holding:
+            def submit(self, kind, label, work):
+                queued.append(label)
+                return "job-1"
+
+        ArchiveUpdater(lambda: cloud, tmp_path, Holding(), FakeWeb()).carry_on()
+
+        assert queued == ["Unser Sandmännchen"]
+
     def test_a_failure_is_kept_on_the_archive(self, cloud, tmp_path):
         entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
         cloud.encode_fails = "disk full"

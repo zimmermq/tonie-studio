@@ -546,12 +546,27 @@ class ArchiveUpdater:
                     None) if archive_id else None
 
     def run(self, stop: threading.Event) -> None:
-        """Wake up now and then and look for new episodes, until ``stop``."""
+        """Carry on what a restart cut short, then look for new episodes now and then, until ``stop``."""
+        try:
+            self.carry_on()
+        except Exception:
+            log.exception("carrying on the archives failed")
         while not stop.wait(WAKE_SECONDS):
             try:
                 self._queue_due(datetime.now(timezone.utc))
             except Exception:
                 log.exception("archive round failed")
+
+    def carry_on(self) -> None:
+        """Start a round for every archive with episodes still to store.
+
+        Rounds follow each other only while the app runs; after a restart the
+        next would come REFRESH_AFTER after the last check, half a day later.
+        An episode a store was cut off in counts as still to store.
+        """
+        for archive in load_archives(self.data_dir):
+            if archive.storing or archive.total > len(archive.archived) + len(archive.missing):
+                self.queue(archive.id)
 
     def _queue_due(self, now: datetime) -> None:
         for archive in load_archives(self.data_dir):
