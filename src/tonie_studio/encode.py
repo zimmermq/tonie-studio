@@ -254,6 +254,33 @@ def encode_files(
     return _result(target, header, tracks=len(sources))
 
 
+def encode_library(
+    client: TeddyCloudClient,
+    sources: Sequence[str],
+    target: str,
+    progress: Optional[Progress] = None,
+    total_seconds: Optional[float] = None,
+) -> EncodeResult:
+    """Encode files already in the library into ``target``, one chapter each, in the order given.
+
+    teddyCloud reads a taf as a source by skipping its header, so audio in the
+    library is combined without being fetched again; it is decoded and
+    compressed once more on the way. An existing target is refused.
+    """
+    if not sources:
+        raise EncodeError("encode.no_tracks")
+    if not target.endswith(TAF_SUFFIX):
+        raise EncodeError("encode.target_not_taf", target=target)
+    _ensure_parents(client, target)
+    if _find_entry(client, target) is not None:
+        raise EncodeError("encode.exists", target=target)
+    target = _as_listed(client, target)
+    _encode(client, [_as_listed(client, source) for source in sources], target, progress,
+            total_seconds)
+    header = (_find_entry(client, target) or {}).get("tafHeader") or {}
+    return _result(target, header, tracks=len(sources))
+
+
 def _encode(client: TeddyCloudClient, staged: Sequence[str], target: str,
             progress: Optional[Progress], total_seconds: Optional[float]) -> None:
     # teddyCloud blocks for the whole encode and says nothing. Watching the

@@ -65,6 +65,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         published = isinstance(job.result, Outcome) and bool(job.result.model)
         if job.kind == "archive":
             done_key, next_href, next_key = "job.archive_done", "/podcasts", "job.to_podcasts"
+        elif job.kind == "together":
+            done_key, next_href, next_key = "job.published", "/tonies", "job.to_tonies"
         elif podcast:
             done_key, next_href, next_key = "job.podcast_done", "/podcasts", "job.to_podcasts"
         elif published:
@@ -74,7 +76,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         return templates.TemplateResponse(request, "job.html", {
             "job": job, "done_key": done_key, "next_href": next_href, "next_key": next_key,
             # How the page ends should the encode go on its sticker by itself.
-            "assigned_ending": (None if podcast or published else
+            "assigned_ending": (None if podcast or published or job.kind == "together" else
                                 {"doneKey": "job.published", "href": "/tonies",
                                  "nextKey": "job.to_tonies"}),
             "error": failure_text(job, translator(request)),

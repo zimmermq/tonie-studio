@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import List
 
 import requests
 from fastapi import FastAPI, Form, Request
@@ -14,7 +15,8 @@ from ..listing import Column, filters
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions, parse_feed,
                        remove_subscription)
 from ..podcast import subscribe as add_podcast
-from ..podcast_archive import add_archive, load_archives, read_source, remove_archive
+from ..podcast_archive import (MOST_TOGETHER, add_archive, load_archives, put_together,
+                               read_source, remove_archive)
 from ..podcast_search import search as search_podcasts
 from ..runtimes import playing_times
 from ..tags import find_tag, list_tags
@@ -147,6 +149,49 @@ def register(app: FastAPI, ctx: Context) -> None:
     def refresh_archive_now(archive_id: str):
         job_id = archives.queue(archive_id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
+
+
+    def archive_or_404(archive_id: str):
+        found = next((entry for entry in load_archives(settings.data_dir)
+                      if entry.id == archive_id), None)
+        if found is None:
+            raise Refused(404, "archive.gone")
+        return found
+
+
+    @app.get("/podcasts/archives/{archive_id}/together", response_class=HTMLResponse)
+    def together_page(request: Request, archive_id: str):
+        """Choose archived episodes to put onto one sticker, newest first."""
+        archive = archive_or_404(archive_id)
+        episodes = sorted(archive.archived.items(), key=lambda item: item[1].published,
+                          reverse=True)
+        return templates.TemplateResponse(request, "podcast_together.html", {
+            "archive": archive,
+            "episodes": episodes,
+            "tags": list_tags(client()),
+            "most": MOST_TOGETHER,
+        })
+
+
+    @app.post("/podcasts/archives/{archive_id}/together")
+    def together(archive_id: str, ruid: str = Form(...), name: str = Form(""),
+                 episodes: List[str] = Form(default=[])):
+        """Check what can be checked now, then encode and publish as a job."""
+        archive = archive_or_404(archive_id)
+        chosen = [guid for guid in dict.fromkeys(episodes) if guid in archive.archived]
+        if not chosen:
+            raise Refused(400, "archive.choose_episodes")
+        if len(chosen) > MOST_TOGETHER:
+            raise Refused(400, "archive.too_many", most=MOST_TOGETHER)
+        if not name.strip():
+            raise Refused(400, "encode.no_name")
+        if find_tag(client(), ruid) is None:
+            raise Refused(404, "error.no_tag")
+        job_id = ctx.jobs.submit(
+            "together", name.strip(),
+            lambda progress: put_together(client(), archive, chosen, name.strip(), ruid,
+                                          settings.data_dir, progress))
+        return RedirectResponse(f"/job/{job_id}", 303)
 
 
     @app.post("/podcasts/archives/{archive_id}/delete")

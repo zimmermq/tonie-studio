@@ -326,3 +326,55 @@ class TestPodcastSearchPage:
         page = site.get("/podcasts?query=Sandmännchen").text
 
         assert "wird archiviert" in page
+
+
+class TestPuttingTogetherPage:
+    @pytest.fixture
+    def web(self):
+        from test_podcast_archive import FakeWeb
+
+        return FakeWeb()
+
+    @pytest.fixture
+    def archived(self, make_site, web, runner, settings):
+        from test_podcast_archive import SHOW_LINK
+        from tonie_studio.podcast_archive import load_archives
+
+        site = make_site(fetch=web)
+        finish_job(runner, site.post("/podcasts/archives", data={"source": SHOW_LINK},
+                                     follow_redirects=False))
+        return site, load_archives(settings.data_dir)[0]
+
+    def test_the_archive_leads_to_putting_together(self, archived):
+        site, entry = archived
+
+        assert f'href="/podcasts/archives/{entry.id}/together"' in site.get("/podcasts").text
+
+    def test_the_page_lists_every_episode_to_choose(self, archived):
+        site, entry = archived
+
+        page = site.get(f"/podcasts/archives/{entry.id}/together").text
+
+        assert page.count('name="episodes"') == 3
+        assert "Märchen: Rumpelstilzchen" in page
+
+    def test_the_chosen_episodes_go_onto_the_sticker(self, archived, runner, teddycloud):
+        site, entry = archived
+
+        response = site.post(f"/podcasts/archives/{entry.id}/together",
+                             data={"episodes": ["101", "103"], "name": "Lieblinge",
+                                   "ruid": "deb4ed0e500304e0"}, follow_redirects=False)
+        job = finish_job(runner, response)
+
+        assert job.error is None
+        assert teddycloud.tag_entries["deb4ed0e500304e0"]["source"].endswith("/Lieblinge.taf")
+        page = site.get(f"/job/{job.id}").text
+        assert "Zu den Tonies" in page
+
+    def test_nothing_chosen_is_said_on_the_form(self, archived):
+        site, entry = archived
+
+        response = site.post(f"/podcasts/archives/{entry.id}/together",
+                             data={"name": "Leer", "ruid": "deb4ed0e500304e0"})
+
+        assert response.status_code == 400

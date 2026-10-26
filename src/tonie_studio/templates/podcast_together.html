@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_parts.html" import field, sticker_picker with context %}
+{% set page_title = t("archive.together.title") %}
+
+{% block intro %}{{ t("archive.together.intro", most=most) }}{% endblock %}
+{% block body %}
+<h2 class="truncate">{{ archive.title or archive.folder }}</h2>
+<form method="post" action="/podcasts/archives/{{ archive.id }}/together">
+  <div class="list">
+  {% for guid, stored in episodes %}
+    <label class="item clickable">
+      <input type="checkbox" name="episodes" value="{{ guid }}">
+      <span class="grow truncate">
+        <strong class="truncate">{{ stored.title }}</strong>
+        <span class="muted truncate">
+          {{- stored.published[:10] }}
+          {%- if stored.seconds %} &middot; {{ t("pdf.minutes", count=(stored.seconds / 60) | round | int) }}{% endif -%}
+        </span>
+      </span>
+    </label>
+  {% endfor %}
+  </div>
+  <div class="card mt-14">
+    {% call field(t("archive.together.name")) %}
+      <input type="text" name="name" required>
+    {% endcall %}
+    {% call field(t("podcasts.which_sticker"), group=True) %}
+      {{ sticker_picker(tags, "ruid", "assign.no_tags") }}
+    {% endcall %}
+    <p><button class="primary" type="submit">{{ t("archive.together.start") }}</button></p>
+  </div>
+</form>
+{% endblock %}

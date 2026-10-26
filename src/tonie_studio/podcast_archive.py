@@ -29,16 +29,19 @@ from urllib.parse import urlparse
 
 import requests
 
-from .encode import cut_to_bytes, encode_files, library_path, taf_exists
+from .encode import (EncodeError, Progress, cut_to_bytes, delete_taf, encode_files,
+                     encode_library, library_path, taf_exists)
 from .i18n import Problem
 from .jobs import JobRunner
 from .library import same
 from .models import picture_suffix
-from .podcast import (LARGEST_FEED, LARGEST_IMAGE, REFRESH_AFTER, TITLE_IN_NAME,
+from .podcast import (LARGEST_FEED, LARGEST_IMAGE, MOST_KEEP, REFRESH_AFTER, TITLE_IN_NAME,
                       TITLE_IN_NAME_BYTES, WAKE_SECONDS, WORK_FOLDER, Episode, Feed, FeedError,
                       Fetch, download, episode_suffix, is_subscription_id, parse_feed)
+from .runtimes import remember
 from .store import LOCK, from_record, read_json, write_json
-from .teddycloud import TeddyCloudClient
+from .teddycloud import TeddyCloudClient, TeddyCloudError
+from .tonie import publish
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +68,14 @@ EPISODE = re.compile(r"urn:ard:episode:[0-9a-f]+")
 
 # How much of an episode's id goes into a name when its title and date are both taken.
 ID_IN_NAME = 20
+
+# The most episodes put together onto one sticker: as many as a podcast
+# subscription keeps there.
+MOST_TOGETHER = MOST_KEEP
+
+
+class ArchiveError(Problem, ValueError):
+    """A choice of archived episodes that cannot be put together."""
 
 
 @dataclass
@@ -283,6 +294,41 @@ def episode_at(data_dir: Path, path: str) -> Optional[Stored]:
             if same(stored.path) == wanted:
                 return stored
     return None
+
+
+def put_together(client: TeddyCloudClient, archive: Archive, guids: List[str], name: str,
+                 ruid: str, data_dir: Path, progress: Optional[Progress] = None) -> str:
+    """Put the chosen episodes onto the sticker ``ruid`` as one taf named ``name``.
+
+    The episodes come in the order they came out, one chapter each, from their
+    tafs in the library: an episode the source has taken down since is put
+    together all the same. The tonie shows the first episode's picture.
+    Returns the model id. Should the sticker not take it, the new taf goes.
+    """
+    chosen = sorted((archive.archived[guid] for guid in dict.fromkeys(guids)
+                     if guid in archive.archived), key=lambda stored: stored.published)
+    if not chosen:
+        raise ArchiveError("archive.choose_episodes")
+    if len(chosen) > MOST_TOGETHER:
+        raise ArchiveError("archive.too_many", most=MOST_TOGETHER)
+    seconds = sum(stored.seconds or 0 for stored in chosen) or None
+    encoded = encode_library(client, [stored.path for stored in chosen],
+                             library_path(archive.folder or archive.title, name), progress,
+                             seconds)
+    cover = picture_of(data_dir, chosen[0])
+    try:
+        model_id = publish(client, ruid, encoded, series=archive.title or archive.folder,
+                           episode=name, tracks=[stored.title for stored in chosen], cover=cover,
+                           cover_name=chosen[0].picture.rsplit(".", 1)[-1] if cover else "jpg",
+                           data_dir=data_dir)
+    except Exception:
+        try:
+            delete_taf(client, encoded.target)
+        except (TeddyCloudError, EncodeError) as error:
+            log.warning("archive %s: %s stays: %s", archive.id, encoded.target, error)
+        raise
+    remember(data_dir, model_id, seconds)
+    return model_id
 
 
 def load_archives(data_dir: Path) -> List[Archive]:

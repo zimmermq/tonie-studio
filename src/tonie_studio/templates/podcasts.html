@@ -106,6 +106,9 @@
       <span class="state-failed detail">{{ error_text(entry) }}</span>
       {% endif %}
     </span>
+    {% if entry.archived %}
+    <a class="button small" href="/podcasts/archives/{{ entry.id }}/together">{{ t("archive.together.title") }}</a>
+    {% endif %}
     <form method="post" action="/podcasts/archives/{{ entry.id }}/refresh">
       <button type="submit" class="small">{{ t("podcasts.refresh") }}</button>
     </form>

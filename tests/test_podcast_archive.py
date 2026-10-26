@@ -8,6 +8,7 @@ from fake_teddycloud import FakeTeddyCloud
 
 import tonie_studio.podcast_archive as podcast_archive
 from tonie_studio.encode import library_path
+from tonie_studio.i18n import Problem
 from tonie_studio.podcast import FeedError
 from tonie_studio.podcast_archive import (Archive, ArchiveUpdater, add_archive, load_archives,
                                           read_source, refresh_archive, remove_archive,
@@ -385,3 +386,64 @@ class TestTheUpdater:
             updater._refresh(entry.id)
 
         assert load_archives(tmp_path)[0].error == "disk full"
+
+
+RUID = "7ab4ed0e500304e0"
+
+
+class TestPuttingTogether:
+    @pytest.fixture
+    def archived(self, cloud, tmp_path):
+        cloud.add_tag(RUID)
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb())
+        return load_archives(tmp_path)[0]
+
+    def test_the_chosen_episodes_become_one_taf_in_the_order_they_came_out(
+            self, cloud, archived, tmp_path):
+        podcast_archive.put_together(cloud, archived, ["103", "101"], "Lieblinge", RUID, tmp_path)
+
+        target, sources = cloud.encoded[-1]
+        assert target == library_path("Unser Sandmännchen", "Lieblinge")
+        assert sources == [archived.archived["101"].path, archived.archived["103"].path]
+
+    def test_the_sticker_plays_it_named_with_a_chapter_per_episode(self, cloud, archived, tmp_path):
+        podcast_archive.put_together(cloud, archived, ["103", "101"], "Lieblinge", RUID, tmp_path)
+
+        assert cloud.tag_entries[RUID]["source"] == "lib:/" + library_path("Unser Sandmännchen",
+                                                                           "Lieblinge")
+        model = cloud.custom_models[-1]
+        assert (model["series"], model["episodes"]) == ("Unser Sandmännchen", "Lieblinge")
+        assert model["tracks"] == ["Aus Zappelduster wird Unser Sandmännchen",
+                                   "Märchen: Rumpelstilzchen"]
+        assert model["pic"]
+
+    def test_nothing_chosen_is_refused(self, cloud, archived, tmp_path):
+        with pytest.raises(Problem) as raised:
+            podcast_archive.put_together(cloud, archived, [], "Leer", RUID, tmp_path)
+
+        assert raised.value.key == "archive.choose_episodes"
+
+    def test_more_than_a_sticker_carries_is_refused(self, cloud, archived, tmp_path, monkeypatch):
+        monkeypatch.setattr(podcast_archive, "MOST_TOGETHER", 2)
+
+        with pytest.raises(Problem) as raised:
+            podcast_archive.put_together(cloud, archived, ["101", "102", "103"], "Viel", RUID,
+                                         tmp_path)
+
+        assert raised.value.key == "archive.too_many"
+
+    def test_a_name_already_taken_is_refused(self, cloud, archived, tmp_path):
+        with pytest.raises(Problem) as raised:
+            podcast_archive.put_together(cloud, archived, ["101"], "Märchen: Rumpelstilzchen", RUID,
+                                         tmp_path)
+
+        assert raised.value.key == "encode.exists"
+
+    def test_a_sticker_that_cannot_be_given_it_leaves_no_taf_behind(self, cloud, archived,
+                                                                    tmp_path):
+        with pytest.raises(Problem):
+            podcast_archive.put_together(cloud, archived, ["101"], "Lieblinge", "0000000000000000",
+                                         tmp_path)
+
+        assert library_path("Unser Sandmännchen", "Lieblinge") not in cloud.files
