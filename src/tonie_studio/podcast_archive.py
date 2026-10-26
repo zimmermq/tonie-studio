@@ -110,15 +110,20 @@ class Archive:
     error_params: Dict = field(default_factory=dict)
 
 
-def read_source(url: str, fetch: Fetch = download) -> Feed:
-    """The podcast at ``url``: a feed, or a show or episode link of the ARD Audiothek."""
+def read_source(url: str, fetch: Fetch = download, glance: bool = False) -> Feed:
+    """The podcast at ``url``: a feed, or a show or episode link of the ARD Audiothek.
+
+    ``glance`` reads only the first page of an Audiothek show: enough to tell
+    that the link works, while a show of a thousand episodes takes longer to
+    read whole than a person on the page may be kept waiting.
+    """
     host = (urlparse(url).hostname or "").lower()
     if any(host == name or host.endswith("." + name) for name in AUDIOTHEK_HOSTS):
-        return _audiothek(url, fetch)
+        return _audiothek(url, fetch, glance)
     return parse_feed(fetch(url, LARGEST_FEED))
 
 
-def _audiothek(url: str, fetch: Fetch) -> Feed:
+def _audiothek(url: str, fetch: Fetch, glance: bool = False) -> Feed:
     show = SHOW.search(url)
     if show:
         show_id = show.group(0)
@@ -144,7 +149,7 @@ def _audiothek(url: str, fetch: Fetch) -> Feed:
         page = (show_set.get("items") or {}).get("nodes") or []
         nodes += page
         offset += len(page)
-        if not page or offset >= (show_set.get("numberOfElements") or 0):
+        if glance or not page or offset >= (show_set.get("numberOfElements") or 0):
             break
 
     episodes = [episode for episode in map(_audiothek_episode, nodes) if episode]

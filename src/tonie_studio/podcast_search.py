@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from urllib.parse import quote
@@ -25,6 +26,11 @@ DIRECTORY = "https://itunes.apple.com/search"
 
 # Results per place; more is a list nobody reads to the end.
 RESULTS = 10
+
+# How long each place may take to connect and to answer, in seconds. The page
+# waits for the search, both places are asked at once, and the proxy in front
+# of the app gives up after some fifteen seconds.
+ANSWER_WITHIN = (4, 5)
 
 # The places asked, as Found.where names them.
 IN_AUDIOTHEK, IN_DIRECTORY = "audiothek", "directory"
@@ -53,10 +59,13 @@ def search(query: str, fetch: Fetch = download) -> Tuple[List[Found], List[str]]
     query = query.strip()
     if not query:
         return [], []
+    places = ((IN_AUDIOTHEK, _audiothek), (IN_DIRECTORY, _directory))
+    with ThreadPoolExecutor(len(places)) as pool:
+        asked = [(where, pool.submit(ask, query, fetch)) for where, ask in places]
     found, failed = [], []
-    for where, ask in ((IN_AUDIOTHEK, _audiothek), (IN_DIRECTORY, _directory)):
+    for where, answer in asked:
         try:
-            found += ask(query, fetch)
+            found += answer.result()
         except (FeedError, requests.RequestException, ValueError, KeyError, TypeError) as error:
             log.warning("podcast search in %s failed: %s", where, error)
             failed.append(where)
@@ -64,7 +73,8 @@ def search(query: str, fetch: Fetch = download) -> Tuple[List[Found], List[str]]
 
 
 def _audiothek(query: str, fetch: Fetch) -> List[Found]:
-    answer = json.loads(fetch(f"{AUDIOTHEK}?query={quote(query)}&limit={RESULTS}", LARGEST_FEED))
+    answer = json.loads(fetch(f"{AUDIOTHEK}?query={quote(query)}&limit={RESULTS}", LARGEST_FEED,
+                              timeout=ANSWER_WITHIN))
     nodes = answer["data"]["search"]["programSets"]["nodes"] or []
     found = []
     for node in nodes:
@@ -79,7 +89,7 @@ def _audiothek(query: str, fetch: Fetch) -> List[Found]:
 
 def _directory(query: str, fetch: Fetch) -> List[Found]:
     answer = json.loads(fetch(f"{DIRECTORY}?term={quote(query)}&entity=podcast&country=de"
-                              f"&limit={RESULTS}", LARGEST_FEED))
+                              f"&limit={RESULTS}", LARGEST_FEED, timeout=ANSWER_WITHIN))
     found = []
     for result in answer.get("results") or []:
         feed = result.get("feedUrl") or ""

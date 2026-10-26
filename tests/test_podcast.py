@@ -7,7 +7,7 @@ import requests
 from fake_teddycloud import FakeTeddyCloud
 
 from tonie_studio.podcast import (LARGEST_FEED, FeedError, Subscription, add_subscription, check_public,
-                                  load_subscriptions, newest, parse_feed, refresh)
+                                  download, load_subscriptions, newest, parse_feed, refresh)
 from tonie_studio.teddycloud import TeddyCloudError
 
 RUID = "7ab4ed0e500304e0"
@@ -387,6 +387,37 @@ class TestDownload:
         monkeypatch.setattr("tonie_studio.podcast.requests.get", get)
         monkeypatch.setattr("tonie_studio.podcast.socket.getaddrinfo", resolve)
         return answers, hosts, asked
+
+    def test_waits_as_long_as_it_is_told(self, monkeypatch):
+        waited = []
+
+        class Answer:
+            is_redirect = False
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def raise_for_status(self):
+                pass
+
+            def iter_content(self, size):
+                yield b"x"
+
+        def get(url, **kwargs):
+            waited.append(kwargs["timeout"])
+            return Answer()
+
+        monkeypatch.setattr("tonie_studio.podcast.requests.get", get)
+        monkeypatch.setattr("tonie_studio.podcast.socket.getaddrinfo",
+                            lambda host, port, *args, **kwargs: [(2, 1, 6, "", ("93.184.215.14", port))])
+
+        download("https://example.org/feed.xml", timeout=(3, 5))
+
+        assert waited == [(3, 5)]
 
     def test_a_redirect_inside_is_refused(self, web):
         from tonie_studio.podcast import download

@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
-from typing import Callable, Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -207,17 +207,19 @@ def newest(feed: Feed, count: int) -> List[Episode]:
     return ordered[:max(1, count)]
 
 
-def download(url: str, limit: int = LARGEST_DOWNLOAD, into: Optional[Path] = None) -> bytes:
+def download(url: str, limit: int = LARGEST_DOWNLOAD, into: Optional[Path] = None,
+             timeout: Tuple[float, float] = (10, 60)) -> bytes:
     """Fetch ``url`` within the limits a feed from elsewhere deserves.
 
     Redirects are followed by hand, so every address on the way is checked,
     not only the first one. With ``into`` the body is written to that file as
     it arrives and nothing is returned: an episode held whole and then joined
     would need twice its size in memory. A download that fails leaves no file.
+    ``timeout`` is how long to wait for the connection and for each piece.
     """
     for _ in range(MOST_REDIRECTS + 1):
         check_public(url)
-        with requests.get(url, timeout=(10, 60), stream=True, allow_redirects=False,
+        with requests.get(url, timeout=timeout, stream=True, allow_redirects=False,
                           headers={"User-Agent": "tonie-studio"}) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers.get("location", ""))

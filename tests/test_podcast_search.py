@@ -3,7 +3,7 @@
 import json
 
 from tonie_studio.podcast import FeedError
-from tonie_studio.podcast_search import AUDIOTHEK, DIRECTORY, search
+from tonie_studio.podcast_search import AUDIOTHEK, ANSWER_WITHIN, DIRECTORY, search
 
 AUDIOTHEK_ANSWER = {"data": {"search": {"programSets": {"numberOfElements": 2, "nodes": [
     {"id": "23667030", "title": "Unser Sandmännchen", "numberOfElements": 214,
@@ -24,9 +24,11 @@ class FakeWeb:
     def __init__(self, failing=()):
         self.failing = failing
         self.asked = []
+        self.timeouts = []
 
-    def __call__(self, url, limit=None):
+    def __call__(self, url, limit=None, timeout=None):
         self.asked.append(url)
+        self.timeouts.append(timeout)
         if any(url.startswith(prefix) for prefix in self.failing):
             raise FeedError("feed.not_found", host="example", detail="gone")
         if url.startswith(AUDIOTHEK):
@@ -71,6 +73,15 @@ class TestSearch:
 
         assert [entry.where for entry in found] == ["directory"]
         assert failed == ["audiothek"]
+
+    def test_a_place_is_given_only_a_short_time_to_answer(self):
+        # The page waits for the search, and the proxy in front of the app
+        # gives up after some fifteen seconds.
+        web = FakeWeb()
+
+        search("Sandmännchen", web)
+
+        assert web.timeouts == [ANSWER_WITHIN, ANSWER_WITHIN]
 
     def test_an_empty_query_asks_nobody(self):
         web = FakeWeb()

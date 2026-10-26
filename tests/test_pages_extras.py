@@ -218,6 +218,18 @@ class TestArchivePages:
                     if path.startswith("/Unser Sandmännchen/")]) == 3
         assert "3 von 3 Folgen" in site.get("/podcasts").text
 
+    def test_starting_looks_only_at_the_first_page_of_a_show(self, site, web, runner,
+                                                              monkeypatch):
+        # A show of a thousand episodes takes longer to read than the proxy in
+        # front of the app waits; the job reads it whole.
+        from test_podcast_archive import SHOW_LINK
+
+        monkeypatch.setattr("tonie_studio.podcast_archive.AUDIOTHEK_PAGE", 2)
+        with patch.object(runner, "submit", return_value="held"):
+            site.post("/podcasts/archives", data={"source": SHOW_LINK}, follow_redirects=False)
+
+        assert len([url for url in web.asked if "/programsets/" in url]) == 1
+
     def test_the_job_page_leads_back_to_the_podcasts(self, site, runner):
         job = self.archive(site, runner)
 

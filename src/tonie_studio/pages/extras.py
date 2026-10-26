@@ -135,7 +135,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if any(entry.source == source for entry in load_archives(settings.data_dir)):
             raise Refused(409, "archive.exists")
         try:
-            feed = read_source(source, fetch)
+            feed = read_source(source, fetch, glance=True)
         except (FeedError, requests.RequestException) as error:
             raise Refused(400, "error.feed_unreadable", detail=error) from error
         if not feed.episodes:

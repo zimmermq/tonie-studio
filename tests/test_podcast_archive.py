@@ -125,6 +125,15 @@ class TestReadingTheSource:
         assert len(feed.episodes) == 3
         assert len([url for url in web.asked if "/programsets/" in url]) == 2
 
+    def test_a_look_at_a_show_reads_only_its_first_page(self, monkeypatch):
+        monkeypatch.setattr(podcast_archive, "AUDIOTHEK_PAGE", 2)
+        web = FakeWeb()
+
+        feed = read_source(SHOW_LINK, web, glance=True)
+
+        assert feed.title == "Unser Sandmännchen" and len(feed.episodes) == 2
+        assert len([url for url in web.asked if "/programsets/" in url]) == 1
+
     def test_an_audiothek_episode_link_leads_to_its_show(self):
         feed = read_source(EPISODE_LINK, FakeWeb())
 
