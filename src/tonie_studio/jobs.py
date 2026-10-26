@@ -60,6 +60,8 @@ class Job:
     step: Optional[str] = None
     done_count: int = 0
     total: int = 0
+    # What the work is at, in its own words, such as the episode it stores; "" when it does not say.
+    current: str = ""
     result: Any = None
     error: Optional[str] = None
     problem: Optional[Problem] = None
@@ -173,7 +175,8 @@ class JobRunner:
     def _run(self, job: Job, work: Callable[[Callable], Any]) -> None:
         job.state = JobState.RUNNING
         try:
-            job.result = work(lambda step, done, total: self._progress(job, step, done, total))
+            job.result = work(lambda step, done, total, current="":
+                              self._progress(job, step, done, total, current))
             job.state = JobState.DONE
         except Exception as error:
             # The thread is the only place this exception exists, so losing it
@@ -190,10 +193,11 @@ class JobRunner:
             job.done.set()
 
     @staticmethod
-    def _progress(job: Job, step: str, done: int, total: int) -> None:
+    def _progress(job: Job, step: str, done: int, total: int, current: str = "") -> None:
         job.step = step
         job.done_count = done
         job.total = total
+        job.current = current
 
     def keep(self, job_ids: Sequence[str]) -> None:
         """Hold on to these jobs past the cap until ``release``; see Groups."""

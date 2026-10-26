@@ -20,6 +20,7 @@ import logging
 import re
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -123,6 +124,10 @@ class Archive:
     error: str = ""
     error_key: str = ""
     error_params: Dict = field(default_factory=dict)
+    # Seconds spent storing ``timed`` episodes, download and encode, for how
+    # long the rest will take; episodes stored before this was kept are not in it.
+    spent: float = 0.0
+    timed: int = 0
 
 
 def read_source(url: str, fetch: Fetch = download, glance: bool = False) -> Feed:
@@ -202,11 +207,13 @@ def _json(data: bytes) -> dict:
 
 def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
                     now: Optional[datetime] = None, fetch: Fetch = download,
-                    most: Optional[int] = None) -> int:
+                    most: Optional[int] = None, progress: Optional[Callable] = None) -> int:
     """Store episodes not stored yet, oldest first and at most ``most``; returns how many are left.
 
     Each episode is saved on the archive as soon as its taf is there, so a
     failure later in the batch costs only what was not stored yet.
+    ``progress`` hears ARCHIVE_STEP with the episodes of the round stored so
+    far, how many the round takes, and the title of the one it stores now.
     """
     now = now or datetime.now(timezone.utc)
     most = BATCH if most is None else most
@@ -224,9 +231,13 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
                   key=lambda episode: (episode.guid not in archive.storing,
                                        episode.published or oldest))
     stored = 0
+    round_size = min(most, len(todo))
     for episode in todo:
         if stored >= most:
             break
+        if progress:
+            progress(ARCHIVE_STEP, stored, round_size, current=episode.title)
+        began = time.monotonic()
         try:
             path = _store(client, archive, episode, data_dir, fetch)
         except _Gone:
@@ -239,6 +250,8 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
                         archive.id, episode.title)
             continue
         stored += 1
+        archive.spent += time.monotonic() - began
+        archive.timed += 1
         archive.missing.pop(episode.guid, None)
         archive.archived[episode.guid] = Stored(
             path=path, title=episode.title,
@@ -250,10 +263,15 @@ def refresh_archive(client: TeddyCloudClient, archive: Archive, data_dir: Path,
         update_archive(data_dir, archive)
         log.info("archive %s stored %s", archive.id, path)
 
+    if progress:
+        progress(ARCHIVE_STEP, stored, round_size, current="")
     archive.error, archive.error_key, archive.error_params = "", "", {}
     return sum(1 for episode in todo
                if episode.guid not in archive.archived and episode.guid not in archive.missing)
 
+
+# The step a refresh reports its episodes under; see refresh_archive.
+ARCHIVE_STEP = "archive"
 
 # What a server answers for audio it no longer has; anything else may mend
 # itself and fails the run, to be tried again.
@@ -446,7 +464,7 @@ def remove_archive(data_dir: Path, archive_id: str) -> None:
 
 # What a refresh changes on an archive; the source and the folder are a person's.
 REFRESHED = ("title", "language", "archived", "storing", "missing", "total", "checked", "updated",
-             "error", "error_key", "error_params")
+             "error", "error_key", "error_params", "spent", "timed")
 
 
 def update_archive(data_dir: Path, archive: Archive) -> None:
@@ -495,6 +513,8 @@ class ArchiveUpdater:
         self.fetch = fetch
         self._in_flight: set = set()
         self._lock = threading.Lock()
+        # Which archive each job stores for, so its page can say how far that one is.
+        self._archive_of: Dict[str, str] = {}
 
     def queue(self, archive_id: str) -> Optional[str]:
         """Start storing as a job, unless one for this archive is already under way."""
@@ -504,7 +524,26 @@ class ArchiveUpdater:
             self._in_flight.add(archive_id)
         label = next((entry.title or entry.source for entry in load_archives(self.data_dir)
                       if entry.id == archive_id), archive_id)
-        return self.jobs.submit("archive", label, lambda progress: self._refresh(archive_id))
+        job_id = self.jobs.submit("archive", label,
+                                  lambda progress: self._refresh(archive_id, progress))
+        with self._lock:
+            self._archive_of[job_id] = archive_id
+        return job_id
+
+    def running(self, archive_id: str) -> Optional[str]:
+        """The job storing for ``archive_id`` now, queued or under way; None when there is none."""
+        with self._lock:
+            if archive_id not in self._in_flight:
+                return None
+            return next((job_id for job_id, of in reversed(list(self._archive_of.items()))
+                         if of == archive_id), None)
+
+    def archive_of(self, job_id: str) -> Optional[Archive]:
+        """The archive the job ``job_id`` stores for, as it stands now; None for another job."""
+        with self._lock:
+            archive_id = self._archive_of.get(job_id)
+        return next((entry for entry in load_archives(self.data_dir) if entry.id == archive_id),
+                    None) if archive_id else None
 
     def run(self, stop: threading.Event) -> None:
         """Wake up now and then and look for new episodes, until ``stop``."""
@@ -525,7 +564,7 @@ class ArchiveUpdater:
             if checked is None or now - checked >= REFRESH_AFTER:
                 self.queue(archive.id)
 
-    def _refresh(self, archive_id: str) -> int:
+    def _refresh(self, archive_id: str, progress: Optional[Callable] = None) -> int:
         """Store the next batch of one archive; returns how many episodes are left."""
         left = 0
         try:
@@ -533,8 +572,13 @@ class ArchiveUpdater:
                             if entry.id == archive_id), None)
             if archive is None:
                 return 0
+            # The failure of the last round is not this one's; it comes back if it is.
+            if archive.error or archive.error_key:
+                archive.error, archive.error_key, archive.error_params = "", "", {}
+                update_archive(self.data_dir, archive)
             try:
-                left = refresh_archive(self.client(), archive, self.data_dir, fetch=self.fetch)
+                left = refresh_archive(self.client(), archive, self.data_dir, fetch=self.fetch,
+                                       progress=progress)
             except Exception as error:
                 if isinstance(error, Problem):
                     archive.error = ""

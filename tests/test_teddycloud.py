@@ -489,6 +489,37 @@ class TestAudio:
         answer.close.assert_called()
 
 
+class TestReadableRefusals:
+    """teddyCloud says no with an HTML page; a person reads only what it says."""
+
+    PAGE = ("<!doctype html>\r\n<html>\r\n<head><title>Error 400</title></head>\r\n<body>\r\n"
+            "<h2>Error 400</h2>\r\n<p>The request is badly formed</p>\r\n</body>\r\n</html>\r\n")
+
+    def test_an_html_answer_is_said_as_its_words(self, client):
+        response = Mock()
+        response.status_code = 400
+        response.text = self.PAGE
+
+        with patch.object(client.session, "request", return_value=response):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.encode("/a.taf", ["/x.mp3"])
+
+        assert str(raised.value) == ("teddyCloud answered 400 for /api/fileEncode: "
+                                     "Error 400: The request is badly formed")
+        assert raised.value.body == self.PAGE
+
+    def test_a_plain_answer_stays_as_it_is(self, client):
+        response = Mock()
+        response.status_code = 500
+        response.text = "library full"
+
+        with patch.object(client.session, "request", return_value=response):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.encode("/a.taf", ["/x.mp3"])
+
+        assert str(raised.value).endswith(": library full")
+
+
 class TestToniesJson:
     def test_reads_the_official_catalogue(self, client, request_mock):
         request_mock.return_value = _json([{"model": "10000001"}])

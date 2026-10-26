@@ -65,3 +65,16 @@ for (const state of ['done', 'failed']) {
   assert.equal(ended.detail.textContent, '');
 }
 console.log('job.test: ended ok');
+
+// An archive round says which episode it is at.
+const round = await runPage(['app.js', 'job.js'], {
+  ids: ['fill', 'state', 'detail', 'outcome', 'message', 'next'],
+  pageData: { id: 'arc', words: { ...words, 'job.state.running': 'läuft',
+                                   'job.archive_episode': 'Folge {number} von {count}: {title}' },
+              doneKey: 'job.taf_done', running: true },
+  answers: { '/api/job/arc': { state: 'running', percent: 20, step: 'archive', done: 2, total: 10,
+                               current: 'Jan und Henry: Der Affe', error: null } },
+});
+
+assert.equal(round.detail.textContent, 'Folge 3 von 10: Jan und Henry: Der Affe');
+console.log('job.test: archive ok');

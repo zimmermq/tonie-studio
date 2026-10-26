@@ -372,7 +372,7 @@ class TeddyCloudClient:
                 if not 200 <= response.status_code < 300:
                     raise TeddyCloudError(
                         f"teddyCloud answered {response.status_code} for the download of "
-                        f"{folder}/{file}: {response.text[:200]}",
+                        f"{folder}/{file}: {_readable(response.text)[:200]}",
                         status=response.status_code,
                     )
                 for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK):
@@ -477,7 +477,8 @@ class TeddyCloudClient:
 
         if not 200 <= response.status_code < 300:
             raise TeddyCloudError(
-                f"teddyCloud answered {response.status_code} for {path}: {response.text[:200]}",
+                f"teddyCloud answered {response.status_code} for {path}: "
+                f"{_readable(response.text)[:200]}",
                 status=response.status_code, body=response.text or "",
             )
         return response
@@ -487,8 +488,31 @@ class TeddyCloudClient:
         """Check the body of a command endpoint, which reports failure at 200."""
         body = (response.text or "").strip()
         if body != COMMAND_OK:
-            raise TeddyCloudError(f"teddyCloud refused {path}: {body[:200] or 'empty answer'}",
-                                  refused=True)
+            raise TeddyCloudError(f"teddyCloud refused {path}: "
+                                  f"{_readable(body)[:200] or 'empty answer'}", refused=True)
+
+
+# The parts of the error page teddyCloud's web server answers with that say something.
+_PAGE_WORDS = re.compile(r"<(title|h\d|p)>(.*?)</\1>", re.IGNORECASE | re.DOTALL)
+
+
+def _readable(text: Optional[str]) -> str:
+    """An answer of teddyCloud's as a person reads it.
+
+    Its web server refuses a request with a small HTML page ("Error 400",
+    "The request is badly formed"), which shown as it is reads as markup. Of
+    such a page the title and texts are kept, each once; any other answer
+    stays as it is.
+    """
+    text = (text or "").strip()
+    if not text.lower().startswith(("<!doctype html", "<html")):
+        return text
+    said: List[str] = []
+    for _tag, words in _PAGE_WORDS.findall(text):
+        words = " ".join(re.sub(r"<[^>]+>", " ", words).split())
+        if words and words not in said:
+            said.append(words)
+    return ": ".join(said) or text
 
 
 class _AskOnce(Retry):

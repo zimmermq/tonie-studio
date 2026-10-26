@@ -238,7 +238,7 @@ class TestArchivePages:
 
         page = site.get("/podcasts").text
         assert "2 von 3 Folgen" in page
-        assert "1 Folge gibt es bei der Quelle nicht mehr" in page
+        assert "gibt es an der Quelle nicht mehr" in page
 
     def test_archived_episodes_show_their_picture_and_origin_in_the_library(self, site, runner):
         self.archive(site, runner)
@@ -304,6 +304,92 @@ class TestArchivePages:
         page = site.get(f"/job/{job.id}").text
 
         assert "Zu den Podcasts" in page and "Tonie bespielen" not in page
+
+    def _stored(self, site, runner, settings, **changes):
+        from tonie_studio.podcast_archive import load_archives, update_archive
+
+        self.archive(site, runner)
+        entry = load_archives(settings.data_dir)[0]
+        for name, value in changes.items():
+            setattr(entry, name, value)
+        update_archive(settings.data_dir, entry)
+        return entry
+
+    def test_the_page_says_a_round_is_running_and_leads_to_it(self, site, runner, settings):
+        from tonie_studio.i18n import Translator
+        from tonie_studio.jobs import Job, JobState
+
+        entry = self._stored(site, runner, settings)
+        job = Job(id="feedfacecafe", kind="archive", label="Unser Sandmännchen",
+                  state=JobState.RUNNING, step="archive", done_count=2, total=10,
+                  current="Jan und Henry: Der Affe")
+        runner._jobs[job.id] = job
+        runner._order.append(job.id)
+        site.app.state.archives._in_flight.add(entry.id)
+        site.app.state.archives._archive_of[job.id] = entry.id
+
+        page = site.get("/podcasts").text
+
+        assert Translator("de")("archive.running", number=3, count=10,
+                                title="Jan und Henry: Der Affe") in page
+        assert 'href="/job/feedfacecafe"' in page
+        response = site.post(f"/podcasts/archives/{entry.id}/refresh", follow_redirects=False)
+        assert response.headers["location"] == "/job/feedfacecafe"
+
+    def test_the_page_says_how_long_the_rest_takes(self, site, runner, settings):
+        from tonie_studio.i18n import Translator
+
+        self._stored(site, runner, settings, total=13, spent=110.0, timed=10)
+
+        page = site.get("/podcasts").text
+
+        assert Translator("de")("archive.time_left", count=10, minutes=2) in page
+
+    def test_a_missing_episode_is_named_with_when_it_is_tried_again(self, site, runner, settings):
+        from tonie_studio.podcast_archive import Missing
+
+        self._stored(site, runner, settings, missing={
+            "x": Missing(title="Aus Zappelduster wird Unser Sandmännchen",
+                         checked="2026-10-26T08:47:50+00:00")})
+
+        page = site.get("/podcasts").text
+
+        assert "Aus Zappelduster wird Unser Sandmännchen" in page
+
+    def test_stopping_says_it_stops_the_archiving(self, site, runner, settings):
+        from tonie_studio.i18n import Translator
+
+        self._stored(site, runner, settings)
+
+        assert Translator("de")("archive.stop") == "Archivieren beenden"
+        assert "Archivieren beenden" in site.get("/podcasts").text
+
+    def test_the_job_page_says_how_far_the_archive_is_and_no_album_steps(self, site, runner):
+        from tonie_studio.i18n import Translator
+
+        job = self.archive(site, runner)
+
+        page = site.get(f"/job/{job.id}").text
+
+        assert Translator("de")("job.archive_round", count=10, stored=3, total=3) in page
+        assert 'class="steps"' not in page
+
+    def test_a_running_round_says_which_episode_it_is_at(self, site, runner):
+        from tonie_studio.i18n import Translator
+        from tonie_studio.jobs import Job, JobState
+
+        job = Job(id="feedfacecafe", kind="archive", label="Unser Sandmännchen",
+                  state=JobState.RUNNING, step="archive", done_count=2, total=10,
+                  current="Jan und Henry: Der Affe")
+        runner._jobs[job.id] = job
+        runner._order.append(job.id)
+
+        page = site.get(f"/job/{job.id}").text
+        state = site.get(f"/api/job/{job.id}").json()
+
+        assert Translator("de")("job.archive_episode", number=3, count=10,
+                                title="Jan und Henry: Der Affe") in page
+        assert state["current"] == "Jan und Henry: Der Affe"
 
     def test_a_source_that_cannot_be_read_is_said_on_the_form(self, site, web):
         web.feed = b"<html>kein Feed</html>"

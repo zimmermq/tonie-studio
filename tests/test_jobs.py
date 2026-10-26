@@ -194,6 +194,14 @@ class TestProgress:
 
         assert (job.step, job.done_count, job.total) == ("upload", 2, 5)
 
+    def test_keeps_what_the_work_is_at_when_it_says(self, runner):
+        def work(progress):
+            progress("archive", 0, 10, current="Jan und Henry: Der Affe")
+
+        job = _wait(runner, runner.submit("archive", "a", work))
+
+        assert job.current == "Jan und Henry: Der Affe"
+
     def test_starts_without_a_step(self, runner):
         release = threading.Event()
         job_id = runner.submit("encode", "a", lambda progress: release.wait(5))

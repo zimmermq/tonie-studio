@@ -193,6 +193,25 @@ class TestRefreshing:
             library_path("Unser Sandmännchen", "Aus Zappelduster wird Unser Sandmännchen"),
             library_path("Unser Sandmännchen", "Jan und Henry: Der Affe")]
 
+    def test_keeps_how_long_storing_an_episode_takes(self, cloud, tmp_path):
+        entry = archive(SHOW_LINK)
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb(), most=2)
+
+        assert entry.timed == 2 and entry.spent >= 0
+
+    def test_says_which_episode_of_the_round_it_is_at(self, cloud, tmp_path):
+        entry = archive(SHOW_LINK)
+        seen = []
+
+        refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb(), most=2,
+                        progress=lambda step, done, total, current="": seen.append(
+                            (step, done, total, current)))
+
+        assert seen[:2] == [("archive", 0, 2, "Aus Zappelduster wird Unser Sandmännchen"),
+                            ("archive", 1, 2, "Jan und Henry: Der Affe")]
+        assert seen[-1] == ("archive", 2, 2, "")
+
     def test_the_next_refresh_carries_on_where_the_last_stopped(self, cloud, tmp_path):
         entry = archive(SHOW_LINK)
         refresh_archive(cloud, entry, tmp_path, now=NOW, fetch=FakeWeb(), most=2)
@@ -480,7 +499,7 @@ class TestTheUpdater:
         class Jobs:
             def submit(self, kind, label, work):
                 submitted.append((kind, label))
-                work(lambda *args: None)
+                work(lambda *args, **kwargs: None)
                 return f"job-{len(submitted)}"
 
         return ArchiveUpdater(lambda: cloud, tmp_path, Jobs(), web), submitted
@@ -494,6 +513,45 @@ class TestTheUpdater:
 
         assert len(submitted) == 2
         assert len(load_archives(tmp_path)[0].archived) == 3
+
+    def test_a_new_round_no_longer_shows_the_failure_of_the_last(self, cloud, tmp_path):
+        # While the round runs, the error of the one before would read as its own.
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        entry.error = "teddyCloud answered 400"
+        update_archive(tmp_path, entry)
+        web = FakeWeb()
+        seen = []
+
+        def watching(url, *args, **kwargs):
+            seen.append(load_archives(tmp_path)[0].error)
+            return web(url, *args, **kwargs)
+        updater, _submitted = self._updater(tmp_path, cloud, watching)
+
+        updater._refresh(entry.id)
+
+        assert seen[0] == ""
+
+    def test_the_job_hears_where_the_round_is(self, cloud, tmp_path):
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+        heard = []
+        updater, _submitted = self._updater(tmp_path, cloud, FakeWeb())
+
+        updater._refresh(entry.id, progress=lambda *args, **kwargs: heard.append(args[0]))
+
+        assert heard and set(heard) == {"archive"}
+
+    def test_knows_the_round_running_for_an_archive(self, cloud, tmp_path):
+        entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")
+
+        class Holding:
+            def submit(self, kind, label, work):
+                return "job-1"
+
+        updater = ArchiveUpdater(lambda: cloud, tmp_path, Holding(), FakeWeb())
+
+        assert updater.running(entry.id) is None
+        assert updater.queue(entry.id) == "job-1"
+        assert updater.running(entry.id) == "job-1"
 
     def test_a_failure_is_kept_on_the_archive(self, cloud, tmp_path):
         entry = add_archive(tmp_path, SHOW_LINK, "Unser Sandmännchen")

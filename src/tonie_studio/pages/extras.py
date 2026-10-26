@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional, Tuple
 
 import requests
 from fastapi import FastAPI, Form, Request
@@ -14,6 +14,7 @@ from ..listening import HEARD, QUIET, heard
 from ..listing import Column, filters
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions, parse_feed,
                        remove_subscription)
+from ..podcast import REFRESH_AFTER as ARCHIVE_REFRESH_AFTER
 from ..podcast import subscribe as add_podcast
 from ..podcast_archive import (MOST_TOGETHER, add_archive, load_archives, put_together,
                                read_source, remove_archive)
@@ -79,20 +80,26 @@ def register(app: FastAPI, ctx: Context) -> None:
         tags = list_tags(client())
         labels = {tag.ruid: tag.label for tag in tags}
         found, failed = search_podcasts(query, fetch) if query.strip() else ([], [])
-        archives = load_archives(settings.data_dir)
+        stored = load_archives(settings.data_dir)
         return templates.TemplateResponse(request, "podcasts.html", {
             "query": query,
             "found": found,
             "failed": failed,
-            "archived_sources": {entry.source for entry in archives},
+            "archived_sources": {entry.source for entry in stored},
             "feed": feed,
             "subscriptions": load_subscriptions(settings.data_dir),
             "labels": labels,
             "tags": tags,
             "choose": ruid if ruid in labels else None,
             "keep": DEFAULT_KEEP,
-            "archives": archives,
+            "archives": [(entry, _round_of(entry), _minutes_left(entry), _missing(entry))
+                         for entry in stored],
         })
+
+    def _round_of(entry):
+        """The job storing for the archive now, or None."""
+        job_id = archives.running(entry.id)
+        return ctx.jobs.get(job_id) if job_id else None
 
 
     @app.post("/podcasts")
@@ -147,7 +154,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 
     @app.post("/podcasts/archives/{archive_id}/refresh")
     def refresh_archive_now(archive_id: str):
-        job_id = archives.queue(archive_id)
+        """Start a round, or lead to the one already running."""
+        job_id = archives.queue(archive_id) or archives.running(archive_id)
         return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
 
 
@@ -210,3 +218,27 @@ LISTENING_COLUMNS = (
     Column("placed", "listening.col_placed", number=True, desc=True),
     Column("last", "listening.col_last", number=True),
 )
+
+
+# Fewer episodes timed than this say too little about the rest to estimate it.
+TIMED_ENOUGH = 3
+
+
+def _minutes_left(entry) -> Optional[Tuple[int, int]]:
+    """How many episodes are left and about how many minutes they take; None when unknown."""
+    left = max(entry.total - len(entry.archived) - len(entry.missing), 0)
+    if not left or entry.timed < TIMED_ENOUGH:
+        return None
+    return left, max(1, round(left * entry.spent / entry.timed / 60))
+
+
+def _missing(entry) -> List[Tuple[str, Optional[datetime]]]:
+    """Each episode the source no longer has, with when it is asked for again."""
+    found = []
+    for gone in entry.missing.values():
+        try:
+            again = datetime.fromisoformat(gone.checked) + ARCHIVE_REFRESH_AFTER
+        except ValueError:
+            again = None
+        found.append((gone.title, again))
+    return found

@@ -39,7 +39,7 @@ from ..jobs import Group, Groups, Job, JobRunner, JobState
 from ..listening import ListeningLog
 from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
-from ..podcast_archive import ArchiveUpdater
+from ..podcast_archive import ARCHIVE_STEP, ArchiveUpdater
 from ..settings import Settings
 from ..tags import TonieTag
 from ..teddycloud import TeddyCloudClient
@@ -282,6 +282,11 @@ def describe_progress(job, translate: Translator) -> str:
             return translate("job.encoded_minutes", done=round(job.done_count / 60),
                              count=round(job.total / 60))
         return translate("job.encoding")
+    if job.step == ARCHIVE_STEP:
+        if not job.current:
+            return translate("job.preparing")
+        return translate("job.archive_episode", number=min(job.done_count + 1, job.total),
+                         count=job.total, title=job.current)
     return f"{job.step} {job.done_count}/{job.total}"
 
 

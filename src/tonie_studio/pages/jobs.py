@@ -13,6 +13,7 @@ from ..i18n import Translator
 from ..jobs import Job, JobRunner, JobState
 from ..languages import chosen
 from ..models import CATEGORIES, DEFAULT_CATEGORY, find_model_by_audio
+from ..podcast_archive import BATCH
 from ..publishing import Outcome, job_states, publish_outcome
 from ..tags import TonieError, list_tags
 from .common import (Context, Refused, failure_text, group_or_404, job_or_404, refusing,
@@ -75,6 +76,10 @@ def register(app: FastAPI, ctx: Context) -> None:
             done_key, next_href, next_key = "job.taf_done", f"/job/{job.id}/assign", "job.to_assign"
         return templates.TemplateResponse(request, "job.html", {
             "job": job, "done_key": done_key, "next_href": next_href, "next_key": next_key,
+            # Only an album goes through the steps; a podcast or an archive round does not.
+            "album": not podcast and job.kind != "together",
+            "archive": ctx.archives.archive_of(job.id) if job.kind == "archive" else None,
+            "batch": BATCH,
             # How the page ends should the encode go on its sticker by itself.
             "assigned_ending": (None if podcast or published or job.kind == "together" else
                                 {"doneKey": "job.published", "href": "/tonies",
@@ -175,6 +180,7 @@ def _job_json(job: Job, translate: Translator) -> Dict:
         "percent": job.percent,
         "error": failure_text(job, translate),
         "target": job.label,
+        "current": job.current,
         "assigned": bool(outcome and outcome.model),
         "model": (outcome and outcome.model) or None,
         # Why a batch encode did not get its sticker, for the reader.

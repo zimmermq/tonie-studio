@@ -178,6 +178,7 @@ def create_app(
     app.state.catalogue = catalogue
     app.state.jobs = jobs
     app.state.prints = prints
+    app.state.archives = archives
 
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
