@@ -17,6 +17,7 @@ from ..languages import NONE, chosen, offered as offered_languages, spoken
 from ..library import safe_library_path, same
 from ..listing import Column, filters
 from ..naming import LIBRARY_FOLDER
+from ..podcast_archive import episode_at, picture_of
 from ..models import CATEGORIES, DEFAULT_CATEGORY, WRITING, cover_url, list_models
 from ..tags import TonieError, TonieTag, list_tags, require_tag
 from ..tags import label as tag_label
@@ -100,12 +101,15 @@ def register(app: FastAPI, ctx: Context) -> None:
         if encoded is None:
             raise Refused(404, "library.gone")
         folder, _slash, name = path.strip("/").rpartition("/")
+        archived = episode_at(ctx.settings.data_dir, path)
         return templates.TemplateResponse(request, "library_assign.html", {
             "path": path,
             "encoded": encoded,
             "imported": _imported(path),
             "series": folder.rsplit("/", 1)[-1],
-            "episode": name[:-len(TAF_SUFFIX)],
+            # An archived episode by its title, which the file name may have
+            # had to change.
+            "episode": archived.title if archived and archived.title else name[:-len(TAF_SUFFIX)],
             "tags": list_tags(connection),
             "categories": CATEGORIES,
         })
@@ -131,7 +135,11 @@ def register(app: FastAPI, ctx: Context) -> None:
             else:
                 if not episode.strip():
                     raise Refused(400, "encode.no_name")
+                archived = episode_at(ctx.settings.data_dir, path)
+                cover = picture_of(ctx.settings.data_dir, archived) if archived else None
                 publish(connection, ruid, encoded, series=series, episode=episode, tracks=[],
+                        cover=cover, cover_name=(archived.picture.rsplit(".", 1)[-1]
+                                                 if cover else "jpg"),
                         category=category, language=chosen(language),
                         data_dir=ctx.settings.data_dir)
         return RedirectResponse(f"/tonies/{ruid}", 303)

@@ -187,3 +187,89 @@ class TestListeningRefreshes:
         box.handle("TagValid", uid)
 
         assert "2-mal aufgelegt" in client.get("/listening?period=7").text
+
+
+class TestArchivePages:
+    @pytest.fixture
+    def web(self):
+        from test_podcast_archive import FakeWeb
+
+        return FakeWeb()
+
+    @pytest.fixture
+    def site(self, make_site, web):
+        yield make_site(fetch=web)
+
+    def archive(self, site, runner):
+        from test_podcast_archive import SHOW_LINK
+
+        response = site.post("/podcasts/archives", data={"source": SHOW_LINK},
+                             follow_redirects=False)
+        return finish_job(runner, response)
+
+    def test_the_page_offers_an_archive(self, site):
+        assert 'action="/podcasts/archives"' in site.get("/podcasts").text
+
+    def test_every_episode_of_a_show_goes_into_the_library(self, site, runner, teddycloud):
+        job = self.archive(site, runner)
+
+        assert job.error is None
+        assert len([path for path in teddycloud.files
+                    if path.startswith("/Unser Sandmännchen/")]) == 3
+        assert "3 von 3 Folgen" in site.get("/podcasts").text
+
+    def test_the_job_page_leads_back_to_the_podcasts(self, site, runner):
+        job = self.archive(site, runner)
+
+        page = site.get(f"/job/{job.id}").text
+
+        assert "Zu den Podcasts" in page and "Tonie bespielen" not in page
+
+    def test_a_source_that_cannot_be_read_is_said_on_the_form(self, site, web):
+        web.feed = b"<html>kein Feed</html>"
+
+        response = site.post("/podcasts/archives", data={"source": "https://example.org/feed.xml"})
+
+        assert response.status_code == 400
+        assert "nicht lesen" in response.text
+
+    def test_the_same_source_twice_is_refused(self, site, runner):
+        from test_podcast_archive import SHOW_LINK
+
+        self.archive(site, runner)
+
+        response = site.post("/podcasts/archives", data={"source": SHOW_LINK})
+
+        assert response.status_code == 409
+
+    def test_stopping_asks_first_and_keeps_the_episodes(self, site, runner, teddycloud, settings):
+        from tonie_studio.podcast_archive import load_archives
+
+        self.archive(site, runner)
+        entry = load_archives(settings.data_dir)[0]
+        page = site.get("/podcasts").text
+        assert re.search(rf'action="/podcasts/archives/{entry.id}/delete"\s+data-confirm=', page)
+
+        site.post(f"/podcasts/archives/{entry.id}/delete")
+
+        assert load_archives(settings.data_dir) == []
+        assert all(stored.path in teddycloud.files for stored in entry.archived.values())
+
+    def test_an_archived_episode_put_on_a_sticker_gets_its_title_and_picture(
+            self, site, runner, teddycloud, settings):
+        from tonie_studio.podcast_archive import load_archives
+
+        self.archive(site, runner)
+        stored = load_archives(settings.data_dir)[0].archived["103"]
+
+        page = site.get(f"/library/assign?path={stored.path}").text
+        assert 'value="Märchen: Rumpelstilzchen"' in page
+
+        site.post("/library/assign", data={"path": stored.path, "ruid": "deb4ed0e500304e0",
+                                           "series": "Unser Sandmännchen",
+                                           "episode": "Märchen: Rumpelstilzchen"})
+
+        model = teddycloud.custom_models[-1]
+        assert model["episodes"] == "Märchen: Rumpelstilzchen"
+        assert model["pic"]
+        assert teddycloud.images

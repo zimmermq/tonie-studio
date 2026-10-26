@@ -14,6 +14,7 @@ from ..listing import Column, filters
 from ..podcast import (DEFAULT_KEEP, LARGEST_FEED, FeedError, load_subscriptions, parse_feed,
                        remove_subscription)
 from ..podcast import subscribe as add_podcast
+from ..podcast_archive import add_archive, load_archives, read_source, remove_archive
 from ..runtimes import playing_times
 from ..tags import find_tag, list_tags
 from .common import Context, Refused
@@ -33,6 +34,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     client = ctx.client
     fetch = ctx.fetch
     podcasts = ctx.podcasts
+    archives = ctx.archives
 
     @app.get("/listening", response_class=HTMLResponse)
     def listening_page(request: Request, period: str = "30"):
@@ -75,6 +77,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             "tags": tags,
             "choose": ruid if ruid in labels else None,
             "keep": DEFAULT_KEEP,
+            "archives": load_archives(settings.data_dir),
         })
 
 
@@ -108,6 +111,36 @@ def register(app: FastAPI, ctx: Context) -> None:
     def unsubscribe(subscription_id: str):
         """Stop updating. The sticker keeps playing the episodes it has."""
         remove_subscription(settings.data_dir, subscription_id)
+        return RedirectResponse("/podcasts", 303)
+
+
+    @app.post("/podcasts/archives")
+    def start_archive(source: str = Form(...)):
+        """Check the source now, so a wrong address is said on the form, then start."""
+        source = source.strip()
+        if any(entry.source == source for entry in load_archives(settings.data_dir)):
+            raise Refused(409, "archive.exists")
+        try:
+            feed = read_source(source, fetch)
+        except (FeedError, requests.RequestException) as error:
+            raise Refused(400, "error.feed_unreadable", detail=error) from error
+        if not feed.episodes:
+            raise Refused(400, "feed.no_audio")
+        archive = add_archive(settings.data_dir, source, feed.title)
+        job_id = archives.queue(archive.id)
+        return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
+
+
+    @app.post("/podcasts/archives/{archive_id}/refresh")
+    def refresh_archive_now(archive_id: str):
+        job_id = archives.queue(archive_id)
+        return RedirectResponse(f"/job/{job_id}" if job_id else "/podcasts", 303)
+
+
+    @app.post("/podcasts/archives/{archive_id}/delete")
+    def stop_archive(archive_id: str):
+        """Stop archiving. The episodes stay in the library."""
+        remove_archive(settings.data_dir, archive_id)
         return RedirectResponse("/podcasts", 303)
 
 

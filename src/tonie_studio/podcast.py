@@ -120,6 +120,7 @@ class Episode:
     published: Optional[datetime] = None
     seconds: Optional[int] = None
     kind: str = ""
+    image: Optional[str] = None
 
 
 @dataclass
@@ -182,6 +183,7 @@ def parse_feed(data: bytes) -> Feed:
         kind = (enclosure.get("type") or "").lower()
         if not (kind.startswith("audio/") or _suffix(url) in AUDIO_EXTENSIONS):
             continue
+        item_image = item.find(f"{ITUNES}image")
         episodes.append(Episode(
             guid=(item.findtext("guid") or url).strip(),
             title=(item.findtext("title") or "").strip() or url.rsplit("/", 1)[-1],
@@ -189,6 +191,7 @@ def parse_feed(data: bytes) -> Feed:
             published=_date(item.findtext("pubDate")),
             seconds=_seconds(item.findtext(f"{ITUNES}duration")),
             kind=kind,
+            image=(item_image.get("href") or None) if item_image is not None else None,
         ))
 
     title = (channel.findtext("title") or "").strip()
@@ -348,7 +351,7 @@ def _encode_episodes(client: TeddyCloudClient, folder: Path, feed: Feed, chosen:
     try:
         paths = []
         for number, episode in enumerate(chosen, 1):
-            path = folder / f"{number:03d}{_episode_suffix(episode)}"
+            path = folder / f"{number:03d}{episode_suffix(episode)}"
             if fetch is download:
                 # Straight to the file; a fetch handed in, as tests do, gives bytes.
                 download(episode.url, into=path)
@@ -571,7 +574,7 @@ def _write(data_dir: Path, subscriptions: List[Subscription]) -> None:
     write_json(data_dir / FILE_NAME, [asdict(subscription) for subscription in subscriptions])
 
 
-def _episode_suffix(episode: Episode) -> str:
+def episode_suffix(episode: Episode) -> str:
     suffix = _suffix(episode.url)
     if suffix in AUDIO_EXTENSIONS:
         return suffix

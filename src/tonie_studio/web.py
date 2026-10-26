@@ -49,6 +49,7 @@ from .pages.common import (STATIC, TEMPLATES, Context, describe_progress,
                            page_context)
 from .podcast import WORK_FOLDER as PODCAST_WORK_FOLDER
 from .podcast import Fetch, PodcastUpdater, download
+from .podcast_archive import ArchiveUpdater
 from .printing import clear_old_pdfs
 from .settings import Settings
 from .store import sweep
@@ -124,6 +125,7 @@ def create_app(
         lambda: {same(taf.path) for taf in list_tafs(client(), strict=True)},
         name="library", ttl=LIBRARY_TTL)
     podcasts = PodcastUpdater(client, settings.data_dir, jobs, fetch)
+    archives = ArchiveUpdater(client, settings.data_dir, jobs, fetch)
     importer = importer or Importer(client, settings.data_dir)
     namer = Namer(client, importer.dumps, data_dir=settings.data_dir)
     shop = shop or Shop(settings.data_dir)
@@ -144,6 +146,8 @@ def create_app(
                              name="housekeeping", daemon=True).start()
             threading.Thread(target=podcasts.run, args=(stopping,),
                              name="podcasts", daemon=True).start()
+            threading.Thread(target=archives.run, args=(stopping,),
+                             name="archives", daemon=True).start()
             # Carries on a run an earlier process left unfinished.
             importer.start()
             threading.Thread(target=namer.run, args=(stopping,),
@@ -177,6 +181,7 @@ def create_app(
     ctx = Context(
         settings=settings, templates=templates, catalogue=catalogue, jobs=jobs, box=box,
         listening=listening, client=client, fetch=fetch, models=models, podcasts=podcasts,
+        archives=archives,
         groups=groups, library=library, importer=importer, namer=namer,
         shop=shop, prints=prints,
     )

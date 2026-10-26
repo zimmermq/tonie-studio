@@ -61,9 +61,11 @@ def register(app: FastAPI, ctx: Context) -> None:
         job = job_or_404(jobs, job_id)
         # A podcast refresh puts its taf on the sticker itself; only an album
         # encode still has to be given to one.
-        podcast = job.kind == "podcast"
+        podcast = job.kind in ("podcast", "archive")
         published = isinstance(job.result, Outcome) and bool(job.result.model)
-        if podcast:
+        if job.kind == "archive":
+            done_key, next_href, next_key = "job.archive_done", "/podcasts", "job.to_podcasts"
+        elif podcast:
             done_key, next_href, next_key = "job.podcast_done", "/podcasts", "job.to_podcasts"
         elif published:
             done_key, next_href, next_key = "job.published", "/tonies", "job.to_tonies"

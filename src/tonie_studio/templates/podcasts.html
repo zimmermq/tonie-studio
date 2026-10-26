@@ -48,4 +48,39 @@
     {{ t("podcasts.order_hint") }}
   </p>
 </form>
+
+<h2 id="archives">{{ t("archive.title") }}</h2>
+<p class="muted mt-0">{{ t("archive.intro") }}</p>
+<div class="list">
+{% for entry in archives %}
+  <div class="item">
+    <span class="grow truncate">
+      <strong class="truncate">{{ entry.title or entry.source }}</strong>
+      <span class="muted truncate">
+        {{ t("archive.stored", count=entry.archived | length, total=[entry.total, entry.archived | length] | max, folder=entry.folder) }}
+        &middot; {% if entry.updated %}{{ t("podcasts.updated", date=entry.updated[:10]) }}{% else %}{{ t("podcasts.not_loaded") }}{% endif %}
+      </span>
+      {% if entry.error_key or entry.error %}
+      <span class="state-failed detail">{{ error_text(entry) }}</span>
+      {% endif %}
+    </span>
+    <form method="post" action="/podcasts/archives/{{ entry.id }}/refresh">
+      <button type="submit" class="small">{{ t("podcasts.refresh") }}</button>
+    </form>
+    <form method="post" action="/podcasts/archives/{{ entry.id }}/delete"
+          data-confirm="{{ t('archive.confirm_stop') }}">
+      <button type="submit" class="small">{{ t("archive.stop") }}</button>
+    </form>
+  </div>
+{% else %}
+  <p class="empty">{{ t("archive.none") }}</p>
+{% endfor %}
+</div>
+
+<form method="post" action="/podcasts/archives" class="card mt-14">
+  {% call field(t("archive.source")) %}
+    <input type="url" name="source" required placeholder="https://...">
+  {% endcall %}
+  <button class="primary" type="submit">{{ t("archive.start") }}</button>
+</form>
 {% endblock %}

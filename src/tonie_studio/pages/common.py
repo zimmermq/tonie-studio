@@ -39,6 +39,7 @@ from ..jobs import Group, Groups, Job, JobRunner, JobState
 from ..listening import ListeningLog
 from ..models import ModelCache, is_cover_name
 from ..podcast import Fetch, PodcastUpdater
+from ..podcast_archive import ArchiveUpdater
 from ..settings import Settings
 from ..tags import TonieTag
 from ..teddycloud import TeddyCloudClient
@@ -89,6 +90,7 @@ class Context:
     fetch: Fetch
     models: ModelCache
     podcasts: PodcastUpdater
+    archives: ArchiveUpdater
     groups: Groups
     # Normalised paths of every taf in the library, or None before the first copy.
     library: BackgroundCache[Set[str]]
