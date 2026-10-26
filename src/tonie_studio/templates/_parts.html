@@ -8,6 +8,24 @@
 {%- else %}<span class="noart" aria-hidden="true"></span>{% endif %}
 {%- endmacro %}
 
+{#- A button that plays a library taf in the player at the foot of every
+    page (see player.js). ``starts`` and ``tracks`` are its chapters' starts
+    in seconds and their titles, for skipping between them. A row that is a
+    link may hold no button, so ``in_link`` makes it a span acting as one.
+    With a ``text`` it is a button with words rather than a round icon. -#}
+{% macro play(path, title, subtitle="", picture="", starts=[], tracks=[], in_link=False, text="") -%}
+{%- set label = t("player.play", name=title) %}
+<{{ "span" if in_link else "button" }} class="play{% if text %} labelled{% endif %}" {% if in_link %}role="button" tabindex="0"{% else %}type="button"{% endif %}
+  data-play="/audio{{ path | urlencode }}" data-title="{{ title }}" data-subtitle="{{ subtitle }}"
+  data-picture="{{ picture }}" data-starts="{{ starts | join(',') }}" data-tracks='{{ tracks | tojson }}'
+  aria-pressed="false" {% if not text %}aria-label="{{ label }}" {% endif %}title="{{ label }}">{{ text }}</{{ "span" if in_link else "button" }}>
+{%- endmacro %}
+
+{#- A thumbnail with a play button on it, for a row of a list. -#}
+{% macro playable_thumb(src, path, title, subtitle="", starts=[], tracks=[], in_link=False) -%}
+<span class="cover-play">{{ thumb(src) }}{{ play(path, title, subtitle, src, starts, tracks, in_link) }}</span>
+{%- endmacro %}
+
 {#- Which sticker: a search over a list of every sticker teddyCloud knows,
     free ones first as list_tags orders them. The search finds the name or
     the UID printed on the chip, with or without its colons. ``preselect`` is

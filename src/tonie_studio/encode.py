@@ -21,7 +21,7 @@ import logging
 import re
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
@@ -101,6 +101,10 @@ class Taf:
     picture: str = ""
     # When the file was written, in seconds since 1970; 0 when not known.
     date: int = 0
+    # Where each chapter starts, in seconds, and the chapter titles of the
+    # model teddyCloud matched it to; both empty where it does not know.
+    starts: List[int] = field(default_factory=list)
+    tracks: List[str] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -168,6 +172,8 @@ def list_tafs(client: TeddyCloudClient, path: str = "/", strict: bool = False) -
                 episode=info.get("episode") or "",
                 picture=info.get("picture") or "",
                 date=entry.get("date") or 0,
+                starts=list(header.get("trackSeconds") or []),
+                tracks=list(info.get("tracks") or []),
             ))
     return sorted(found, key=lambda taf: taf.path.lower())
 

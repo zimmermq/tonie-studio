@@ -79,5 +79,20 @@
 {% block body %}{% endblock %}
 </main>
 <div id="peek"><img alt=""></div>
+{#- What a play button starts, at the foot of every page; see player.js. #}
+<div class="player" id="player" hidden>
+  <img id="player-picture" alt="" hidden>
+  <div class="player-what">
+    <strong class="truncate" id="player-title"></strong>
+    <span class="muted truncate" id="player-detail"></span>
+    <span class="muted truncate" id="player-chapter"></span>
+  </div>
+  <button type="button" class="small" id="player-previous" aria-label="{{ t('player.previous') }}" title="{{ t('player.previous') }}">&#x23EE;</button>
+  <audio id="player-audio" controls preload="metadata"></audio>
+  <button type="button" class="small" id="player-next" aria-label="{{ t('player.next') }}" title="{{ t('player.next') }}">&#x23ED;</button>
+  <button type="button" class="small" id="player-close" aria-label="{{ t('player.close') }}" title="{{ t('player.close') }}">&times;</button>
+</div>
+<script type="application/json" id="player-words">{{ t.strings("player.chapter", "player.no_ogg") | tojson }}</script>
+<script src="{{ asset('player.js') }}"></script>
 </body>
 </html>

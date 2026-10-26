@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_parts.html" import field, sticker_picker with context %}
+{% from "_parts.html" import field, play, sticker_picker with context %}
 {% set page_title = t("archive.together.title") %}
 
 {% block intro %}{{ t("archive.together.intro", most=most) }}{% endblock %}
@@ -17,6 +17,8 @@
           {%- if stored.seconds %} &middot; {{ t("pdf.minutes", count=(stored.seconds / 60) | round | int) }}{% endif -%}
         </span>
       </span>
+      {{ play(stored.path, stored.title, archive.title or archive.folder,
+              ("/cover/archive/" ~ stored.picture ~ "?size=96") if stored.picture else "") }}
     </label>
   {% endfor %}
   </div>

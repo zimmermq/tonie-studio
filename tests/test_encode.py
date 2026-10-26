@@ -444,6 +444,15 @@ class TestLibraryListing:
         assert taf.chapters == 3
         assert taf.size > 0
 
+    def test_knows_where_each_chapter_starts_and_its_title(self, teddycloud):
+        teddycloud.files["/Eins.taf"] = b"taf"
+        teddycloud.taf_headers["/Eins.taf"] = {"valid": True, "trackSeconds": [0, 95, 230]}
+        teddycloud.taf_info["/Eins.taf"] = {"model": "10000001", "tracks": ["A", "B", "C"]}
+
+        taf = list_tafs(teddycloud)[0]
+
+        assert (taf.starts, taf.tracks) == ([0, 95, 230], ["A", "B", "C"])
+
     def test_leaves_the_staging_area_out_of_it(self, teddycloud, sources):
         teddycloud.create_dir(STAGING_ROOT)
         teddycloud.files[f"{STAGING_ROOT}/leftover.taf"] = b"x"

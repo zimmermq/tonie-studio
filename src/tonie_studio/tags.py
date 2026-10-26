@@ -7,7 +7,7 @@ this module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .i18n import Problem
@@ -42,6 +42,10 @@ class TonieTag:
     exists: bool = False
     # How many chapters its audio has; 0 when teddyCloud does not know.
     chapters: int = 0
+    # Where each chapter starts, in seconds, and the chapter titles of its
+    # model; both empty where teddyCloud does not know.
+    starts: List[int] = field(default_factory=list)
+    tracks: List[str] = field(default_factory=list)
 
     @property
     def assigned(self) -> bool:
@@ -119,4 +123,6 @@ def _tag(entry: Dict[str, Any]) -> TonieTag:
         live=bool(entry.get("live")),
         exists=bool(entry.get("exists")),
         chapters=len(entry.get("trackSeconds") or []),
+        starts=list(entry.get("trackSeconds") or []),
+        tracks=list(info.get("tracks") or []),
     )

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional, Set
 
-from tonie_studio.teddycloud import RUID_PATTERN, TeddyCloudError
+from tonie_studio.teddycloud import RUID_PATTERN, Audio, TeddyCloudError
 
 
 def _parent(path: str) -> str:
@@ -191,6 +191,21 @@ class FakeTeddyCloud:
         if path in self.files:
             return self.files[path]
         raise TeddyCloudError(f"no such file: {path}", status=404)
+
+    def audio(self, path: str, byte_range: Optional[str] = None) -> Audio:
+        """The file as it is; teddyCloud would leave out the taf header first.
+
+        Like teddyCloud, only a range starting after the first byte is answered as one.
+        """
+        if path not in self.files:
+            raise TeddyCloudError(f"teddyCloud answered 404 for {path}", status=404)
+        data = self.files[path]
+        start = int(byte_range[len("bytes="):].split("-")[0]) if byte_range else 0
+        if start > 0:
+            part = data[start:]
+            return Audio(206, len(part), f"bytes {start}-{len(data) - 1}/{len(data)}",
+                         iter([part]), lambda: None)
+        return Audio(200, len(data), "", iter([data]), lambda: None)
 
     def tags(self) -> List[dict]:
         """The tag index, shaped the way getTagIndex answers."""

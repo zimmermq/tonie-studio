@@ -43,6 +43,7 @@ from .pages import albums, batch, extras, importing, printing, site, tonies, upk
 from .pages import box as box_page
 from .pages import covers as cover_pages
 from .pages import library as library_page
+from .pages import player as player_page
 from .pages import radio as radio_page
 from .pages import jobs as job_pages
 from .pages.common import (STATIC, TEMPLATES, Context, describe_progress,
@@ -186,7 +187,7 @@ def create_app(
         shop=shop, prints=prints,
     )
     for part in (site, albums, job_pages, batch, tonies, library_page, radio_page, cover_pages,
-                 box_page, extras, upkeep, printing, importing):
+                 box_page, extras, upkeep, printing, importing, player_page):
         part.register(app, ctx)
     return app
 

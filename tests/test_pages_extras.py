@@ -266,6 +266,16 @@ class TestArchivePages:
 
         assert '<option value="de" selected>' in page
 
+    def test_the_episode_to_put_on_a_sticker_can_be_heard_first(self, site, runner, settings):
+        from tonie_studio.podcast_archive import load_archives
+
+        self.archive(site, runner)
+        stored = load_archives(settings.data_dir)[0].archived["103"]
+
+        page = site.get(f"/library/assign?path={stored.path}").text
+
+        assert 'class="play labelled"' in page and 'data-play="/audio/' in page
+
     def test_the_picture_of_an_archived_episode_is_served(self, site, runner, settings):
         from tonie_studio.podcast_archive import load_archives
 
@@ -427,6 +437,7 @@ class TestPuttingTogetherPage:
 
         assert page.count('name="episodes"') == 3
         assert "Märchen: Rumpelstilzchen" in page
+        assert page.count('data-play="/audio/') == 3
 
     def test_the_chosen_episodes_go_onto_the_sticker(self, archived, runner, teddycloud):
         site, entry = archived

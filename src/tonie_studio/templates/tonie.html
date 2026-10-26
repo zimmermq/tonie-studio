@@ -1,5 +1,5 @@
 {% extends "_details_page.html" %}
-{% from "_parts.html" import category_select, danger, field, file_button, language_select, picked, section, sticker_picker, technical with context %}
+{% from "_parts.html" import category_select, danger, field, file_button, language_select, picked, play, section, sticker_picker, technical with context %}
 {% set page_title = tag.label %}
 {% set picture, no_picture = tag.picture | cover_url(false, 320), "tonie.no_picture" %}
 {% set title = tag.episode or tag.label %}
@@ -24,6 +24,9 @@
 {% endblock %}
 
 {% block actions %}
+{% if tag.source.startswith("lib://") and not silent and not other_spelling %}
+{{ play("/" ~ tag.source[6:], title, subtitle, picture, tag.starts, tracks or tag.tracks, text=t("player.listen")) }}
+{% endif %}
 {% if tag.model %}
 <a class="button" href="/sheet?model={{ tag.model | urlencode }}">{{ t("tonies.sticker") }}</a>
 {% endif %}

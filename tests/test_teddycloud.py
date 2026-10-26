@@ -437,6 +437,58 @@ class TestCacheContent:
             assert retries.total == 0
 
 
+class TestAudio:
+    """A taf as a browser plays it, passed on in pieces as teddyCloud sends it."""
+
+    @staticmethod
+    def _answer(status=200, headers=None, chunks=(b"ogg",)):
+        response = _download(status=status, chunks=chunks)
+        response.headers = headers or {"Content-Length": "3"}
+        return response
+
+    def test_asks_for_the_taf_without_its_header_from_the_library(self, client):
+        with patch.object(client.downloads, "get", return_value=self._answer()) as get:
+            client.audio("/Lichterkinder/Tierische Tierlieder.taf")
+
+        assert get.call_args.args == (
+            "http://teddycloud.test/content/Lichterkinder/Tierische%20Tierlieder.taf",)
+        assert get.call_args.kwargs["params"] == {"ogg": "true", "special": "library"}
+        assert get.call_args.kwargs["stream"] is True
+
+    def test_hands_on_the_audio_piece_by_piece(self, client):
+        with patch.object(client.downloads, "get",
+                          return_value=self._answer(chunks=(b"og", b"g"))):
+            audio = client.audio("/a.taf")
+
+        assert (audio.status, audio.length) == (200, 3)
+        assert b"".join(audio.chunks) == b"ogg"
+
+    def test_passes_a_range_on_and_its_answer_back(self, client):
+        answer = self._answer(status=206, headers={"Content-Length": "2",
+                                                   "Content-Range": "bytes 1-2/3"})
+        with patch.object(client.downloads, "get", return_value=answer) as get:
+            audio = client.audio("/a.taf", byte_range="bytes=1-")
+
+        assert get.call_args.kwargs["headers"] == {"Range": "bytes=1-"}
+        assert (audio.status, audio.content_range) == (206, "bytes 1-2/3")
+
+    def test_a_taf_that_is_not_there_is_an_error_with_its_status(self, client):
+        answer = self._answer(status=404)
+        with patch.object(client.downloads, "get", return_value=answer):
+            with pytest.raises(TeddyCloudError) as raised:
+                client.audio("/gone.taf")
+
+        assert raised.value.status == 404
+        answer.close.assert_called()
+
+    def test_closing_lets_go_of_the_connection(self, client):
+        answer = self._answer()
+        with patch.object(client.downloads, "get", return_value=answer):
+            client.audio("/a.taf").close()
+
+        answer.close.assert_called()
+
+
 class TestToniesJson:
     def test_reads_the_official_catalogue(self, client, request_mock):
         request_mock.return_value = _json([{"model": "10000001"}])

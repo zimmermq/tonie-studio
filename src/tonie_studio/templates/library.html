@@ -1,5 +1,5 @@
 {% extends "_list_page.html" %}
-{% from "_parts.html" import thumb with context %}
+{% from "_parts.html" import playable_thumb with context %}
 {% set page_title = t("nav.library") %}
 {% set rows = shelf %}
 {% set filter_label = "library.origin." %}
@@ -22,7 +22,7 @@
      data-played="{{ players | lower }}" data-chapters="{{ taf.chapters or '' }}"
      data-size="{{ taf.size or '' }}" data-added="{{ taf.date or '' }}"
      data-search="{{ (item.label ~ ' ' ~ taf.path ~ ' ' ~ players) | lower }}">
-  {{ thumb(picture) }}
+  {{ playable_thumb(picture, taf.path, item.label, starts=taf.starts, tracks=taf.tracks) }}
   <span class="t-name"><strong>{{ item.label }}</strong>
     <span class="muted small-text block truncate">{{ taf.path }}
       {%- if not taf.valid %} &middot; <span class="state-failed">{{ t("library.invalid") }}</span>{% endif %}</span></span>

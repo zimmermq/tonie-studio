@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% from "_parts.html" import category_select, field, language_select, sticker_picker with context %}
+{% from "_parts.html" import category_select, field, language_select, play, sticker_picker with context %}
 {% set page_title = t("library.assign_title") %}
 
 {% block intro %}{{ path }} - {{ t("albums.tracks", count=encoded.tracks) }}{% endblock %}
 {% block body %}
+<p class="mt-0">{{ play(path, episode or path.rsplit("/", 1)[-1], series, text=t("player.listen")) }}</p>
 <form method="post" action="/library/assign">
   <input type="hidden" name="path" value="{{ path }}">
   <div class="card">

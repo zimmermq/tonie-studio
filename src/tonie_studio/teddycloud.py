@@ -30,7 +30,9 @@ import io
 import logging
 import re
 import time
-from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, BinaryIO, Callable, Dict, Iterable, Iterator, List, Optional, Tuple
+from urllib.parse import quote
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -74,6 +76,9 @@ DOWNLOAD_READ_TIMEOUT = 300
 
 # How much of a downloaded taf is read at a time; it is counted and dropped.
 DOWNLOAD_CHUNK = 1 << 20
+
+# How much of a taf played in a browser is passed on at a time.
+AUDIO_CHUNK = 64 << 10
 
 # How often one file is sent when the connection drops before teddyCloud
 # answers. Twice covers a connection closed under it; more would only delay
@@ -120,6 +125,23 @@ class TeddyCloudError(RuntimeError):
         self.body = body
         self.refused = (refused if refused is not None
                         else bool(status) and 400 <= status <= 500)
+
+
+@dataclass
+class Audio:
+    """A taf as a browser plays it, read from teddyCloud while it is passed on.
+
+    ``status`` is 206 for an answer to a range, with ``content_range`` saying
+    which; ``length`` is the bytes coming, None when teddyCloud did not say.
+    ``close`` must be called once the chunks are no longer read, or the
+    connection to teddyCloud stays open.
+    """
+
+    status: int
+    length: Optional[int]
+    content_range: str
+    chunks: Iterator[bytes]
+    close: Callable[[], None]
 
 
 class TeddyCloudClient:
@@ -252,6 +274,34 @@ class TeddyCloudClient:
         teddyCloud, which is the normal case behind an authenticating gateway.
         """
         return self._request("GET", path).content
+
+    def audio(self, path: str, byte_range: Optional[str] = None) -> Audio:
+        """Open the library taf at ``path`` as Ogg audio, from ``byte_range`` on if given.
+
+        teddyCloud leaves out the taf's own header with ``ogg=true``, which
+        leaves an Ogg Opus stream a browser plays. It answers a range that
+        starts after the first byte with 206, which is what seeking takes.
+        Read over the session that never retries: a broken stream is the
+        browser's to ask for again, from where it was.
+        """
+        headers = {"Range": byte_range} if byte_range else {}
+        try:
+            response = self.downloads.get(
+                f"{self.base_url}/content{quote(path)}",
+                params=self._params(ogg="true", special="library"), headers=headers,
+                stream=True, timeout=(CONNECT_TIMEOUT, self.timeout))
+        except requests.RequestException as error:
+            raise TeddyCloudError(f"teddyCloud at {self.base_url} is unreachable: {error}") from error
+        if response.status_code not in (200, 206):
+            response.close()
+            raise TeddyCloudError(f"teddyCloud answered {response.status_code} for {path}",
+                                  status=response.status_code)
+        length = response.headers.get("Content-Length")
+        return Audio(status=response.status_code,
+                     length=int(length) if length and length.isdigit() else None,
+                     content_range=response.headers.get("Content-Range", ""),
+                     chunks=response.iter_content(chunk_size=AUDIO_CHUNK),
+                     close=response.close)
 
     # --- tags -------------------------------------------------------------
 
