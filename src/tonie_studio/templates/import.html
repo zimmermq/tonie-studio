@@ -35,8 +35,31 @@
   {% endcall %}
 {% endmacro %}
 
+{% block head %}
+{#- Moving earlier imports is watched by asking again, as the names are. #}
+{% if moving and moving.state.value in ("queued", "running") %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
 {% block intro %}{{ t("import.intro") }}{% endblock %}
 {% block body %}
+{% if moving %}
+  {% if moving.state.value == "done" %}
+<div class="info" role="status">{{ t("import.to_library.done", moved=moving.result[0], failed=moving.result[1]) }}</div>
+  {% elif moving.state.value == "failed" %}
+<div class="info state-failed" role="alert">{{ t("import.to_library.failed", reason=moving.error) }}</div>
+  {% else %}
+<div class="info" role="status">
+  {%- if moving.total %}{{ t("import.to_library.running", done=moving.done_count, count=moving.total) }}
+  {%- else %}{{ t("import.to_library.preparing") }}{% endif -%}
+</div>
+  {% endif %}
+{% elif earlier %}
+<div class="card">
+  <p class="mt-0">{{ t("import.to_library.waiting", count=earlier) }}</p>
+  <form method="post" action="/import/to-library" data-confirm="{{ t('import.to_library.confirm', count=earlier) }}">
+    <button type="submit">{{ t("import.to_library.start") }}</button>
+  </form>
+</div>
+{% endif %}
 <p class="row wrap gap-12">
   <a class="button" href="/import/names">{{ t("names.title") }}</a>
   <span class="muted">{{ t("names.hint") }}</span>

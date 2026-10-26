@@ -13,9 +13,16 @@ account. Hundreds of dumps take days. The run lives in a file beside the app's
 other data, written after every tonie, and a restarted app carries on where it
 stopped, keeping to the schedule it had.
 
+An imported tonie ends up in the library only: once teddyCloud has its
+audio, the audio is moved into the library if teddyCloud left it beside the
+content JSON, and the content JSON is deleted (see into_library). The tonies
+dumped need not be stickers on a box of this teddyCloud, and the library is
+where audio is put on the stickers that are.
+
 Nothing is fetched twice. Before a run starts and again right before each
-tonie, teddyCloud is asked whether it already has the audio, so a tonie put on
-the box meanwhile, or imported by a previous run, is skipped and costs no wait.
+tonie, the list of tonies imported before (see imported_list) and teddyCloud
+are asked whether the audio is there, so a tonie put on the box meanwhile, or
+imported by a previous run, is skipped and costs no wait.
 
 The run file is what keeps the pace: when the next tonie is due, and that a
 download was asked for, are written before the download starts. A run whose
@@ -53,6 +60,7 @@ from . import github
 from .github import Repo, RepoError
 from .i18n import Problem
 from .models import WRITING
+from .naming import LIBRARY_FOLDER, LIBRARY_PREFIX
 from .nfc import DumpError, parse_dump
 from .store import LOCK, changing_json, from_record, read_json, write_json
 from .teddycloud import TeddyCloudClient, TeddyCloudError
@@ -66,6 +74,12 @@ SKIP_FILE = "import-skip.json"
 
 # How cached_at names a taf that lies beside its content JSON.
 BESIDE = "content/"
+
+# The tonies imported into the library only, by ruid; see imported_list.
+IMPORTED_FILE = "imported.json"
+
+# The tree of teddyCloud's that holds the library.
+LIBRARY = "library"
 
 # Item states. NEW items have not been checked against teddyCloud yet;
 # SKIPPED ones are on the skip list and are not asked for.
@@ -424,6 +438,120 @@ def _kept(client: TeddyCloudClient, ruid: str, sleep: Callable[[float], None],
     return ""
 
 
+# --- into the library only ----------------------------------------------------
+#
+# The content entry has to exist while teddyCloud downloads, since it takes
+# the cloud token from it, and goes once the audio is in the library. The
+# token is not lost with it: the dump still holds it.
+
+def into_library(client: TeddyCloudClient, ruid: str, where: str) -> str:
+    """Where the tonie's audio lies in the library, moving it there if teddyCloud left it beside.
+
+    teddyCloud keeps one taf per audio id in the library and leaves a download
+    beside its content JSON when that place holds other audio. The Tonies
+    cloud does hand out one audio id for different audio, such as figures of
+    one series, so such a taf goes into the same folder under its audio id
+    and the start of its hash. teddyCloud names a taf by the audio id and
+    hash in its header, not by its file name, so it is named all the same.
+    The taf beside is deleted only once the library holds it whole; raises
+    ImportProblem, leaving everything as it was, when it cannot be moved.
+    """
+    if not where.startswith(BESIDE):
+        return where
+    folder, file = _content_path(ruid)
+    header = _header(client.list_dir(f"/{folder}"), file)
+    if header is None:
+        raise ImportProblem("import.unreadable_taf")
+    name = f"{header[0]}-{header[1][:8]}.taf"
+    target = f"{LIBRARY_FOLDER}/{name}"
+    there = _header(_fetched(client), name)
+    if there is not None and there != header:
+        raise ImportProblem("import.library_taken", name=name)
+    if there is None:
+        client.upload(io.BytesIO(client.fetch(f"/content/{folder}/{file}")), name,
+                      path=LIBRARY_FOLDER, special=LIBRARY)
+        if _header(_fetched(client), name) != header:
+            client.delete(target, special=LIBRARY)
+            raise ImportProblem("import.not_moved", name=name)
+    source = f"{LIBRARY_PREFIX}{name}"
+    with WRITING:
+        client.set_tag(ruid, source=source)
+    client.delete(f"/{folder}/{file}")
+    log.info("moved the audio of %s into the library as %s", ruid, source)
+    return source
+
+
+def forget(client: TeddyCloudClient, ruid: str) -> None:
+    """Delete the tonie's content entry, and its folder unless another tonie shares it.
+
+    The folder goes too because teddyCloud answers a question about a tonie
+    whose folder exists as if it knew the tonie.
+    """
+    folder, file = _content_path(ruid)
+    with WRITING:
+        client.delete(f"/{folder}/{file}.json")
+        if not [item for item in client.list_dir(f"/{folder}") if item.get("name") != ".."]:
+            client.delete(f"/{folder}")
+
+
+def imported_list(data_dir: Path) -> Dict[str, str]:
+    """``{ruid: library source}`` of every tonie imported into the library only.
+
+    With their content entries gone, this is what tells a later run that
+    teddyCloud has their audio. Losing it costs the downloads again, nothing more.
+    """
+    with LOCK:
+        return read_json(data_dir / IMPORTED_FILE, {})
+
+
+def _note_imported(data_dir: Path, ruid: str, source: str) -> None:
+    with changing_json(data_dir / IMPORTED_FILE, {}) as imported:
+        imported[ruid] = source
+
+
+def _in_library(client: TeddyCloudClient, source: str,
+                listings: Dict[str, List[Dict[str, Any]]]) -> bool:
+    """Whether the library still holds ``source``, so a tonie noted as imported is skipped.
+
+    Audio deleted from the library since is fetched again. ``listings`` keeps
+    the folders listed so far, as hundreds of tonies share one. A folder that
+    cannot be listed raises rather than count as empty, which would fetch
+    every tonie in it again.
+    """
+    folder, _, name = source[len("lib:/"):].rpartition("/")
+    if folder not in listings:
+        listings[folder] = client.list_dir(folder or "/", special=LIBRARY)
+    return any(item.get("name") == name and not item.get("isDir") for item in listings[folder])
+
+
+def _fetched(client: TeddyCloudClient) -> List[Dict[str, Any]]:
+    """The listing of LIBRARY_FOLDER, which is created when missing.
+
+    Asking for a folder that is not there makes teddyCloud drop the
+    connection, so each parent is listed first.
+    """
+    parent = "/"
+    for name in LIBRARY_FOLDER.strip("/").split("/"):
+        path = f"{parent.rstrip('/')}/{name}"
+        if not any(item.get("name") == name and item.get("isDir")
+                   for item in client.list_dir(parent, special=LIBRARY)):
+            client.create_dir(path, special=LIBRARY)
+        parent = path
+    return client.list_dir(LIBRARY_FOLDER, special=LIBRARY)
+
+
+def _header(listing: List[Dict[str, Any]], name: str) -> Optional[Tuple[int, str]]:
+    """The audio id and hash (lower case) of the taf ``name`` in ``listing``; None
+    when it is not there or teddyCloud read no header from it."""
+    for item in listing:
+        if item.get("name") == name and not item.get("isDir"):
+            header = item.get("tafHeader") or {}
+            if header.get("audioId") is None or not header.get("sha1Hash"):
+                return None
+            return int(header["audioId"]), str(header["sha1Hash"]).lower()
+    return None
+
+
 # --- a run ------------------------------------------------------------------
 
 def new_items(dumps: Iterable[Tuple[str, str]]) -> List[Item]:
@@ -552,6 +680,47 @@ class Importer:
         log.info("import %s started: %d dump(s) from %s", run.id, len(items), source["label"])
         self._wake.set()
         return run
+
+    def to_library(self, progress: Optional[Callable[[int, int], None]] = None
+                   ) -> Tuple[int, int]:
+        """Leave every tonie the latest run imported or found in the library only.
+
+        For tonies settled before imports did so by themselves. Returns how
+        many were moved and how many could not be, which keep their entry;
+        ``progress`` is called with the tonies done and their number. Refused
+        while the run is active, as it moves tonies itself.
+        """
+        run = self.current()
+        if run is None:
+            return 0, 0
+        if run.active:
+            raise ImportProblem("import.busy")
+        todo = self._earlier(run)
+        client = self.client()
+        moved = failed = 0
+        for done, item in enumerate(todo, 1):
+            _entry, where = lookup(client, item.ruid)
+            if where:
+                self._keep(client, item, where)
+                if item.ruid in imported_list(self.data_dir):
+                    moved += 1
+                else:
+                    failed += 1
+            if progress:
+                progress(done, len(todo))
+        log.info("moved %d imported tonie(s) into the library only, %d could not be", moved,
+                 failed)
+        return moved, failed
+
+    def earlier(self) -> int:
+        """How many tonies of the latest run to_library would move; 0 while it is active."""
+        run = self.current()
+        return len(self._earlier(run)) if run and not run.active else 0
+
+    def _earlier(self, run: Run) -> List[Item]:
+        imported = imported_list(self.data_dir)
+        return [item for item in run.items
+                if item.ruid and item.state in (CACHED, IMPORTED) and item.ruid not in imported]
 
     def skip_failed(self, path: str) -> bool:
         """Put the failed dump ``path`` of the latest run on the skip list.
@@ -736,13 +905,19 @@ class Importer:
         """Ask teddyCloud about the next batch of unchecked items."""
         client = self.client()
         skips = skip_list(self.data_dir)
+        imported = imported_list(self.data_dir)
+        listings: Dict[str, List[Dict[str, Any]]] = {}
         checked: Dict[int, Tuple[str, str]] = {}
         for index, item in enumerate(run.items):
             if item.state != NEW:
                 continue
-            entry, where = lookup(client, item.ruid)
-            if where:
-                cloud_off(client, item.ruid, entry)
+            if item.ruid in imported and _in_library(client, imported[item.ruid], listings):
+                where = imported[item.ruid]
+            else:
+                entry, where = lookup(client, item.ruid)
+                if where:
+                    cloud_off(client, item.ruid, entry)
+                    where = self._keep(client, item, where)
             checked[index] = ((CACHED, where) if where
                               else (SKIPPED, "") if _on_list(skips, item) else (PENDING, ""))
             if len(checked) == CHECKS_PER_WRITE:
@@ -774,8 +949,9 @@ class Importer:
             cloud_off(client, item.ruid, entry)
             if item.asked_at:
                 # The download the app went away from: teddyCloud finished it.
-                self._imported(run.id, index, item, where)
+                self._imported(client, run.id, index, item, where)
                 return 0
+            where = self._keep(client, item, where)
             settled = self.clock()
             self._record(run.id,
                          lambda current: _settle_item(current.items[index], CACHED, where, settled))
@@ -832,16 +1008,44 @@ class Importer:
                                              added_at=self.clock()))
             return 0
 
-        self._imported(run.id, index, item, where)
+        self._imported(client, run.id, index, item, where)
         return 0
 
-    def _imported(self, run_id: str, index: int, item: Item, where: str) -> None:
+    def _imported(self, client: TeddyCloudClient, run_id: str, index: int, item: Item,
+                  where: str) -> None:
+        where = self._keep(client, item, where, name=True)
         log.info("imported %s as %s", item.path, where)
 
         def imported(current: Run) -> None:
             _settle_item(current.items[index], IMPORTED, where, self.clock())
             current.streak = 0
         self._record(run_id, imported)
+
+    def _keep(self, client: TeddyCloudClient, item: Item, where: str, name: bool = False) -> str:
+        """Leave the tonie's audio in the library only; returns where it is.
+
+        ``name`` hands it to after_import first, which names it by its
+        content entry. Audio that cannot be moved keeps its entry, so it
+        still plays and a later run or to_library tries again.
+        """
+        try:
+            where = into_library(client, item.ruid, where)
+        except (TeddyCloudError, ImportProblem) as error:
+            log.warning("the audio of %s stays where it is, at %s: %s", item.path, where, error)
+            if name:
+                self._name(item)
+            return where
+        if name:
+            self._name(item)
+        try:
+            forget(client, item.ruid)
+        except TeddyCloudError as error:
+            log.warning("could not delete the entry of %s: %s", item.path, error)
+            return where
+        _note_imported(self.data_dir, item.ruid, where)
+        return where
+
+    def _name(self, item: Item) -> None:
         if self.after_import:
             try:
                 self.after_import(item.ruid, item.path)

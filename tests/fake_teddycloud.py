@@ -40,6 +40,11 @@ class FakeTeddyCloud:
         self.dirs: Set[str] = {"/"}
         self.files: Dict[str, bytes] = {}
         self.taf_headers: Dict[str, dict] = {}
+        # The header teddyCloud reads from a taf of these bytes, for files
+        # that get here by upload rather than by being set up in a test.
+        self.headers_of: Dict[bytes, dict] = {}
+        # Every upload into the library or the content tree, as its path.
+        self.uploads: List[str] = []
         # What teddyCloud says a taf is, from its header's audio id: tonieInfo.
         self.taf_info: Dict[str, dict] = {}
         # When a file was written, as teddyCloud lists it; 0 when not given.
@@ -143,7 +148,12 @@ class FakeTeddyCloud:
             return
         if path not in self.dirs:
             raise TeddyCloudError(f"no such directory: {path}")
-        self.files[_join(path, filename)] = stream.read()
+        target = _join(path, filename)
+        data = stream.read()
+        self.files[target] = data
+        self.uploads.append(target)
+        if data in self.headers_of:
+            self.taf_headers[target] = dict(self.headers_of[data])
 
     def encode(self, target: str, sources, special: str = "library") -> None:
         sources = list(sources)
@@ -175,6 +185,9 @@ class FakeTeddyCloud:
             if name not in self.images:
                 raise TeddyCloudError(f"no such image: {path}", status=404)
             return self.images[name]
+        if path.startswith("/content/"):
+            # teddyCloud serves the content tree, header and all, under /content/.
+            path = path[len("/content"):]
         if path in self.files:
             return self.files[path]
         raise TeddyCloudError(f"no such file: {path}", status=404)

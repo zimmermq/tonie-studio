@@ -14,7 +14,9 @@ puts a tonie on and nothing happens.
   about it: for a homemade tonie about content the cloud does not have, for an
   imported one about audio teddyCloud already keeps.
 - What nothing points at any more - a taf no tag plays, a model no tag names -
-  costs space and makes every list longer than it needs to be.
+  costs space and makes every list longer than it needs to be. Audio fetched
+  from the Tonies cloud is the exception: imports leave it in the library
+  with no sticker on purpose, and a model naming it is what names it there.
 
 The checks only report. Each finding carries the repair it would make and a
 preview of what that writes, and the page applies one only when asked, after
@@ -31,6 +33,7 @@ from typing import Dict, Iterable, List, Optional
 from .encode import Taf, aside_of, delete_taf, list_tafs
 from .library import is_library, listed_path, path_of, played, same, source_of
 from .models import MODEL_PREFIX, WRITING, Model, find_model, list_models, update_model
+from .naming import LIBRARY_FOLDER
 from .tags import TonieError, TonieTag, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .tonie import delete_model
@@ -245,7 +248,9 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
                busy: set, busy_folders: tuple) -> List[Finding]:
     findings = []
     playing = played(tag.source for tag in tags)
-    named = {tag.model.lower() for tag in tags}
+    named = {tag.model.lower() for tag in tags} | {taf.model.lower() for taf in tafs or []
+                                                   if taf.model}
+    fetched = same(LIBRARY_FOLDER) + "/"
     # Targets of replaces stopped before they pointed their stickers back:
     # the stickers play the copy, and the target is the audio meant for them.
     meant = {same(aside_of(taf.path) or "") for taf in tafs or []
@@ -254,6 +259,8 @@ def _leftovers(tags: List[TonieTag], models: List[Model], tafs: Optional[List[Ta
     for taf in tafs or []:
         path = same(taf.path)
         if same(taf.source) in playing or path in busy or path.startswith(busy_folders):
+            continue
+        if path.startswith(fetched):
             continue
         if path in meant:
             continue

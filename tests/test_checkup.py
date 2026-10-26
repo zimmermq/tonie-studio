@@ -209,6 +209,27 @@ class TestLeftovers:
         assert found.target == "TS-0009"
         assert found.fix == "delete_model"
 
+    def test_official_audio_no_sticker_plays_is_kept_on_purpose(self, cloud):
+        # Imported tonies leave their audio in the library and no sticker
+        # behind; it waits there to be put on one.
+        cloud.create_dir("/by")
+        cloud.create_dir("/by/audioID")
+        cloud.files["/by/audioID/1759218085-fcaaf050.taf"] = b"x" * 512
+        cloud.taf_headers["/by/audioID/1759218085-fcaaf050.taf"] = {"valid": True}
+
+        assert "orphan_taf" not in kinds(examine(cloud))
+
+    def test_a_model_that_names_audio_in_the_library_is_no_leftover(self, cloud):
+        # The model is what names imported audio the catalogue does not know.
+        cloud.custom_models.append({"model": "TS-0009", "series": "Pack figure"})
+        cloud.create_dir("/by")
+        cloud.create_dir("/by/audioID")
+        cloud.files["/by/audioID/7.taf"] = b"x" * 512
+        cloud.taf_headers["/by/audioID/7.taf"] = {"valid": True}
+        cloud.taf_info["/by/audioID/7.taf"] = {"model": "TS-0009", "series": "Pack figure"}
+
+        assert "orphan_model" not in kinds(examine(cloud))
+
     def test_only_this_apps_models_count_as_leftovers(self, cloud):
         # A model made by hand in teddyCloud is somebody's decision.
         cloud.custom_models.append({"model": "MEIN-1", "series": "Von Hand"})

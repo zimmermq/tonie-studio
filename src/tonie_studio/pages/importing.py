@@ -38,6 +38,9 @@ KINDS = (naming.RENAME, naming.PROMOTE, naming.RETITLE, naming.REPAIR, naming.NE
 # The job kind of writing the names a person looked at.
 NAMES_KIND = "names"
 
+# The job kind of moving tonies earlier imports left as stickers into the library only.
+TO_LIBRARY_KIND = "to_library"
+
 
 def register(app: FastAPI, ctx: Context) -> None:
     """Add the routes of this part of the app to ``app``."""
@@ -46,10 +49,13 @@ def register(app: FastAPI, ctx: Context) -> None:
     namer = ctx.namer
 
     @app.get("/import", response_class=HTMLResponse)
-    def import_page(request: Request):
+    def import_page(request: Request, moving: str = ""):
         run = importer.current()
+        job = ctx.prints.get(moving) if moving else None
         return templates.TemplateResponse(request, "import.html", {
             "run": run,
+            "moving": job if job is not None and job.kind == TO_LIBRARY_KIND else None,
+            "earlier": importer.earlier(),
             # Why the run asks nobody anything now; see Importer.held.
             "held": importer.held if run else None,
             "broke_off": BROKE_OFF,
@@ -187,6 +193,27 @@ def register(app: FastAPI, ctx: Context) -> None:
         else:
             job_id = under_way.id
         return RedirectResponse(f"/import/names?running={job_id}", 303)
+
+    @app.post("/import/to-library")
+    def to_library():
+        """Move the tonies earlier imports left as stickers into the library only.
+
+        Hundreds of them take longer than a proxy in front of the app waits,
+        hence the job. One at a time: a second click joins it.
+        """
+        under_way = next((job for job in ctx.prints.all() if job.kind == TO_LIBRARY_KIND
+                          and job.state in (JobState.QUEUED, JobState.RUNNING)), None)
+        if under_way is None:
+            run = importer.current()
+            if run is not None and run.active:
+                raise Refused(409, "import.busy")
+            job_id = ctx.prints.submit(
+                TO_LIBRARY_KIND, "to library",
+                lambda progress: importer.to_library(
+                    lambda done, total: progress("moving", done, total)))
+        else:
+            job_id = under_way.id
+        return RedirectResponse(f"/import?moving={job_id}", 303)
 
     @app.post("/import/pause")
     def pause():

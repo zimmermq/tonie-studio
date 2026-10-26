@@ -16,7 +16,8 @@ from tonie_studio.importing import (CACHED, CHECKING, DUPLICATE, FAILED, FETCHIN
                                     GIVEN_UP, IMPORTED, PENDING, RESTORE, RETRY_SECONDS, RUNNING,
                                     SKIP_FILE, SKIPPED, STOPPED, SWITCH_OFF, UNREADABLE, Cloud,
                                     ImportProblem, Importer, Pace, Skip, add_skip, cached_at,
-                                    import_one, remove_skip, skip_list)
+                                    forget, import_one, imported_list, into_library,
+                                    remove_skip, skip_list)
 
 AUTH = "AB" * 32
 
@@ -206,16 +207,26 @@ class TestCloudOffOnceThere:
 
         assert self.nocloud(teddycloud, WOLF_RUID) is False
 
-    def test_a_tonie_teddycloud_already_had_is_switched_off_too(self, importer, teddycloud):
+    def test_a_tonie_teddycloud_already_had_asks_nothing_either(self, importer, teddycloud):
+        # Its entry, which is what would ask the cloud, goes; see TestLibraryOnly.
         teddycloud.add_content(FEST_RUID, source="lib://by/audioID/9.taf", cloud_auth=AUTH,
                                nocloud=False)
 
         importer.begin([FEST], STEADY, "test")
         importer.step()
 
+        assert entry_of(teddycloud, FEST_RUID) is None
+
+    def test_one_whose_audio_cannot_be_moved_is_switched_off(self, importer, teddycloud):
+        beside(teddycloud, FEST_RUID, {"valid": False})
+        teddycloud.set_tag(FEST_RUID, nocloud=False)
+
+        importer.begin([FEST], STEADY, "test")
+        importer.step()
+
         assert self.nocloud(teddycloud, FEST_RUID) is True
 
-    def test_one_that_turned_up_by_its_turn_is_switched_off_too(self, importer, teddycloud,
+    def test_one_that_turned_up_by_its_turn_asks_nothing_either(self, importer, teddycloud,
                                                                clock):
         importer.begin([WOLF, FEST], STEADY, "test")
         run_until_idle(importer, clock)
@@ -225,7 +236,7 @@ class TestCloudOffOnceThere:
         clock.now += 360
         run_until_idle(importer, clock)
 
-        assert self.nocloud(teddycloud, FEST_RUID) is True
+        assert entry_of(teddycloud, FEST_RUID) is None
 
 
 class TestPlanning:
@@ -1021,7 +1032,7 @@ class TestAKillDuringADownload:
 
         assert states(again)["Wolf.nfc"] == IMPORTED
         assert seen == ["Wolf.nfc"] and teddycloud.cloud_requests == []
-        assert TestCloudOffOnceThere.nocloud(teddycloud, WOLF_RUID) is True
+        assert entry_of(teddycloud, WOLF_RUID) is None
 
 
 def cut_short(teddycloud, finished):
@@ -1080,3 +1091,279 @@ class TestADownloadCutShort:
         assert run.phase != GIVEN_UP and run.streak == 0
         assert run.items[0].error_key == "import.download_broke"
         assert skip_list(tmp_path) == []
+
+
+# --- the library only -------------------------------------------------------
+
+DORY = {"audioId": 1759218085, "sha1Hash": "193501048189AABBCCDDEEFF0011223344556677"}
+RATATOUILLE = {"audioId": 1759218085, "sha1Hash": "FCAAF05032A6AABBCCDDEEFF0011223344556677"}
+COLLIDING = "lib://by/audioID/1759218085-fcaaf050.taf"
+
+
+def beside(teddycloud, ruid, header, data=b"ratatouille taf"):
+    """The audio of ``ruid`` cached beside its content JSON, as teddyCloud leaves it
+    when the library already holds other audio under the same audio id."""
+    teddycloud.add_content(ruid, source="", cloud_ruid=ruid, cloud_auth=AUTH, nocloud=True)
+    path = f"/{ruid[:8].upper()}/{ruid[8:].upper()}"
+    teddycloud.files[path] = data
+    teddycloud.taf_headers[path] = dict(header)
+    teddycloud.headers_of[data] = dict(header)
+    return f"content/{ruid[:8].upper()}/{ruid[8:].upper()}"
+
+
+def in_library(teddycloud, name, header, data):
+    teddycloud.dirs.update({"/by", "/by/audioID"})
+    teddycloud.files[f"/by/audioID/{name}"] = data
+    teddycloud.taf_headers[f"/by/audioID/{name}"] = dict(header)
+
+
+def entry_of(teddycloud, ruid):
+    return teddycloud.files.get(f"/{ruid[:8].upper()}/{ruid[8:].upper()}.json")
+
+
+class TestIntoLibrary:
+    """Audio teddyCloud fetched ends up in the library, whatever its audio id shares."""
+
+    def test_audio_already_in_the_library_stays_where_it_is(self, teddycloud):
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf")
+
+        assert into_library(teddycloud, WOLF_RUID, "lib://by/audioID/1.taf") == \
+            "lib://by/audioID/1.taf"
+        assert teddycloud.uploads == []
+
+    def test_audio_beside_its_json_moves_in_under_its_audio_id_and_hash(self, teddycloud):
+        in_library(teddycloud, "1759218085.taf", DORY, b"dory taf")
+        where = beside(teddycloud, WOLF_RUID, RATATOUILLE)
+
+        assert into_library(teddycloud, WOLF_RUID, where) == COLLIDING
+        assert teddycloud.files["/by/audioID/1759218085-fcaaf050.taf"] == b"ratatouille taf"
+        assert "/11DFC517/500304E0" not in teddycloud.files
+        assert json.loads(entry_of(teddycloud, WOLF_RUID))["source"] == COLLIDING
+
+    def test_the_audio_that_had_the_place_first_is_left_alone(self, teddycloud):
+        in_library(teddycloud, "1759218085.taf", DORY, b"dory taf")
+
+        into_library(teddycloud, WOLF_RUID, beside(teddycloud, WOLF_RUID, RATATOUILLE))
+
+        assert teddycloud.files["/by/audioID/1759218085.taf"] == b"dory taf"
+
+    def test_audio_moved_in_before_is_not_stored_twice(self, teddycloud):
+        # A second copy of the same tonie, or a move the app went away from
+        # after the upload: the same audio already lies under the same name.
+        in_library(teddycloud, "1759218085-fcaaf050.taf", RATATOUILLE, b"ratatouille taf")
+        where = beside(teddycloud, WOLF_RUID, RATATOUILLE)
+
+        assert into_library(teddycloud, WOLF_RUID, where) == COLLIDING
+        assert teddycloud.uploads == []
+        assert "/11DFC517/500304E0" not in teddycloud.files
+
+    def test_other_audio_under_that_name_keeps_the_audio_beside(self, teddycloud):
+        in_library(teddycloud, "1759218085-fcaaf050.taf",
+                   dict(RATATOUILLE, sha1Hash="FCAAF050" + "0" * 32), b"something else")
+        where = beside(teddycloud, WOLF_RUID, RATATOUILLE)
+
+        with pytest.raises(ImportProblem):
+            into_library(teddycloud, WOLF_RUID, where)
+
+        assert "/11DFC517/500304E0" in teddycloud.files
+        assert teddycloud.files["/by/audioID/1759218085-fcaaf050.taf"] == b"something else"
+
+    def test_an_upload_that_did_not_arrive_whole_keeps_the_audio_beside(self, teddycloud):
+        where = beside(teddycloud, WOLF_RUID, RATATOUILLE)
+        teddycloud.headers_of[b"ratatouille taf"] = {"valid": False}
+
+        with pytest.raises(ImportProblem):
+            into_library(teddycloud, WOLF_RUID, where)
+
+        assert "/11DFC517/500304E0" in teddycloud.files
+        assert "/by/audioID/1759218085-fcaaf050.taf" not in teddycloud.files
+
+    def test_a_taf_without_a_header_is_not_moved(self, teddycloud):
+        where = beside(teddycloud, WOLF_RUID, {"valid": False})
+
+        with pytest.raises(ImportProblem):
+            into_library(teddycloud, WOLF_RUID, where)
+
+        assert "/11DFC517/500304E0" in teddycloud.files
+
+
+class TestForget:
+    def test_the_entry_and_its_empty_folder_go(self, teddycloud):
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf")
+
+        forget(teddycloud, WOLF_RUID)
+
+        assert entry_of(teddycloud, WOLF_RUID) is None
+        assert "/11DFC517" not in teddycloud.dirs
+
+    def test_a_folder_another_tonie_shares_stays(self, teddycloud):
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf")
+        teddycloud.add_content("11dfc517600304e0", source="lib://by/audioID/2.taf")
+
+        forget(teddycloud, WOLF_RUID)
+
+        assert entry_of(teddycloud, WOLF_RUID) is None
+        assert entry_of(teddycloud, "11dfc517600304e0") is not None
+
+
+class TestLibraryOnly:
+    """An imported tonie leaves its audio in the library and no sticker behind."""
+
+    def test_an_imported_tonie_is_in_the_library_only(self, importer, teddycloud, clock, tmp_path):
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        item = importer.current().items[0]
+        assert item.state == IMPORTED and item.result.startswith("lib://by/audioID/")
+        assert teddycloud.files["/" + item.result[len("lib://"):]] == b"taf of " + WOLF_RUID.encode()
+        assert entry_of(teddycloud, WOLF_RUID) is None
+        assert imported_list(tmp_path) == {WOLF_RUID: item.result}
+
+    def test_it_is_named_while_its_entry_is_still_there(self, teddycloud, tmp_path, clock):
+        seen = []
+        importer = Importer(lambda: teddycloud, tmp_path, clock=clock, sleep=lambda s: None,
+                            after_import=lambda ruid, path: seen.append(
+                                json.loads(entry_of(teddycloud, ruid))["source"]))
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert seen == [importer.current().items[0].result]
+
+    def test_a_colliding_download_is_moved_in_too(self, importer, teddycloud, clock):
+        in_library(teddycloud, "1759218085.taf", DORY, b"dory taf")
+        teddycloud.settings["cloud.cacheToLibrary"] = "false"
+        teddycloud.cloud[WOLF_RUID] = b"ratatouille taf"
+        teddycloud.headers_of[b"ratatouille taf"] = dict(RATATOUILLE)
+        cache = teddycloud.cache_content
+
+        def keeps_header(folder, file):
+            size = cache(folder, file)
+            teddycloud.taf_headers[f"/{folder}/{file}"] = dict(RATATOUILLE)
+            return size
+        teddycloud.cache_content = keeps_header
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().items[0].result == COLLIDING
+        assert entry_of(teddycloud, WOLF_RUID) is None
+
+    def test_a_tonie_imported_before_is_not_asked_about(self, importer, teddycloud, clock,
+                                                        tmp_path):
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+        importer.begin([WOLF], STEADY, "again")
+        teddycloud.content_misses = 0
+
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": CACHED}
+        assert importer.current().items[0].result == imported_list(tmp_path)[WOLF_RUID]
+        assert teddycloud.cloud_requests == [WOLF_RUID] and teddycloud.content_misses == 0
+
+    def test_one_whose_audio_left_the_library_is_imported_again(self, importer, teddycloud,
+                                                                clock, tmp_path):
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+        teddycloud.delete("/" + imported_list(tmp_path)[WOLF_RUID][len("lib://"):])
+        importer.begin([WOLF], STEADY, "again")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": IMPORTED}
+        assert teddycloud.cloud_requests == [WOLF_RUID, WOLF_RUID]
+        assert imported_list(tmp_path)[WOLF_RUID] == importer.current().items[0].result
+
+    def test_a_library_that_cannot_be_listed_fetches_nothing_again(self, importer, teddycloud,
+                                                                   clock):
+        from tonie_studio.teddycloud import TeddyCloudError
+
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+        importer.begin([WOLF], STEADY, "again")
+        listing = teddycloud.list_dir
+
+        def away(path="/", special=None):
+            if special == "library":
+                raise TeddyCloudError("teddyCloud dropped the connection")
+            return listing(path, special)
+        teddycloud.list_dir = away
+
+        with pytest.raises(TeddyCloudError):
+            importer.step()
+
+        assert teddycloud.cloud_requests == [WOLF_RUID]
+
+    def test_a_tonie_teddycloud_already_keeps_goes_to_the_library_too(
+            self, importer, teddycloud, clock, tmp_path):
+        in_library(teddycloud, "5.taf", {"audioId": 5, "sha1Hash": "AA"}, b"wolf")
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/5.taf", nocloud=True)
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": CACHED}
+        assert entry_of(teddycloud, WOLF_RUID) is None
+        assert imported_list(tmp_path) == {WOLF_RUID: "lib://by/audioID/5.taf"}
+
+    def test_audio_that_cannot_be_moved_keeps_its_entry(self, importer, teddycloud, clock,
+                                                       tmp_path):
+        beside(teddycloud, WOLF_RUID, {"valid": False})
+        importer.begin([WOLF], STEADY, "test")
+
+        run_until_idle(importer, clock)
+
+        assert states(importer) == {"Wolf.nfc": CACHED}
+        assert entry_of(teddycloud, WOLF_RUID) is not None
+        assert imported_list(tmp_path) == {}
+
+
+class TestMovingEarlierImports:
+    """Tonies imported before imports went to the library only are moved there on request."""
+
+    def test_every_tonie_of_the_latest_run_ends_up_in_the_library_only(
+            self, importer, teddycloud, clock, tmp_path):
+        importer.begin([WOLF, FEST], STEADY, "test")
+        in_library(teddycloud, "1759218085.taf", DORY, b"dory taf")
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf", nocloud=True)
+        where = beside(teddycloud, FEST_RUID, RATATOUILLE)
+        run = importer.current()
+        for item, result in zip(run.items, ("lib://by/audioID/1.taf", where)):
+            item.state, item.result = IMPORTED, result
+        run.phase = FINISHED
+        from tonie_studio.importing import _save
+        _save(tmp_path, run)
+        progress = []
+
+        moved, failed = importer.to_library(lambda done, total: progress.append((done, total)))
+
+        assert (moved, failed) == (2, 0)
+        assert entry_of(teddycloud, WOLF_RUID) is None and entry_of(teddycloud, FEST_RUID) is None
+        assert imported_list(tmp_path) == {WOLF_RUID: "lib://by/audioID/1.taf",
+                                           FEST_RUID: COLLIDING}
+        assert progress[-1] == (2, 2)
+
+    def test_one_that_cannot_be_moved_is_counted_and_keeps_its_entry(
+            self, importer, teddycloud, clock, tmp_path):
+        beside(teddycloud, WOLF_RUID, {"valid": False})
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+
+        assert importer.to_library() == (0, 1)
+        assert entry_of(teddycloud, WOLF_RUID) is not None
+
+    def test_one_moved_before_is_not_counted_again(self, importer, teddycloud, clock, tmp_path):
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+
+        assert importer.to_library() == (0, 0)
+
+    def test_refused_while_a_run_is_active(self, importer, teddycloud, clock):
+        importer.begin([WOLF], STEADY, "test")
+        run_until_idle(importer, clock)
+        importer.begin([FEST], STEADY, "busy")
+
+        with pytest.raises(ImportProblem):
+            importer.to_library()

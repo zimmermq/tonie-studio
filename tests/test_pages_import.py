@@ -541,3 +541,54 @@ class TestSkipList:
 
         assert site.get("/api/import").json()["counts"]["skipped"] == 1
         assert 'id="count-skipped"' in site.get("/import").text
+
+
+class TestEarlierImports:
+    """Tonies imported before imports went to the library only are moved there from the page."""
+
+    def _earlier(self, importer, teddycloud):
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        teddycloud.add_content(WOLF_RUID, source="lib://by/audioID/1.taf", nocloud=True)
+        run = importer.current()
+        run.items[0].state, run.items[0].result = "imported", "lib://by/audioID/1.taf"
+        run.phase = "finished"
+        from tonie_studio.importing import _save
+        _save(importer.data_dir, run)
+
+    def test_the_page_offers_to_move_them(self, site, importer, teddycloud):
+        self._earlier(importer, teddycloud)
+
+        page = site.get("/import").text
+
+        assert 'action="/import/to-library"' in page
+        assert say("import.to_library.waiting", count=1) in page
+
+    def test_nothing_is_offered_once_they_are_moved(self, site, importer, teddycloud):
+        importer.begin([("Sammlung/Wolf.nfc", dump("17 C5 DF 11"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "test")
+        for _ in range(5):
+            importer.step()
+
+        assert 'action="/import/to-library"' not in site.get("/import").text
+
+    def test_moving_runs_behind_a_page_that_says_how_it_went(self, site, importer, teddycloud):
+        self._earlier(importer, teddycloud)
+
+        response = site.post("/import/to-library", follow_redirects=False)
+
+        location = response.headers["location"]
+        assert location.startswith("/import?moving=")
+        assert site.app.state.prints.get(location.split("moving=")[1]).done.wait(10)
+        page = site.get(location).text
+        assert say("import.to_library.done", moved=1, failed=0) in page
+        assert "/11DFC517/500304E0.json" not in teddycloud.files
+
+    def test_refused_while_a_run_is_active(self, site, importer, teddycloud):
+        self._earlier(importer, teddycloud)
+        importer.begin([("Sammlung/Fest.nfc", dump("21 C9 91 7D"))],
+                       Pace(per_hour=10, jitter=0, max_failures=3), "busy")
+
+        response = site.post("/import/to-library", follow_redirects=False)
+
+        assert response.status_code == 409
