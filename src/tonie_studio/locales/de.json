@@ -13,6 +13,9 @@
  "album.discard": "Album verlassen? Die geänderten Namen, die Reihenfolge und der Ausschnitt gehen verloren.",
  "album.encode": "Audio erstellen",
  "album.episode": "Folge (so heißt der Tonie, auch auf dem Cover)",
+ "album.marks.apply": "Kapitel übernehmen",
+ "album.marks.hint": "Eine Zeile pro Kapitel: wo es beginnt, dann sein Titel, etwa \"12:34 Kapitel 2\" oder \"1:02:03 Kapitel 7\". Kapitel, die die Datei selbst oder eine CUE-Datei nennt, werden von allein gelesen.",
+ "album.marks.title": "In Kapitel teilen",
  "album.minutes": {
   "one": "{count} Minute",
   "other": "{count} Minuten"
@@ -390,6 +393,7 @@
  "job.archive_episode": "Folge {number} von {count} in dieser Runde: {title}",
  "job.archive_round": "Bis zu {count} Folgen pro Runde, älteste zuerst. {stored} von {total} sind in der Library; solange welche fehlen, startet die nächste Runde von selbst.",
  "job.back": "Zurück zur Übersicht",
+ "job.cutting": "{done} von {count} Kapiteln ausgeschnitten",
  "job.encoded_minutes": "encodiert, etwa {done} von {count} Minuten",
  "job.encoding": "wird encodiert",
  "job.gone": "Diese Arbeit ist nicht mehr bekannt, vermutlich wurde die App neu gestartet. Was bis dahin fertig war, ist da; den Rest starte noch einmal.",
@@ -735,6 +739,9 @@
  "shop.none": "tonies.com hat nichts, das dem Namen nach passt.",
  "shop.take": "Übernehmen",
  "shop.title": "Bei tonies.com suchen",
+ "split.bad_line": "Zeile {line} ist keine Zeitangabe: {text}",
+ "split.cut_failed": "Ein Kapitel aus {file} ließ sich nicht ausschneiden: {detail}",
+ "split.not_ascending": "Zeile {line} beginnt vor der Zeile darüber: {text}",
  "steps.check": "Prüfen",
  "steps.choose": "Album wählen",
  "steps.encode": "Encodieren",

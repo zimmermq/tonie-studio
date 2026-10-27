@@ -19,6 +19,7 @@ function describe(job) {
       ? say(words['job.encoded_minutes'], {done: mins(job.done), count: mins(job.total)})
       : words['job.encoding'];
   }
+  if (job.step === 'cut') return say(words['job.cutting'], {done: job.done, count: job.total});
   if (job.step === 'archive') {
     return job.current
       ? say(words['job.archive_episode'],

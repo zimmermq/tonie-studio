@@ -25,6 +25,8 @@ from typing import Dict, List, Optional, Sequence
 
 import mutagen
 
+from .splitting import Chapter, cue_chapters, embedded_chapters, parse_marks, segments
+
 log = logging.getLogger(__name__)
 
 # How the tracks were put in order, as ``Album.ordering`` reports it. The page
@@ -44,7 +46,7 @@ WARN_ARTEFACT_COVER = "album.warn.artefact_cover"
 # What teddyCloud's ffmpeg build accepts as encoder input. Offering anything
 # else only produces a failure minutes into an encode.
 AUDIO_EXTENSIONS = frozenset({
-    ".mp3", ".aac", ".m4a", ".wav", ".flac", ".ogg", ".opus",
+    ".mp3", ".aac", ".m4a", ".m4b", ".wav", ".flac", ".ogg", ".opus",
     ".aiff", ".aif", ".wma", ".ac3", ".dts", ".mp4",
 })
 
@@ -122,6 +124,11 @@ class Track:
     # A karaoke or instrumental take. Offered unticked rather than hidden: it
     # is a guess from the title, and sometimes the karaoke half is the point.
     extra: bool = False
+    # A chapter of a longer file: where it starts and ends in it, in seconds.
+    # None for a whole file; ``end`` None also for a last chapter whose file
+    # has no known length, which then runs to the end of the file.
+    start: Optional[float] = None
+    end: Optional[float] = None
 
 
 @dataclass
@@ -254,6 +261,7 @@ def read_album(path: Path) -> Album:
     ordered, ordering = _order(files, tags, path)
 
     tracks = [_track(file, index, tags[file]) for index, file in enumerate(ordered, start=1)]
+    tracks = _chaptered(tracks, entries)
 
     if not tracks:
         warnings.append(WARN_NO_AUDIO)
@@ -280,6 +288,80 @@ def read_album(path: Path) -> Album:
         ordering=ordering,
         warnings=warnings,
     )
+
+
+# --- chapters -------------------------------------------------------------
+
+# Only a file at least this long is asked for chapters, in seconds: reading
+# every song of every album for chapters it never has would slow each album
+# page, and a file this short is a song, not a book.
+LONG_FILE_SECONDS = 15 * 60
+
+
+def _chaptered(tracks: List[Track], entries) -> List[Track]:
+    """The tracks with each long file that names its chapters read as one track per chapter.
+
+    The chapters come from the file itself or, for the only audio file of
+    the folder, from a CUE sheet beside it.
+    """
+    single = len(tracks) == 1
+    found: List[Track] = []
+    for track in tracks:
+        chapters: List[Chapter] = []
+        if (track.duration or 0) >= LONG_FILE_SECONDS:
+            chapters = embedded_chapters(track.path)
+            if len(chapters) < 2 and single:
+                chapters = _cue_beside(entries)
+        found += _split_track(track, chapters) if len(chapters) >= 2 else [track]
+    for number, track in enumerate(found, start=1):
+        track.number = number
+    return found
+
+
+def with_marks(album: Album, text: str) -> Album:
+    """The album with its only file split at the times in ``text``; see parse_marks.
+
+    An album of several files, or no marks, is returned as it is. Raises
+    SplitProblem for marks that cannot be read.
+    """
+    if not text.strip() or len({track.path for track in album.tracks}) != 1:
+        return album
+    first = album.tracks[0]
+    ends = [track.end for track in album.tracks if track.end is not None]
+    whole = Track(path=first.path, number=1, title=album.title or first.title,
+                  artist=first.artist,
+                  duration=max(ends) if ends and len(album.tracks) > 1 else first.duration)
+    tracks = _split_track(whole, parse_marks(text))
+    for number, track in enumerate(tracks, start=1):
+        track.number = number
+    return Album(path=album.path, title=album.title, artist=album.artist, year=album.year,
+                 tracks=tracks, cover=album.cover, cover_candidates=album.cover_candidates,
+                 ordering=album.ordering, warnings=album.warnings)
+
+
+def _split_track(track: Track, chapters: Sequence[Chapter]) -> List[Track]:
+    """One track per chapter of the file ``track`` is; a chapter without a title is numbered."""
+    return [Track(path=track.path, number=0, title=title or f"{track.title} {index}",
+                  artist=track.artist, duration=end - start if end is not None else None,
+                  start=start, end=end)
+            for index, (start, end, title) in enumerate(segments(chapters, track.duration),
+                                                        start=1)]
+
+
+def _cue_beside(entries) -> List[Chapter]:
+    """The chapters of a CUE sheet in the folder; [] without one.
+
+    CUE sheets come in UTF-8 or, from older rippers, Windows-1252.
+    """
+    for entry in entries:
+        if entry.is_file() and entry.suffix.lower() == ".cue":
+            data = entry.read_bytes()
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = data.decode("cp1252", errors="replace")
+            return cue_chapters(text)
+    return []
 
 
 # --- ordering -------------------------------------------------------------

@@ -1040,3 +1040,58 @@ class TestNotInTheLibrary:
         upload_series(client, episodes=2)
 
         assert 'data-filter="notinlibrary"' in client.get("/").text
+
+
+class TestChaptersFromMarks:
+    """An album of one long file is split into chapters at times typed on its page."""
+
+    @pytest.fixture
+    def book(self, settings):
+        from tonie_studio.album import album_id
+        from tonie_studio.catalogue import ARCHIVE
+
+        folder = settings.archive_dir / "Hörbuch"
+        folder.mkdir()
+        (folder / "buch.mp3").write_bytes(b"x" * 64)
+        return ARCHIVE + album_id(settings.archive_dir, folder)
+
+    def test_the_page_of_a_single_file_offers_the_marks(self, book, client):
+        page = client.get(f"/album/{book}").text
+
+        assert '<textarea name="marks"' in page
+
+    def test_an_album_of_several_files_does_not(self, client):
+        page = client.get(f"/album/{first_album_id(client)}").text
+
+        assert '<textarea name="marks"' not in page
+
+    def test_the_marks_become_the_tracks(self, book, client):
+        page = client.get(f"/album/{book}", params={"marks": "0:00 Eins\n10:00 Zwei"}).text
+
+        assert 'name="titles" value="Eins"' in page and 'name="titles" value="Zwei"' in page
+        assert '<input type="hidden" name="marks" value="0:00 Eins\n10:00 Zwei">' in page
+
+    def test_marks_that_cannot_be_read_are_said_on_the_page(self, book, client):
+        from tonie_studio.i18n import Translator
+
+        page = client.get(f"/album/{book}", params={"marks": "0:00 Eins\nohne Zeit"}).text
+
+        assert Translator("de")("split.bad_line", line=2, text="ohne Zeit") in page
+        assert page.count('name="titles"') == 1
+
+    def test_the_encode_cuts_the_chapters(self, book, client, runner, monkeypatch):
+        cuts = []
+
+        def cut(source, start, end, target, **kwargs):
+            cuts.append((start, end))
+            target.write_bytes(b"part")
+        monkeypatch.setattr("tonie_studio.splitting.cut", cut)
+
+        response = client.post(f"/album/{book}/encode", data={
+            "series": "Hörbuch", "episode": "Das Buch", "marks": "0:00 Eins\n10:00 Zwei",
+            "selected": ["1", "2"], "titles": ["Eins", "Zwei"], "order": "1,2", "parts": "1"},
+            follow_redirects=False)
+        job = finish_job(runner, response)
+
+        assert job.state is JobState.DONE, job.error
+        assert cuts == [(0, 600), (600, None)]

@@ -27,6 +27,7 @@ from .models import DEFAULT_CATEGORY, DEFAULT_LANGUAGE, WRITING
 from .pictures import crop
 from .runtimes import remember
 from .sheet import PIXELS
+from .splitting import chapters_cut
 from .tags import TonieError, find_tag, list_tags
 from .teddycloud import TeddyCloudClient, TeddyCloudError
 from .tonie import publish
@@ -112,8 +113,10 @@ def encode_job(client: Callable[[], TeddyCloudClient], chosen: Sequence[Tuple[Tr
             if encoded is None or encoded.tracks != len(paths):
                 raise EncodeError("encode.changed", target=target)
         else:
-            encoded = encode_files(connection, paths, target, progress=progress,
-                                   replace=replace, total_seconds=playing_time)
+            with chapters_cut([(track.path, track.start, track.end) for track, _name in chosen],
+                              progress) as files:
+                encoded = encode_files(connection, files, target, progress=progress,
+                                       replace=replace, total_seconds=playing_time)
         outcome = Outcome(encoded=encoded, details=details, tracks=names, seconds=playing_time)
         if after is not None:
             after(outcome)

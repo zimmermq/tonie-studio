@@ -13,6 +13,9 @@
  "album.discard": "Leave the album? The names, order and crop you changed are lost.",
  "album.encode": "Create the audio",
  "album.episode": "Episode (the tonie's name, on the cover too)",
+ "album.marks.apply": "Apply the chapters",
+ "album.marks.hint": "One line per chapter: where it starts, then its title, such as \"12:34 Chapter 2\" or \"1:02:03 Chapter 7\". Chapters the file or a CUE sheet names are read by themselves.",
+ "album.marks.title": "Split into chapters",
  "album.minutes": {
   "one": "{count} minute",
   "other": "{count} minutes"
@@ -390,6 +393,7 @@
  "job.archive_episode": "Episode {number} of {count} in this round: {title}",
  "job.archive_round": "Up to {count} episodes per round, oldest first. {stored} of {total} are in the library; while any are left, the next round starts by itself.",
  "job.back": "Back to the overview",
+ "job.cutting": "Cut {done} of {count} chapters",
  "job.encoded_minutes": "encoding, about {done} of {count} minutes",
  "job.encoding": "encoding",
  "job.gone": "This job is no longer known, probably because the app restarted. What was finished by then is kept; start the rest again.",
@@ -735,6 +739,9 @@
  "shop.none": "tonies.com has nothing that matches the name.",
  "shop.take": "Take this",
  "shop.title": "Search tonies.com",
+ "split.bad_line": "Line {line} is no time: {text}",
+ "split.cut_failed": "A chapter of {file} could not be cut: {detail}",
+ "split.not_ascending": "Line {line} starts before the line above it: {text}",
  "steps.check": "Check",
  "steps.choose": "Choose album",
  "steps.encode": "Encode",

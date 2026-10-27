@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from ..album import Album, Track, album_id, cover_candidates, read_album
+from ..album import Album, Track, album_id, cover_candidates, read_album, with_marks
 from ..albumnotes import albums_with_tonies, first_sightings, is_new
 from ..catalogue import UPLOAD, Catalogue
 from ..encode import taf_exists
@@ -26,6 +26,7 @@ from ..pictures import DEFAULT_SIZE, crop, thumbnail
 from ..planning import chosen_tracks, expected_targets, ordered_tracks, plan_parts
 from ..jobs import Groups, JobRunner
 from ..publishing import Crop, Details, encode_job, job_states
+from ..splitting import SplitProblem
 from ..uploads import UploadError, spool
 from .common import Context, Refused, album_or_404, refused, refusing, upload_form
 
@@ -101,7 +102,8 @@ def register(app: FastAPI, ctx: Context) -> None:
 
 
     def _album_page(request: Request, identifier: str, album: Album, form: AlbumForm,
-                    occupied: Sequence[str] = ()):
+                    occupied: Sequence[str] = (), marks: str = "",
+                    marks_problem: Optional[Problem] = None):
         return templates.TemplateResponse(request, "album.html", {
             "id": identifier,
             "album": album,
@@ -109,13 +111,23 @@ def register(app: FastAPI, ctx: Context) -> None:
             "conflict": ", ".join(occupied),
             "replace_value": REPLACE_SEPARATOR.join(occupied),
             "most_chapters": MOST_CHAPTERS,
+            # One file can be split at typed times; see with_marks.
+            "one_file": len({track.path for track in album.tracks}) == 1,
+            "marks": marks,
+            "marks_problem": marks_problem,
         })
 
 
     @app.get("/album/{identifier}", response_class=HTMLResponse)
-    def album_page(request: Request, identifier: str):
+    def album_page(request: Request, identifier: str, marks: str = ""):
+        """``marks`` splits an album of one file into chapters at those times."""
         album = read_album(album_or_404(catalogue, identifier))
-        return _album_page(request, identifier, album, AlbumForm.defaults(album))
+        try:
+            album = with_marks(album, marks)
+        except SplitProblem as problem:
+            return _album_page(request, identifier, album, AlbumForm.defaults(album), marks=marks,
+                               marks_problem=problem)
+        return _album_page(request, identifier, album, AlbumForm.defaults(album), marks=marks)
 
 
     @app.get("/album/{identifier}/cover")
@@ -151,9 +163,11 @@ def register(app: FastAPI, ctx: Context) -> None:
         cover_zoom: float = Form(1.0),
         cover_x: float = Form(0.0),
         cover_y: float = Form(0.0),
+        marks: str = Form(""),
     ):
         album = read_album(album_or_404(catalogue, identifier))
         try:
+            album = with_marks(album, marks)
             parts_planned = plan_parts(chosen_tracks(album, order, selected, titles),
                                        series, episode, parts)
         except Problem as problem:
@@ -169,7 +183,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         if occupied and replace.split(REPLACE_SEPARATOR) != occupied:
             entered = AlbumForm.submitted(album, series, episode, order, selected, titles,
                                           parts, cover_index, cover_zoom, cover_x, cover_y)
-            return _album_page(request, identifier, album, entered, occupied)
+            return _album_page(request, identifier, album, entered, occupied, marks=marks)
 
         # The cover is decided here, on the page that shows the album, and
         # carried to the model step as the picture it will actually be: a

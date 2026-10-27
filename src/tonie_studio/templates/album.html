@@ -22,7 +22,20 @@
 </div>
 {% endif %}
 
+{% if one_file %}
+{#- A form of its own, since forms do not nest: it reloads the page with the
+    file read as the chapters these times make. #}
+<form method="get" action="/album/{{ id }}" class="card">
+  <h2 class="mt-0">{{ t("album.marks.title") }}</h2>
+  <p class="muted mt-0">{{ t("album.marks.hint") }}</p>
+  {% if marks_problem %}<p class="state-failed">{{ t(marks_problem.key, **marks_problem.params) }}</p>{% endif %}
+  <textarea name="marks" rows="6" class="full" placeholder="00:00 Kapitel 1&#10;12:34 Kapitel 2">{{ marks }}</textarea>
+  <p class="mb-0"><button type="submit">{{ t("album.marks.apply") }}</button></p>
+</form>
+{% endif %}
+
 <form method="post" action="/album/{{ id }}/encode" id="form">
+  <input type="hidden" name="marks" value="{{ marks if not marks_problem else '' }}">
   <div class="card row stackable items-start">
     {% if album.cover_candidates %}
     <div class="cover-editor">

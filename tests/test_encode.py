@@ -595,6 +595,75 @@ class TestThreadsKeepTheirOwnClient:
         assert made == [1]
 
 
+class TestChaptersOfOneFile:
+    """A track that is a chapter of a longer file is cut out before the upload."""
+
+    def _cutting(self, monkeypatch, cuts):
+        def cut(source, start, end, target, **kwargs):
+            cuts.append((source.name, start, end, target.suffix))
+            target.write_bytes(f"{start}-{end}".encode())
+        monkeypatch.setattr("tonie_studio.splitting.cut", cut)
+
+    def test_each_chapter_is_uploaded_as_its_own_file(self, teddycloud, tmp_path, monkeypatch):
+        from tonie_studio.album import Track
+        from tonie_studio.publishing import Details, encode_job
+
+        book = tmp_path / "buch.m4b"
+        book.write_bytes(b"the whole book")
+        cuts, uploaded = [], []
+        self._cutting(monkeypatch, cuts)
+        upload = teddycloud.upload
+
+        def watching(stream, filename, path="/", special=None):
+            data = stream.read()
+            uploaded.append(data)
+            import io
+            return upload(io.BytesIO(data), filename, path=path, special=special)
+        teddycloud.upload = watching
+        tracks = [(Track(path=book, number=1, title="Eins", start=0, end=600), "Eins"),
+                  (Track(path=book, number=2, title="Zwei", start=600, end=None), "Zwei")]
+
+        outcome = encode_job(lambda: teddycloud, tracks, "/Buch.taf",
+                             Details(series="S", episode="E"))(lambda *args: None)
+
+        assert cuts == [("buch.m4b", 0, 600, ".m4a"), ("buch.m4b", 600, None, ".m4a")]
+        assert uploaded == [b"0-600", b"600-None"]
+        assert outcome.tracks == ["Eins", "Zwei"]
+
+    def test_the_cut_files_are_gone_afterwards(self, teddycloud, tmp_path, monkeypatch):
+        from tonie_studio.album import Track
+        from tonie_studio.publishing import Details, encode_job
+
+        book = tmp_path / "buch.mp3"
+        book.write_bytes(b"book")
+        made = []
+
+        def cut(source, start, end, target, **kwargs):
+            made.append(target)
+            target.write_bytes(b"part")
+        monkeypatch.setattr("tonie_studio.splitting.cut", cut)
+        tracks = [(Track(path=book, number=1, title="Eins", start=0, end=60), "Eins")]
+
+        encode_job(lambda: teddycloud, tracks, "/Buch.taf",
+                   Details(series="S", episode="E"))(lambda *args: None)
+
+        assert made and not any(path.exists() for path in made)
+
+    def test_whole_files_are_not_cut(self, teddycloud, sources, monkeypatch):
+        from tonie_studio.album import Track
+        from tonie_studio.publishing import Details, encode_job
+
+        cuts = []
+        self._cutting(monkeypatch, cuts)
+        tracks = [(Track(number=n, path=path, title=path.stem), path.stem)
+                  for n, path in enumerate(sources, 1)]
+
+        encode_job(lambda: teddycloud, tracks, "/a.taf",
+                   Details(series="S", episode="E"))(lambda *args: None)
+
+        assert cuts == []
+
+
 class TestTheCopyBesideIsNeverSomeoneElses:
     def test_a_copy_an_earlier_replace_left_playing_survives_the_next(self, teddycloud, sources):
         # A replace whose final encode failed leaves the stickers on its copy;

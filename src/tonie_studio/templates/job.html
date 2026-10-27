@@ -3,7 +3,7 @@
 {% set page_title = job.label %}
 {% set percent, detail = job.percent or 0, describe_progress(job, t) %}
 {% set finished, failed = job.state.value in ('done', 'failed'), job.state.value == 'failed' %}
-{% set page_data = {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.archive_episode", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies", "job.gone"), "doneKey": done_key, "assigned": assigned_ending, "running": not finished} %}
+{% set page_data = {"id": job.id, "words": t.strings("job.preparing", "job.uploaded", "job.encoded_minutes", "job.encoding", "job.archive_episode", "job.cutting", "job.state.queued", "job.state.running", "job.state.done", "job.state.failed", done_key, "job.published", "job.to_tonies", "job.gone"), "doneKey": done_key, "assigned": assigned_ending, "running": not finished} %}
 
 {% block above %}{% if album %}{{ steps("3") }}{% endif %}{% endblock %}
 {% block intro %}<span id="state">{{ t("job.state." ~ job.state.value) }}</span>

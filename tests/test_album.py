@@ -537,3 +537,77 @@ class TestDiscs:
         tags["01-a.flac"] = TrackTags(album="Gute Nacht CD 2", albumartist="Bobo")
 
         assert read_album(disc).title == "Gute Nacht CD 2"
+
+
+class TestChapters:
+    """One long file with chapters is read as one track per chapter."""
+
+    @pytest.fixture
+    def chapters(self):
+        table = {}
+        with patch("tonie_studio.album.embedded_chapters",
+                   side_effect=lambda path: table.get(path.name, [])):
+            yield table
+
+    def test_a_long_file_with_chapters_becomes_a_track_each(self, tmp_path, tags, chapters):
+        from tonie_studio.splitting import Chapter
+
+        directory = _album(tmp_path, "Hörbuch", ["buch.m4b"])
+        tags["buch.m4b"] = TrackTags(title="Das Buch", duration=1800)
+        chapters["buch.m4b"] = [Chapter(0, "Anfang"), Chapter(600, "Mitte"), Chapter(1200, "")]
+
+        album = read_album(directory)
+
+        assert [(t.title, t.start, t.end, t.duration) for t in album.tracks] == [
+            ("Anfang", 0, 600, 600), ("Mitte", 600, 1200, 600), ("Das Buch 3", 1200, 1800, 600)]
+        assert [t.number for t in album.tracks] == [1, 2, 3]
+        assert all(t.path.name == "buch.m4b" for t in album.tracks)
+
+    def test_a_short_file_is_not_asked_for_chapters(self, tmp_path, tags, chapters):
+        # Reading every song of every album for chapters it never has costs time.
+        from tonie_studio.splitting import Chapter
+
+        directory = _album(tmp_path, "album", ["01-lied.mp3"])
+        tags["01-lied.mp3"] = TrackTags(duration=200)
+        chapters["01-lied.mp3"] = [Chapter(0, "A"), Chapter(100, "B")]
+
+        assert len(read_album(directory).tracks) == 1
+
+    def test_a_cue_sheet_beside_the_only_file_gives_its_chapters(self, tmp_path, tags, chapters):
+        directory = _album(tmp_path, "Hörbuch", ["buch.mp3"])
+        tags["buch.mp3"] = TrackTags(duration=1800)
+        (directory / "buch.cue").write_text(
+            'FILE "buch.mp3" MP3\n  TRACK 01 AUDIO\n    TITLE "Eins"\n    INDEX 01 00:00:00\n'
+            '  TRACK 02 AUDIO\n    TITLE "Zwei"\n    INDEX 01 15:00:00\n', encoding="utf-8")
+
+        album = read_album(directory)
+
+        assert [(t.title, t.start, t.end) for t in album.tracks] == [("Eins", 0, 900),
+                                                                    ("Zwei", 900, 1800)]
+
+    def test_typed_marks_split_the_only_file(self, tmp_path, tags, chapters):
+        from tonie_studio.album import with_marks
+
+        directory = _album(tmp_path, "Hörbuch", ["buch.mp3"])
+        tags["buch.mp3"] = TrackTags(title="Das Buch", duration=1800)
+
+        album = with_marks(read_album(directory), "0:00 Eins\n10:00 Zwei")
+
+        assert [(t.title, t.start, t.end) for t in album.tracks] == [("Eins", 0, 600),
+                                                                    ("Zwei", 600, 1800)]
+
+    def test_marks_leave_an_album_of_several_files_alone(self, tmp_path, tags, chapters):
+        from tonie_studio.album import with_marks
+
+        directory = _album(tmp_path, "album", ["01-a.mp3", "02-b.mp3"])
+
+        album = with_marks(read_album(directory), "0:00 Eins\n10:00 Zwei")
+
+        assert [t.path.name for t in album.tracks] == ["01-a.mp3", "02-b.mp3"]
+
+    def test_no_marks_leave_the_album_as_it_is(self, tmp_path, tags, chapters):
+        from tonie_studio.album import with_marks
+
+        directory = _album(tmp_path, "Hörbuch", ["buch.mp3"])
+
+        assert len(with_marks(read_album(directory), "  ").tracks) == 1

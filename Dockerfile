@@ -18,6 +18,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# ffmpeg cuts the chapters out of a single long file (see splitting.py); it
+# only copies the audio, the encode itself is teddyCloud's. A static build,
+# since Debian's package brings some 400 MB of video and display libraries
+# along. By digest as well as tag, as the base image is.
+COPY --from=mwader/static-ffmpeg:9.0.2-1@sha256:f5d100184884eb3e82b0eb14bb5ebf98da99826ac824989720297fb9ef21c822 /ffmpeg /usr/local/bin/ffmpeg
+
 # requirements.txt is the lock compiled from requirements.in, every package
 # with its hashes: what is installed is exactly what was locked, or nothing.
 # Wheels only: the slim image has no compiler, and a package without a wheel
