@@ -21,7 +21,7 @@ DYNAMIC = ("job.state.", "ordering.", "checkup.severity.", "backup.part.", "rest
            "sheet.layout.", "sheet.intro.", "tonies.col_",
            "library.origin.", "library.col_",
            "listening.filter.", "listening.col_",
-           "albums.filter.", "podcasts.search.where.")
+           "albums.filter.", "podcasts.search.where.", "suggest.from.")
 
 
 def placeholders(text):

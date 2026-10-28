@@ -76,6 +76,7 @@
       {% call field(t("album.episode"), class="mb-0") %}
         <input type="text" name="episode" value="{{ form.episode }}" required>
       {% endcall %}
+      <p class="mb-0"><a class="button small" href="/album/{{ id }}/suggestions">{{ t("suggest.find") }}</a></p>
     </div>
   </div>
 

@@ -9,6 +9,7 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..album import read_albums
+from ..suggestions import with_pick
 from ..albumnotes import albums_with_tonies, remember_made
 from ..batch import AUTO, PLACE, Placing, Slot
 from ..i18n import Problem
@@ -41,8 +42,10 @@ def register(app: FastAPI, ctx: Context) -> None:
     def _plan(connection, ids, series=None, episodes=None, models=()):
         """The batch for these album ids, or the reason it cannot be made."""
         unique = list(dict.fromkeys(ids))
-        albums = list(zip(unique, read_albums([album_or_404(catalogue, identifier)
-                                               for identifier in unique]), strict=True))
+        read = read_albums([album_or_404(catalogue, identifier) for identifier in unique])
+        # A cover picked from a suggestion is the album's cover here too.
+        albums = [(identifier, with_pick(album, settings.data_dir, identifier))
+                  for identifier, album in zip(unique, read, strict=True)]
         known = albums_with_tonies(settings.data_dir, catalogue.albums(), models)
         try:
             busy = [job.label for job in jobs.all() if job.kind == "encode"

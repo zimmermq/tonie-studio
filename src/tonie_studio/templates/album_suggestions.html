@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_parts.html" import field, thumb with context %}
+{% set page_title = t("suggest.title") %}
+
+{% block intro %}{{ t("suggest.intro") }}{% endblock %}
+{% block body %}
+<form method="get" action="/album/{{ id }}/suggestions" class="card row stackable gap-12 items-end">
+  {% call field(t("album.series"), class="grow m-0") %}
+    <input type="text" name="artist" value="{{ artist }}">
+  {% endcall %}
+  {% call field(t("album.episode"), class="grow m-0") %}
+    <input type="text" name="title" value="{{ title }}">
+  {% endcall %}
+  <button type="submit">{{ t("suggest.search") }}</button>
+</form>
+
+{% if failed %}<div class="warn">{{ t("suggest.failed", places=failed) }}</div>{% endif %}
+
+{% if found %}
+<div class="list">
+  {% for item in found %}
+  <div class="item">
+    {{ thumb(item.cover, no_referrer=True) }}
+    <span class="grow truncate">
+      <strong class="truncate">{{ item.title }}</strong>
+      <span class="muted truncate">
+        {{- item.artist }}{% if item.year %} &middot; {{ item.year }}{% endif %}
+        {%- if item.tracks %} &middot; {{ t("albums.tracks", count=item.tracks) }}{% endif %}
+        &middot; {{ t("suggest.from." ~ item.where) }} &middot; {{ t("suggest.match", percent=(item.score * 100) | round | int) }}
+      </span>
+    </span>
+    <form method="post" action="/album/{{ id }}/suggestions/use" class="row gap-6">
+      <input type="hidden" name="series" value="{{ item.artist }}">
+      <input type="hidden" name="episode" value="{{ item.title }}">
+      {% if item.cover %}
+      <button type="submit" class="small primary" name="cover" value="{{ item.cover }}">{{ t("suggest.use") }}</button>
+      <button type="submit" class="small" name="cover" value="">{{ t("suggest.use_names") }}</button>
+      {% else %}
+      <button type="submit" class="small" name="cover" value="">{{ t("suggest.use_names") }}</button>
+      {% endif %}
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% elif not failed %}
+<p class="empty">{{ t("suggest.none") }}</p>
+{% endif %}
+
+<p><a class="button" href="/album/{{ id }}">{{ t("suggest.back") }}</a></p>
+{% endblock %}

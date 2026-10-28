@@ -27,6 +27,8 @@ from ..planning import chosen_tracks, expected_targets, ordered_tracks, plan_par
 from ..jobs import Groups, JobRunner
 from ..publishing import Crop, Details, encode_job, job_states
 from ..splitting import SplitProblem
+from ..suggestions import (IN_ITUNES, IN_MUSICBRAINZ, Pick, SuggestionProblem, keep_pick, picked,
+                           suggest, with_pick)
 from ..uploads import UploadError, spool
 from .common import Context, Refused, album_or_404, refused, refusing, upload_form
 
@@ -35,6 +37,9 @@ log = logging.getLogger(__name__)
 # Joins the occupied tafs in the value of the page's replace button. No library
 # path holds a newline, so the list comes back apart unchanged.
 REPLACE_SEPARATOR = "\n"
+
+# How the suggestion places are named on the page.
+PLACE_NAMES = {IN_MUSICBRAINZ: "MusicBrainz", IN_ITUNES: "iTunes"}
 
 # From how many ticked albums the list warns that setting them up takes a
 # while: the batch page reads every album's tags, about a second each over a
@@ -50,6 +55,7 @@ def register(app: FastAPI, ctx: Context) -> None:
     jobs = ctx.jobs
     client = ctx.client
     groups = ctx.groups
+    fetch = ctx.fetch
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -121,13 +127,38 @@ def register(app: FastAPI, ctx: Context) -> None:
     @app.get("/album/{identifier}", response_class=HTMLResponse)
     def album_page(request: Request, identifier: str, marks: str = ""):
         """``marks`` splits an album of one file into chapters at those times."""
-        album = read_album(album_or_404(catalogue, identifier))
+        album = with_pick(read_album(album_or_404(catalogue, identifier)), settings.data_dir,
+                          identifier)
+        pick = picked(settings.data_dir, identifier)
         try:
             album = with_marks(album, marks)
         except SplitProblem as problem:
-            return _album_page(request, identifier, album, AlbumForm.defaults(album), marks=marks,
-                               marks_problem=problem)
-        return _album_page(request, identifier, album, AlbumForm.defaults(album), marks=marks)
+            return _album_page(request, identifier, album, AlbumForm.defaults(album, pick),
+                               marks=marks, marks_problem=problem)
+        return _album_page(request, identifier, album, AlbumForm.defaults(album, pick), marks=marks)
+
+    @app.get("/album/{identifier}/suggestions", response_class=HTMLResponse)
+    def suggestions_page(request: Request, identifier: str, artist: Optional[str] = None,
+                         title: Optional[str] = None):
+        """What MusicBrainz and iTunes know of the album, searched by its artist and title."""
+        album = read_album(album_or_404(catalogue, identifier))
+        artist = album.artist or "" if artist is None else artist
+        title = album.title if title is None else title
+        found, failed = suggest(artist, title, len(album.tracks), fetch)
+        return templates.TemplateResponse(request, "album_suggestions.html", {
+            "id": identifier, "album": album, "artist": artist, "title": title,
+            "found": found, "failed": ", ".join(PLACE_NAMES[where] for where in failed),
+        })
+
+    @app.post("/album/{identifier}/suggestions/use")
+    def use_suggestion(identifier: str, series: str = Form(""), episode: str = Form(""),
+                       cover: str = Form("")):
+        """Take a suggestion's names, and its cover when one is sent, for the album."""
+        album_or_404(catalogue, identifier)
+        with refusing(SuggestionProblem):
+            keep_pick(settings.data_dir, identifier, series.strip(), episode.strip(),
+                      cover.strip(), fetch)
+        return RedirectResponse(f"/album/{identifier}", 303)
 
 
     @app.get("/album/{identifier}/cover")
@@ -137,7 +168,7 @@ def register(app: FastAPI, ctx: Context) -> None:
         The picker asks for a size; sixteen full covers would be two megabytes
         of JPEG to draw pictures the size of a stamp.
         """
-        path = _cover_or_404(catalogue, identifier, index)
+        path = _cover_or_404(catalogue, identifier, index, settings.data_dir)
         if not size:
             return FileResponse(path)
 
@@ -165,7 +196,8 @@ def register(app: FastAPI, ctx: Context) -> None:
         cover_y: float = Form(0.0),
         marks: str = Form(""),
     ):
-        album = read_album(album_or_404(catalogue, identifier))
+        album = with_pick(read_album(album_or_404(catalogue, identifier)), settings.data_dir,
+                          identifier)
         try:
             album = with_marks(album, marks)
             parts_planned = plan_parts(chosen_tracks(album, order, selected, titles),
@@ -211,7 +243,8 @@ def register(app: FastAPI, ctx: Context) -> None:
     def crop_preview(identifier: str, index: int = 0, zoom: float = 1.0,
                      x: float = 0.0, y: float = 0.0, size: int = 256):
         """The cover as the round sticker will cut it."""
-        rendered = crop(_cover_or_404(catalogue, identifier, index), max(32, min(size, 800)),
+        rendered = crop(_cover_or_404(catalogue, identifier, index, settings.data_dir),
+                        max(32, min(size, 800)),
                         zoom, x, y)
         if rendered is None:
             raise Refused(404, "error.cover_unreadable")
@@ -237,9 +270,16 @@ def _waiting_for_stickers(groups: Groups, jobs: JobRunner) -> List[Tuple[str, st
     return waiting
 
 
-def _cover_or_404(catalogue: Catalogue, identifier: str, index: int) -> Path:
-    """The ``index``-th picture of the album that could be its cover, or a refusal."""
-    candidates = cover_candidates(album_or_404(catalogue, identifier))
+def _cover_or_404(catalogue: Catalogue, identifier: str, index: int, data_dir: Path) -> Path:
+    """The ``index``-th picture of the album that could be its cover, or a refusal.
+
+    A cover picked from a suggestion comes first, as it does on the album page.
+    """
+    folder = album_or_404(catalogue, identifier)
+    pick = picked(data_dir, identifier)
+    candidates = cover_candidates(folder)
+    if pick is not None and pick.cover is not None:
+        candidates = [pick.cover] + [path for path in candidates if path != pick.cover]
     if not 0 <= index < len(candidates):
         raise Refused(404, "error.no_cover")
     return candidates[index]
@@ -287,9 +327,14 @@ class AlbumForm:
         return ",".join(str(row.track.number) for row in self.rows)
 
     @classmethod
-    def defaults(cls, album: Album) -> "AlbumForm":
-        """Artist as series, title as episode, every track but the karaoke takes."""
-        return cls(series=album.artist or "", episode=album.title,
+    def defaults(cls, album: Album, pick: Optional[Pick] = None) -> "AlbumForm":
+        """Artist as series, title as episode, every track but the karaoke takes.
+
+        A suggestion taken for the album names it instead.
+        """
+        series = pick.series if pick else album.artist or ""
+        episode = pick.episode if pick and pick.episode else album.title
+        return cls(series=series, episode=episode,
                    rows=[TrackRow(track, track.title, not track.extra) for track in album.tracks])
 
     @classmethod

@@ -1095,3 +1095,94 @@ class TestChaptersFromMarks:
 
         assert job.state is JobState.DONE, job.error
         assert cuts == [(0, 600), (600, None)]
+
+
+class TestSuggestions:
+    """Names and a cover for an album, suggested by MusicBrainz and iTunes."""
+
+    @pytest.fixture
+    def web(self):
+        from test_suggestions import FakeWeb, jpeg
+
+        web = FakeWeb()
+        picture = jpeg()
+
+        def fetch(url, limit=None, timeout=None):
+            if url.startswith("https://coverartarchive.org/") or "mzstatic" in url:
+                return picture
+            return web(url, limit, timeout)
+        fetch.web = web
+        return fetch
+
+    @pytest.fixture
+    def site(self, make_site, web):
+        return make_site(fetch=web)
+
+    def test_the_album_page_leads_there(self, site):
+        identifier = first_album_id(site)
+
+        assert f'href="/album/{identifier}/suggestions"' in site.get(f"/album/{identifier}").text
+
+    def test_the_page_lists_what_both_places_know_with_covers(self, site):
+        identifier = first_album_id(site)
+
+        page = site.get(f"/album/{identifier}/suggestions").text
+
+        assert "Halloween Lieder für Kinder" in page
+        assert 'src="https://coverartarchive.org/release/611106a7/front-500"' in page
+        assert f'action="/album/{identifier}/suggestions/use"' in page
+
+    def test_a_place_that_did_not_answer_is_named(self, make_site, web):
+        from tonie_studio.i18n import Translator
+        from tonie_studio.suggestions import MUSICBRAINZ
+
+        web.web.failing = (MUSICBRAINZ,)
+        site = make_site(fetch=web)
+
+        page = site.get(f"/album/{first_album_id(site)}/suggestions").text
+
+        assert Translator("de")("suggest.failed", places="MusicBrainz") in page
+
+    def test_taking_one_fills_the_album_and_puts_its_cover_first(self, site, settings):
+        from tonie_studio.suggestions import picked
+
+        identifier = first_album_id(site)
+
+        response = site.post(f"/album/{identifier}/suggestions/use", data={
+            "series": "Lichterkinder", "episode": "Halloween Lieder für Kinder",
+            "cover": "https://coverartarchive.org/release/611106a7/front-500"},
+            follow_redirects=False)
+
+        assert response.headers["location"] == f"/album/{identifier}"
+        page = site.get(f"/album/{identifier}").text
+        assert 'name="series" value="Lichterkinder"' in page
+        assert 'name="episode" value="Halloween Lieder für Kinder"' in page
+        cover = site.get(f"/album/{identifier}/cover", params={"index": 0})
+        assert cover.content == picked(settings.data_dir, identifier).cover.read_bytes()
+
+    def test_a_cover_that_is_no_picture_is_refused(self, make_site, settings):
+        from tonie_studio.suggestions import picked
+
+        site = make_site(fetch=lambda url, limit=None, timeout=None: b"<html>no</html>")
+        identifier = first_album_id(site)
+
+        response = site.post(f"/album/{identifier}/suggestions/use", data={
+            "series": "S", "episode": "E", "cover": "https://covers.example/a.jpg"})
+
+        assert response.status_code == 400
+        assert picked(settings.data_dir, identifier) is None
+
+    def test_the_encode_takes_the_picked_cover(self, site, runner, settings):
+        from tonie_studio.suggestions import picked
+
+        identifier = first_album_id(site)
+        site.post(f"/album/{identifier}/suggestions/use", data={
+            "series": "S", "episode": "E",
+            "cover": "https://coverartarchive.org/release/611106a7/front-500"})
+
+        response = site.post(f"/album/{identifier}/encode", data={
+            "series": "S", "episode": "E", "selected": ["1", "2", "3"], "order": "1,2,3",
+            "titles": ["a", "b", "c"], "parts": "1", "cover_index": "0"}, follow_redirects=False)
+        job = finish_job(runner, response)
+
+        assert job.result.details.cover == str(picked(settings.data_dir, identifier).cover)
