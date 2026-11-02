@@ -42,6 +42,8 @@ What is covered, by flow:
 - covers: teddyCloud's image cache (tonie_json.cache_images): a picture hosted
   elsewhere, fetched by teddyCloud on first use, and a cover of this app's own,
   which teddyCloud answers with a redirect.
+- player: a library taf played through the app as Ogg (/audio), the range a
+  seeking browser asks for, refusals, and the library's play buttons.
 - errors: refusals reaching the app's error pages, an unknown tonie, a second
   custom model with the same audio (teddyCloud refuses it; the app has to
   avoid it), listing a folder that does not exist (teddyCloud fails it; the
@@ -192,7 +194,7 @@ TC_NOISE = re.compile(r"tls_adapter\.c|certs/client/|test_boxine_ca|mqtt_init_bo
 SLOW_PIECE = (0.02, 0.05)
 
 FLOWS = ("startup", "pages", "upload", "edit", "copy_move", "replace", "batch", "sheet",
-         "library", "checkup", "backup", "radio", "box", "covers", "errors", "delete",
+         "library", "checkup", "backup", "radio", "box", "covers", "player", "errors", "delete",
          "podcasts", "podcast_inproc", "import", "names",
          "library_form", "upload_refused", "delete_cached", "restore_restart",
          "replace_copy_move", "replace_recovery", "podcast_move", "failed_jobs")
@@ -2117,6 +2119,37 @@ class Run:
         return [(f"TC GET /content/json/get/{good}", 404), (f"TC GET /content/json/get/{bad}", 404),
                 ("LOG", r"import of .*Folge Zwei\.nfc failed: .*401"),
                 ("POST /import/files", answer.status_code)]
+
+    def flow_player(self, result: Result):
+        # The browser cannot reach teddyCloud, so the app passes a library taf
+        # through as Ogg audio, and the player seeks by asking for a range.
+        target = "/E2E-Player/probe.taf"
+        self.library_taf(target)
+        whole = self.app.get(f"/audio{target}")
+        if not whole.content.startswith(b"OggS"):
+            raise FlowFailed(f"/audio{target} is no Ogg audio: {whole.content[:16]!r}")
+        if whole.headers.get("Content-Length") != str(len(whole.content)) or \
+                whole.headers.get("Accept-Ranges") != "bytes" or \
+                not whole.headers.get("Content-Type", "").startswith("audio/ogg"):
+            raise FlowFailed(f"/audio{target} answered with headers {dict(whole.headers)}")
+        part = self.app.get(f"/audio{target}", expect=(206,), headers={"Range": "bytes=4096-"})
+        if part.content != whole.content[4096:] or \
+                part.headers.get("Content-Range") != f"bytes 4096-{len(whole.content) - 1}/{len(whole.content)}":
+            raise FlowFailed(f"a range of /audio{target} answered {part.headers.get('Content-Range')} "
+                             f"with {len(part.content)} bytes of {len(whole.content)}")
+        result.notes.append(f"{len(whole.content)} bytes of Ogg, ranges answered with 206")
+
+        self.app.get("/audio/E2E-Player/missing.taf", expect=(404,))
+        self.app.get("/audio/E2E-Player/probe.flac", expect=(400,))
+        self.app.get("/audio/%2E%2E/escape.taf", expect=(400,))
+
+        plays = set(re.findall(r'data-play="([^"]+)"', self.app.get("/library").text))
+        if f"/audio{target}" not in {html.unescape(play) for play in plays}:
+            raise FlowFailed(f"the library offers no play button for {target}: {sorted(plays)[:5]}")
+        return [("GET /audio/E2E-Player/missing.taf", 404), ("GET /audio/E2E-Player/probe.flac", 400),
+                ("GET /audio/%2E%2E/escape.taf", 400), ("GET /audio/../escape.taf", 400),
+                ("TCLOG", r"File does not exist '.*/E2E-Player/missing\.taf'"),
+                ("TCLOG", r">> 404 /content/E2E-Player/missing\.taf")]
 
     def flow_names(self, result: Result):
         # A tonie named by an earlier tool, under its NFC- prefix.
