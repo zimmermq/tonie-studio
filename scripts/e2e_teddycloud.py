@@ -2073,13 +2073,16 @@ class Run:
         if any(not entry.get("client_cert") for entry in asked):
             raise FlowFailed("teddyCloud came to the stand-in without its client certificate")
 
+        # An imported tonie lives in the library only: its content entry is
+        # gone, and the import list says where its audio is.
         entry = self.tc.content(good)
-        if entry.get("cloud_ruid") != good or (entry.get("cloud_auth") or "").upper() \
-                != tokens[good] or entry.get("_version") != 5:
-            raise FlowFailed(f"the imported tonie's entry reads {entry}")
-        source = entry.get("source") or ""
-        if not source.startswith("lib://by/audioID/") or not entry.get("nocloud"):
-            raise FlowFailed(f"imported tonie: source {source!r}, nocloud {entry.get('nocloud')}")
+        if entry:
+            raise FlowFailed(f"the imported tonie still has a content entry: {entry}")
+        imported_list = json.loads((self.app.data / "imported.json").read_text()) \
+            if (self.app.data / "imported.json").is_file() else {}
+        source = imported_list.get(good) or ""
+        if not source.startswith("lib://by/audioID/"):
+            raise FlowFailed(f"the import list reads {imported_list}")
         imported = self.check_taf("/" + source[len("lib://"):], chapters=1, seconds=3)
         if imported.get("audioId") != header.get("audioId"):
             raise FlowFailed(f"the library holds audio {imported.get('audioId')}, the stand-in "
@@ -2094,11 +2097,13 @@ class Run:
             raise FlowFailed("the import page does not show the skipped dump")
 
         # Named right after the import: not in the catalogue, so a model of its own.
-        named = wait_for("imported tonie named", lambda: (lambda model: model if model.startswith(
-            "TS-") else None)(self.tc.content(good).get("tonie_model") or ""))
+        def own_model() -> Optional[str]:
+            return next((name for name, model in self.tc.models().items() if name.startswith("TS-")
+                         and str(imported.get("audioId")) in [str(v) for v in model.get("audio_id") or []]),
+                        None)
+        named = wait_for("imported tonie named", own_model)
         model = self.tc.models().get(named) or {}
-        if (model.get("series"), model.get("episodes")) != ("E2E Import", "Folge Eins") or \
-                str(imported.get("audioId")) not in [str(v) for v in model.get("audio_id") or []]:
+        if (model.get("series"), model.get("episodes")) != ("E2E Import", "Folge Eins"):
             raise FlowFailed(f"the imported tonie's model reads {model}")
         other = self.new_sticker()
         self.app.get("/library/assign?" + urlencode({"path": "/" + source[len("lib://"):]}))
