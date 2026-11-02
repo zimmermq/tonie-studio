@@ -55,6 +55,8 @@ What is covered, by flow:
   (the injection point the tests use), with a fetch that reads the feed and
   episodes from local files. Everything after the fetch is the app's own code
   against the real teddyCloud. podcasts checks the guard of the real app.
+- archive: a podcast archived episode by episode on the same second app, with
+  pictures, and two episodes put together on a sticker from their tafs.
 - import: an import from Flipper dumps through teddyCloud's real cloud code,
   with a stand-in for the Tonies cloud: a container on a private Docker
   network that answers /v2/content/<ruid> over TLS with a certificate of a CA
@@ -196,7 +198,7 @@ SLOW_PIECE = (0.02, 0.05)
 
 FLOWS = ("startup", "pages", "upload", "edit", "copy_move", "replace", "batch", "sheet",
          "library", "checkup", "backup", "radio", "box", "covers", "player", "split", "errors", "delete",
-         "podcasts", "podcast_inproc", "import", "names",
+         "podcasts", "podcast_inproc", "archive", "import", "names",
          "library_form", "upload_refused", "delete_cached", "restore_restart",
          "replace_copy_move", "replace_recovery", "podcast_move", "failed_jobs")
 
@@ -2037,6 +2039,58 @@ class Run:
             app.stop()
         result.notes.append("second app instance with a local fetch (create_app(fetch=...)); "
                             "the production fetch and its guard are not exercised here")
+
+    def flow_archive(self, result: Result):
+        # A podcast archived episode by episode, then two of its episodes put
+        # together on a sticker: teddyCloud encodes the archived tafs again.
+        app, feeds = self.podcast_app()
+        shutil.copyfile(feeds / "episode1.mp3", feeds / "archive3.mp3")
+        episodes = [("e2e-ar3", "Teil 3", "archive3.mp3", 4), ("e2e-ar2", "Teil 2", "episode2.mp3", 3),
+                    ("e2e-ar1", "Teil 1", "episode1.mp3", 4)]
+        feed = feed_xml(episodes, title="E2E Archiv").replace(
+            b"<item>", b'<item><itunes:image href="https://podcast.e2e.invalid/podcast.jpg"/>')
+        (feeds / "archive.xml").write_bytes(feed)
+        app.start()
+        try:
+            answer = app.post("/podcasts/archives",
+                              data={"source": "https://podcast.e2e.invalid/archive.xml"})
+            if not location(answer).startswith("/job/"):
+                raise FlowFailed(f"archiving went to {location(answer)!r}")
+            state = app.wait_job(location(answer).rsplit("/", 1)[-1])
+            if state["state"] != "done":
+                raise FlowFailed(f"the archive round failed: {state.get('error')}")
+            archive = next((entry for entry in json.loads((app.data / "podcast-archives.json").read_text())
+                            if entry["source"].endswith("/archive.xml")), None)
+            stored = (archive or {}).get("archived") or {}
+            if set(stored) != {guid for guid, *_rest in episodes}:
+                raise FlowFailed(f"the archive holds {sorted(stored)}")
+            for guid, _title, _name, seconds in episodes:
+                self.check_taf(stored[guid]["path"], chapters=1, seconds=seconds)
+                picture = app.get(f"/cover/archive/{stored[guid]['picture']}")
+                if not picture.content.startswith(b"\xff\xd8"):
+                    raise FlowFailed(f"the picture of {guid} is no JPEG")
+            result.notes.append(f"archived {len(stored)} episodes into {archive.get('folder')!r}")
+
+            ruid = self.new_sticker()
+            app.get(f"/podcasts/archives/{archive['id']}/together")
+            answer = app.post(f"/podcasts/archives/{archive['id']}/together", data={
+                "ruid": ruid, "name": "Teil 1 und 2", "episodes": ["e2e-ar2", "e2e-ar1"]})
+            state = app.wait_job(location(answer).rsplit("/", 1)[-1])
+            if state["state"] != "done":
+                raise FlowFailed(f"putting episodes together failed: {state.get('error')}")
+            entry = self.tc.content(ruid)
+            source = entry.get("source") or ""
+            self.check_tag(ruid, source)
+            self.check_taf("/" + source[len("lib://"):], chapters=2, seconds=7)
+            model = self.tc.models().get(entry.get("tonie_model") or "") or {}
+            if (model.get("series"), model.get("episodes"), model.get("tracks")) != (
+                    "E2E Archiv", "Teil 1 und 2", ["Teil 1", "Teil 2"]):
+                raise FlowFailed(f"the model of the episodes put together reads {model}")
+            self.check_cover(model.get("pic") or "", exact=(feeds / "podcast.jpg").read_bytes())
+            self.check_staging_empty()
+            app.post(f"/podcasts/archives/{archive['id']}/delete")
+        finally:
+            app.stop()
 
     def flow_import(self, result: Result):
         # With the cloud off, starting is refused and nothing is asked.
