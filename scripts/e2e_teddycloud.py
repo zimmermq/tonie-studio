@@ -44,6 +44,7 @@ What is covered, by flow:
   which teddyCloud answers with a redirect.
 - player: a library taf played through the app as Ogg (/audio), the range a
   seeking browser asks for, refusals, and the library's play buttons.
+- split: an album of one file encoded as the chapters typed for it on its page.
 - errors: refusals reaching the app's error pages, an unknown tonie, a second
   custom model with the same audio (teddyCloud refuses it; the app has to
   avoid it), listing a folder that does not exist (teddyCloud fails it; the
@@ -194,7 +195,7 @@ TC_NOISE = re.compile(r"tls_adapter\.c|certs/client/|test_boxine_ca|mqtt_init_bo
 SLOW_PIECE = (0.02, 0.05)
 
 FLOWS = ("startup", "pages", "upload", "edit", "copy_move", "replace", "batch", "sheet",
-         "library", "checkup", "backup", "radio", "box", "covers", "player", "errors", "delete",
+         "library", "checkup", "backup", "radio", "box", "covers", "player", "split", "errors", "delete",
          "podcasts", "podcast_inproc", "import", "names",
          "library_form", "upload_refused", "delete_cached", "restore_restart",
          "replace_copy_move", "replace_recovery", "podcast_move", "failed_jobs")
@@ -203,6 +204,9 @@ FLOWS = ("startup", "pages", "upload", "edit", "copy_move", "replace", "batch", 
 # final encode of a replace leaves time to act while the stickers play the
 # copy beside the target.
 LONG_SECONDS = 1200
+# The one file of the split album and the chapters typed for it.
+SPLIT_SECONDS = 30
+SPLIT_MARKS = "0:00 Anfang\n0:10 Mitte\n0:20 Ende"
 
 # How many podcast refreshes failed_jobs makes fail: more than the about 29
 # connections teddyCloud 0.7.0 serves at once.
@@ -422,6 +426,7 @@ class Media:
     episodes: List[Path]
     dump: Path
     long_album: Path
+    split_album: Path
 
 
 # What an expected answer or log line looks like, returned by a flow:
@@ -489,6 +494,9 @@ def make_media(work: Path) -> Media:
     tone(long_album / "01 Lang.mp3", LONG_SECONDS, 300, "Lang", "E2E Long", "Album L", 1,
          ("-c:a", "libmp3lame", "-b:a", "64k"))
 
+    split_album = archive / "E2E Split" / "Album S"
+    tone(split_album / "01 Ganz.mp3", SPLIT_SECONDS, 350, "Ganz", "E2E Split", "Album S", 1, mp3)
+
     short = media / "short.flac"
     tone(short, 3, 1200, "Kurz", "E2E", "E2E", 1)
     feed = media / "feed"
@@ -507,6 +515,7 @@ def make_media(work: Path) -> Media:
         cover=cover, cover2=media / "cover2.jpg", archive=archive,
         batch_albums=batch_albums, spare_albums=spare_albums, place_album=place,
         short_flac=short, episodes=episodes, dump=dump, long_album=long_album,
+        split_album=split_album,
     )
 
 
@@ -1289,24 +1298,32 @@ class Run:
         if left:
             raise FlowFailed(f"staging folders left in the library: {left}")
 
-    def album_form(self, identifier: str, app: Optional[App] = None) -> Dict[str, object]:
-        """The album page's form as a browser would send it, every track ticked."""
-        page = (app or self.app).get(f"/album/{identifier}").text
+    def album_form(self, identifier: str, app: Optional[App] = None,
+                   marks: str = "") -> Dict[str, object]:
+        """The album page's form as a browser would send it, every track ticked.
+
+        ``marks`` are chapter times typed for an album of one file, as its
+        chapter form reloads the page with them.
+        """
+        page = (app or self.app).get(f"/album/{identifier}",
+                                     params={"marks": marks} if marks else None).text
         order = re.search(r'name="order" id="order" value="([^"]*)"', page)
         numbers = re.findall(r'name="selected" value="(\d+)"', page)
         titles = [html.unescape(value) for value in re.findall(r'name="titles" value="([^"]*)"', page)]
         if not numbers:
             raise FlowFailed(f"album page {identifier} shows no tracks")
+        kept = re.search(r'<input type="hidden" name="marks" value="([^"]*)"', page)
         return {"order": order.group(1) if order else "", "selected": numbers, "titles": titles,
-                "parts": "1", "cover_index": "0", "cover_zoom": "1.0", "cover_x": "0", "cover_y": "0"}
+                "parts": "1", "cover_index": "0", "cover_zoom": "1.0", "cover_x": "0", "cover_y": "0",
+                "marks": html.unescape(kept.group(1)) if kept else ""}
 
     def encode_album(self, identifier: str, series: str, episode: str,
-                     replace: bool = False, wait: bool = True) -> Tuple[str, dict]:
+                     replace: bool = False, wait: bool = True, marks: str = "") -> Tuple[str, dict]:
         """Start the album page's encode and wait for it; returns the job id and its state.
 
         Without ``wait`` it returns once the job is started, with an empty state.
         """
-        form = self.album_form(identifier)
+        form = self.album_form(identifier, marks=marks)
         form.update({"series": series, "episode": episode})
         response = self.app.post(f"/album/{identifier}/encode", expect=(303, 200), data=form)
         if replace:
@@ -2150,6 +2167,25 @@ class Run:
                 ("GET /audio/%2E%2E/escape.taf", 400), ("GET /audio/../escape.taf", 400),
                 ("TCLOG", r"File does not exist '.*/E2E-Player/missing\.taf'"),
                 ("TCLOG", r">> 404 /content/E2E-Player/missing\.taf")]
+
+    def flow_split(self, result: Result):
+        # One long file cut into the chapters typed for it: ffmpeg copies each
+        # part out, and teddyCloud encodes them as one chapter each.
+        identifier = self.archive_id(self.media.split_album)
+        form = self.album_form(identifier, marks=SPLIT_MARKS)
+        if form["titles"] != ["Anfang", "Mitte", "Ende"] or form["marks"] != SPLIT_MARKS:
+            raise FlowFailed(f"the album page read the marks as {form['titles']} "
+                             f"and keeps {form['marks']!r}")
+        series, episode = "E2E Split", f"Split {self.mode}"
+        self.encode_album(identifier, series, episode, marks=SPLIT_MARKS)
+        header = self.check_taf(f"/{series}/{episode}.taf", chapters=3, seconds=SPLIT_SECONDS)
+        # teddyCloud gives whole seconds, rounded down, and a cut lands on the
+        # nearest frame of the audio, a little before the time typed.
+        starts = header.get("trackSeconds") or []
+        if len(starts) < 3 or any(abs(start - typed) > 1 for start, typed in zip(starts, (0, 10, 20))):
+            raise FlowFailed(f"the chapters start at {starts}, typed at 0, 10 and 20 s")
+        result.notes.append(f"chapters at {starts}")
+        self.check_staging_empty()
 
     def flow_names(self, result: Result):
         # A tonie named by an earlier tool, under its NFC- prefix.
