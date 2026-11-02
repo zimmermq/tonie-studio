@@ -34,8 +34,10 @@ jobs:
         with:
           python-version: '3.15.0'
 
+      # The splitter's tests cut real audio and are skipped where ffmpeg is missing.
       - name: Install dependencies
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           python -m pip install --upgrade pip
           pip install --require-hashes -r requirements.txt
           pip install pytest httpx2
@@ -68,8 +70,25 @@ jobs:
 
       - name: Build Docker image for validation
         run: |
-          docker build -t tonie-studio:validation .
+          docker build --load -t tonie-studio:validation .
           echo "Build validation successful"
+
+      # The image brings its own static ffmpeg for the splitter; no test above
+      # runs it. Cut a generated mp3 the way the app does.
+      - name: Check the image's ffmpeg cuts audio
+        run: |
+          docker run --rm tonie-studio:validation python -c "
+          import pathlib, subprocess, tempfile
+          from mutagen.mp3 import MP3
+          from tonie_studio.splitting import cut
+          folder = pathlib.Path(tempfile.mkdtemp())
+          subprocess.run(['ffmpeg', '-nostdin', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=duration=6',
+                          '-c:a', 'libmp3lame', str(folder / 'whole.mp3')], check=True)
+          cut(folder / 'whole.mp3', 2.0, 4.0, folder / 'part.mp3')
+          seconds = MP3(folder / 'part.mp3').info.length
+          assert abs(seconds - 2.0) < 0.2, seconds
+          print(f'ffmpeg cut {seconds:.2f} s')
+          "
 
   # On a published release, build the image for amd64 and arm64 (a Raspberry
   # Pi runs teddyCloud as often as a server does), push it to Docker Hub, and
