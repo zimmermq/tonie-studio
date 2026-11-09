@@ -2419,7 +2419,7 @@ class Run:
         return self.encode_album(identifier, series, episode, replace=True, wait=False)[0]
 
     def wait_aside(self, ruid: str, job_id: str) -> str:
-        """The copy beside the target the sticker plays once the replace's final encode runs."""
+        """The copy beside the target the sticker plays once the replace has moved it there."""
         deadline = time.time() + JOB_TIMEOUT
         while time.time() < deadline:
             source = self.tc.content(ruid).get("source") or ""
@@ -2429,6 +2429,13 @@ class Run:
                 raise FlowFailed(f"the replace ended before sticker {ruid} was seen on its copy")
             time.sleep(0.1)
         raise FlowFailed(f"sticker {ruid} never played the replace's copy")
+
+    def wait_encode_begun(self, target: str) -> None:
+        """Until the latest encode teddyCloud was asked for is the one of ``target``."""
+        def begun():
+            asked = [line for line in self.tc.full_log() if "handleApiEncodeFile" in line]
+            return asked and f" to /teddycloud/data/library{target}" in asked[-1]
+        wait_for(f"teddyCloud begins encoding {target}", begun)
 
     def still_running(self, job_id: str, what: str) -> None:
         if self.app.get(f"/api/job/{job_id}").json()["state"] != "running":
@@ -2485,6 +2492,9 @@ class Run:
         source = f"lib://{target.lstrip('/')}"
         job_id = self.start_replace(identifier, series, episode)
         aside = self.wait_aside(stickers[0], job_id)
+        # Killed any earlier, the target is either still the old file or
+        # deleted with no encode ever asked for, and nothing would finish it.
+        self.wait_encode_begun(target)
         killed = time.time()
         # teddyCloud goes on with the encode it was asked for.
         self.crash_app()
