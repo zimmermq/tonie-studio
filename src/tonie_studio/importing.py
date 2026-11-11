@@ -815,7 +815,11 @@ class Importer:
                 return HOLD_SECONDS
             log.info("import %s can write its record again and carries on", run.id)
             self.held = None
-        if run.cloud.switch and not run.cloud.before and not self._switch_cloud_on(run):
+        # Reading and checking the dumps asks teddyCloud only what it keeps;
+        # the cloud is needed first for a dump whose audio is still to fetch.
+        if (run.cloud.switch and not run.cloud.before and run.phase == RUNNING
+                and any(item.state == PENDING for item in run.items)
+                and not self._switch_cloud_on(run)):
             return HOLD_SECONDS if self.held is not None else 0
         wait = self._work(run)
         return HOLD_SECONDS if self.held is not None else wait

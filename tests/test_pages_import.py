@@ -191,14 +191,14 @@ class TestCloudSwitch:
     def test_a_run_holding_the_cloud_on_says_so(self, site, importer, teddycloud):
         teddycloud.settings["cloud.enabled"] = "false"
         site.post("/import/github", data=dict(GITHUB, cloud_switch="on", cloud_after="off"))
-        importer.step()
+        step_until_switched(importer)
 
         assert say("import.cloud.held_off") in site.get("/import").text
 
     def test_a_run_that_still_owes_putting_it_back_says_so(self, site, importer, teddycloud):
         teddycloud.settings["cloud.enabled"] = "false"
         site.post("/import/github", data=dict(GITHUB, cloud_switch="on"))
-        importer.step()
+        step_until_switched(importer)
         site.post("/import/stop")
         teddycloud.settings_down = True
         importer.step()
@@ -206,6 +206,15 @@ class TestCloudSwitch:
 
         assert say("import.cloud.putting_back") in site.get("/import").text
 
+
+
+def step_until_switched(importer, limit=20):
+    """Step a run until it has switched the cloud on, which it does at its first import."""
+    for _ in range(limit):
+        if importer.current().cloud.before:
+            return
+        importer.step()
+    raise AssertionError("the run never switched the cloud on")
 
 class TestWatching:
     def test_shows_the_counts_once_checked(self, site, importer):

@@ -278,6 +278,12 @@ class TestPlanning:
         assert raised.value.key == "import.bad_pace"
 
 
+def step_until_running(importer):
+    """Take a run through checking its dumps, the steps before any import."""
+    while importer.current().phase != RUNNING:
+        importer.step()
+
+
 class TestCloudSwitch:
     """A run that switches teddyCloud's cloud access on for itself, and back when it ends."""
 
@@ -292,12 +298,32 @@ class TestCloudSwitch:
     def test_switches_the_cloud_on_imports_and_puts_it_back(self, importer, cloud_off, clock):
         importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
 
+        step_until_running(importer)
         importer.step()
         assert self.cloud(cloud_off) == {"cloud.enabled": "true", "cloud.cacheContent": "true"}
         run_until_idle(importer, clock)
 
         assert states(importer) == {"Wolf.nfc": IMPORTED}
         assert self.cloud(cloud_off) == {"cloud.enabled": "false", "cloud.cacheContent": "true"}
+        assert importer.current().cloud.before == {}
+
+    def test_checking_the_dumps_leaves_the_cloud_alone(self, importer, cloud_off):
+        importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+
+        step_until_running(importer)
+
+        assert self.cloud(cloud_off) == {"cloud.enabled": "false", "cloud.cacheContent": "true"}
+        assert cloud_off.saved_settings == []
+
+    def test_a_run_with_nothing_to_import_never_switches_the_cloud(self, importer, cloud_off,
+                                                                    clock):
+        cloud_off.add_content(FEST_RUID, source="lib://by/audioID/9.taf", cloud_auth=AUTH)
+        importer.begin([FEST], STEADY, "test", cloud=Cloud(switch=True, after=SWITCH_OFF))
+
+        run_until_idle(importer, clock)
+
+        assert importer.current().phase == FINISHED
+        assert cloud_off.saved_settings == []
         assert importer.current().cloud.before == {}
 
     def test_every_change_is_saved_so_a_restart_of_teddycloud_keeps_it(self, importer, cloud_off,
@@ -391,6 +417,7 @@ class TestCloudSwitch:
 
     def test_putting_it_back_waits_for_teddycloud_to_answer(self, importer, cloud_off, clock):
         importer.begin([WOLF], STEADY, "test", cloud=Cloud(switch=True))
+        step_until_running(importer)
         importer.step()
         importer.stop()
 
