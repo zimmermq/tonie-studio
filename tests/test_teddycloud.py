@@ -360,20 +360,38 @@ class TestSetting:
         assert request_mock.call_args.args == ("GET", "/api/settings/get/cloud.enabled")
 
     def test_sets_a_value_as_a_text_body(self, client, request_mock):
-        request_mock.return_value = _ok()
+        request_mock.side_effect = _setting_answers(set_text="", value="true")
 
         client.set_setting("cloud.enabled", "true")
 
-        assert request_mock.call_args.args == ("POST", "/api/settings/set/cloud.enabled")
-        assert request_mock.call_args.kwargs["data"] == "true"
+        set_call = request_mock.call_args_list[0]
+        assert set_call.args == ("POST", "/api/settings/set/cloud.enabled")
+        assert set_call.kwargs["data"] == "true"
 
-    def test_a_value_teddycloud_does_not_take_is_a_refusal(self, client, request_mock):
-        request_mock.return_value = Mock(status_code=200, text="ERROR")
+    def test_closes_the_connection_after_a_set(self, client, request_mock):
+        request_mock.side_effect = _setting_answers(set_text="", value="true")
+
+        client.set_setting("cloud.enabled", "true")
+
+        assert request_mock.call_args_list[0].kwargs["headers"] == {"Connection": "close"}
+
+    @pytest.mark.parametrize("set_text", ["", "OK"])
+    def test_a_value_read_back_unchanged_is_taken_whatever_the_set_answered(self, client, request_mock, set_text):
+        request_mock.side_effect = _setting_answers(set_text=set_text, value="true")
+
+        client.set_setting("cloud.enabled", "true")
+
+        assert request_mock.call_args_list[1].args == ("GET", "/api/settings/get/cloud.enabled")
+
+    @pytest.mark.parametrize("set_text", ["", "OK", "ERROR"])
+    def test_a_value_teddycloud_does_not_take_is_a_refusal(self, client, request_mock, set_text):
+        request_mock.side_effect = _setting_answers(set_text=set_text, value="false")
 
         with pytest.raises(TeddyCloudError) as raised:
-            client.set_setting("cloud.nonsense", "true")
+            client.set_setting("cloud.enabled", "true")
 
         assert raised.value.refused
+        assert "false" in str(raised.value)
 
     def test_saves_the_settings_to_teddyclouds_config_file(self, client, request_mock):
         request_mock.return_value = _ok()
@@ -381,6 +399,11 @@ class TestSetting:
         client.save_settings()
 
         assert request_mock.call_args.args == ("GET", "/api/triggerWriteConfig")
+
+
+def _setting_answers(set_text, value):
+    """teddyCloud's answers to a set and the read-back that follows it."""
+    return [Mock(status_code=200, text=set_text), Mock(status_code=200, text=value + "\n")]
 
 
 def _download(status=200, chunks=(b"taf",), fails=None):

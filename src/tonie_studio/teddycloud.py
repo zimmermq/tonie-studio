@@ -392,8 +392,16 @@ class TeddyCloudClient:
     def set_setting(self, name: str, value: str) -> None:
         """Change one setting in teddyCloud's memory; see save_settings."""
         path = f"/api/settings/set/{name}"
-        response = self._request("POST", path, params=self._params(), data=value)
-        self._expect_ok(response, path)
+        # teddyCloud announces an empty body for this answer and sends its
+        # "OK" after it anyway, so the body says nothing and the stray bytes
+        # can be read as the start of the next answer on a kept connection.
+        # Whether the value was taken is read back instead.
+        self._request("POST", path, params=self._params(), data=value,
+                      headers={"Connection": "close"})
+        taken = self.setting(name)
+        if taken != value:
+            raise TeddyCloudError(f"teddyCloud refused {path}: it still says {taken!r}",
+                                  refused=True)
 
     def save_settings(self) -> None:
         """Write teddyCloud's settings to its config file.
